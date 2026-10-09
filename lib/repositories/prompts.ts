@@ -144,7 +144,8 @@ export function listProjects() {
 
 export function listPrompts(projectId: string): PromptDefinition[] {
   ensureSeed();
-  return db().prepare("SELECT * FROM prompts WHERE project_id = ? ORDER BY prompt_id").all(projectId) as unknown as PromptDefinition[];
+  // 通用 JSON 排最后：进入项目时默认落在业务 Prompt（P1）
+  return db().prepare("SELECT * FROM prompts WHERE project_id = ? ORDER BY prompt_kind = 'GENERIC_JSON', prompt_id").all(projectId) as unknown as PromptDefinition[];
 }
 
 export function getPrompt(promptId: string): PromptDefinition | undefined {

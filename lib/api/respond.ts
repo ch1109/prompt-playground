@@ -27,6 +27,12 @@ export function handle(fn: () => Promise<Response> | Response): Promise<Response
     });
 }
 
+/** 列表接口的条数参数：缺省用 fallback，最多 1000 */
+export function limitParam(sp: URLSearchParams, fallback: number): number {
+  const n = Number(sp.get("limit"));
+  return Number.isInteger(n) && n > 0 ? Math.min(n, 1000) : fallback;
+}
+
 export async function body<T>(req: Request): Promise<T> {
   try {
     return (await req.json()) as T;

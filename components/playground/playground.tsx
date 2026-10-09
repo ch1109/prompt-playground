@@ -1,6 +1,6 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { api, ApiError } from "@/lib/client/api";
 import type { CapabilityDTO, FixtureSummary, PromptDef, PromptVersionDTO, ProviderInfoDTO, RunDetail, RunListItem, SnapshotListItem } from "@/lib/client/types";
 import { emptyWorkspace, inputSignature, runSnapshotId, useStudio } from "@/lib/state/studio-store";
@@ -90,7 +90,15 @@ export function Playground({ projectId }: { projectId: string }) {
       .catch(() => s.patchWorkspace(promptId, { runId: null, runInputSig: null }));
   }, [hydrated, runId, cached, promptId, s]);
 
-  const loadRuns = useCallback(() => api<RunListItem[]>(`/api/runs?project=${projectId}`).then(setRuns), [projectId]);
+  // 历史只查当前 Prompt，分批加载（每批 100 条），避免旧记录被截断后看不到
+  const RUN_PAGE = 100;
+  const [runLimit, setRunLimit] = useState(RUN_PAGE);
+  useEffect(() => setRunLimit(RUN_PAGE), [promptId]);
+  const loadRuns = useCallback(
+    () => api<RunListItem[]>(`/api/runs?project=${projectId}&promptId=${encodeURIComponent(promptId)}&limit=${runLimit}`).then(setRuns),
+    [projectId, promptId, runLimit],
+  );
+  const moreRuns = runs.length >= runLimit;
   // 打开的 Run 仍在运行（例如刷新前发起）：轮询直到结束后自动显示结果
   const runningRunId = detail?.run.status === "RUNNING" ? detail.run.run_id : null;
   useEffect(() => {
@@ -115,7 +123,9 @@ export function Playground({ projectId }: { projectId: string }) {
     return () => clearInterval(t);
   }, [anyRunning, loadRuns]);
 
-  const loadSnapshots = useCallback(() => api<SnapshotListItem[]>(`/api/snapshots?project=${projectId}`).then(setSnapshots), [projectId]);
+  const SNAPSHOT_PAGE = 50;
+  const [snapshotLimit, setSnapshotLimit] = useState(SNAPSHOT_PAGE);
+  const loadSnapshots = useCallback(() => api<SnapshotListItem[]>(`/api/snapshots?project=${projectId}&limit=${snapshotLimit}`).then(setSnapshots), [projectId, snapshotLimit]);
 
   useEffect(() => {
     api<ProjectDTO[]>("/api/projects").then(setProjects).catch((e) => setError(e.message));
@@ -128,9 +138,13 @@ export function Playground({ projectId }: { projectId: string }) {
     api<{ items: FixtureSummary[] }>("/api/fixtures").then((r) => setFixtures(r.items));
     api<ProviderInfoDTO>("/api/models").then(setProvider);
     api<CapabilityDTO>("/api/connectors/jiuli/capabilities").then(setCapability).catch(() => setCapability(null));
+  }, [projectId]);
+  useEffect(() => {
     loadRuns();
+  }, [loadRuns]);
+  useEffect(() => {
     loadSnapshots();
-  }, [projectId, loadRuns, loadSnapshots]);
+  }, [loadSnapshots]);
 
   // 加载当前 Prompt 的版本，首次进入时用最新版本初始化工作草稿
   useEffect(() => {
@@ -300,7 +314,6 @@ export function Playground({ projectId }: { projectId: string }) {
     };
   }, [s]);
 
-  const promptRuns = useMemo(() => runs.filter((r) => r.prompt_id === promptId), [runs, promptId]);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -421,7 +434,8 @@ export function Playground({ projectId }: { projectId: string }) {
             </div>
             <div className="mt-auto border-t border-ink-700 p-2">
               <Btn className="w-full justify-center" onClick={() => s.set("historyOpen", !s.historyOpen)}>
-                运行历史（{runs.length}）
+                运行历史（{runs.length}
+                {moreRuns ? "+" : ""}）
               </Btn>
             </div>
           </nav>
@@ -458,6 +472,7 @@ export function Playground({ projectId }: { projectId: string }) {
                       onSaveVersion={saveVersion}
                       onPickFixture={pickFixture}
                       onSnapshotsChanged={loadSnapshots}
+                      onMoreSnapshots={snapshots.length >= snapshotLimit ? () => setSnapshotLimit((n) => n + SNAPSHOT_PAGE) : undefined}
                       projectId={projectId}
                     />
                   )}
@@ -492,7 +507,14 @@ export function Playground({ projectId }: { projectId: string }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {(promptRuns.length ? promptRuns : runs).map((r) => (
+                  {!runs.length && (
+                    <tr>
+                      <td colSpan={8} className="px-3 py-4 text-ink-400">
+                        当前 Prompt 还没有运行记录。
+                      </td>
+                    </tr>
+                  )}
+                  {runs.map((r) => (
                     <tr key={r.run_id} className={cx("border-b border-ink-800 hover:bg-ink-800/60", ws.runId === r.run_id && "bg-stamp/[0.07]")}>
                       <td className="px-2">
                         <input
@@ -522,6 +544,11 @@ export function Playground({ projectId }: { projectId: string }) {
                   ))}
                 </tbody>
               </table>
+              {moreRuns && (
+                <div className="p-2 text-center">
+                  <Btn onClick={() => setRunLimit((n) => n + RUN_PAGE)}>加载更多（已显示最近 {runs.length} 条）</Btn>
+                </div>
+              )}
             </div>
           )}
         </div>

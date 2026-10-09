@@ -21,6 +21,8 @@ export function EditorPane(props: {
   onSaveVersion: (label: string) => Promise<boolean>;
   onPickFixture: (fixtureId: string) => void;
   onSnapshotsChanged: () => void;
+  /** 还有更早的快照未加载时提供 */
+  onMoreSnapshots?: () => void;
   projectId: string;
 }) {
   const [tab, setTab] = useState<EditorTab>("input");
@@ -49,7 +51,16 @@ export function EditorPane(props: {
       <div className="min-h-0 flex-1 overflow-auto p-3">
         {tab === "prompt" && <PromptTab versions={props.versions} isDraft={isDraft} onSave={props.onSaveVersion} />}
         {tab === "input" && (
-          <InputTab projectId={props.projectId} kind={props.kind} fixtures={props.fixtures} snapshots={props.snapshots} capability={props.capability} onPickFixture={props.onPickFixture} onSnapshotsChanged={props.onSnapshotsChanged} />
+          <InputTab
+            projectId={props.projectId}
+            kind={props.kind}
+            fixtures={props.fixtures}
+            snapshots={props.snapshots}
+            capability={props.capability}
+            onPickFixture={props.onPickFixture}
+            onSnapshotsChanged={props.onSnapshotsChanged}
+            onMoreSnapshots={props.onMoreSnapshots}
+          />
         )}
         {tab === "model" && <ModelTab provider={props.provider} />}
         {tab === "preview" && <PreviewTab fixtures={props.fixtures} />}
@@ -123,7 +134,7 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
   );
 }
 
-function InputTab({ projectId, kind, fixtures, snapshots, capability, onPickFixture, onSnapshotsChanged }: { projectId: string; kind: PromptKind; fixtures: FixtureSummary[]; snapshots: SnapshotListItem[]; capability: CapabilityDTO | null; onPickFixture: (fixtureId: string) => void; onSnapshotsChanged: () => void }) {
+function InputTab({ projectId, kind, fixtures, snapshots, capability, onPickFixture, onSnapshotsChanged, onMoreSnapshots }: { projectId: string; kind: PromptKind; fixtures: FixtureSummary[]; snapshots: SnapshotListItem[]; capability: CapabilityDTO | null; onPickFixture: (fixtureId: string) => void; onSnapshotsChanged: () => void; onMoreSnapshots?: () => void }) {
   const [ws, patch] = useWorkspace();
   const modes: [InputMode, string][] = [
     ["fixture", "样本库"],
@@ -143,7 +154,7 @@ function InputTab({ projectId, kind, fixtures, snapshots, capability, onPickFixt
       </div>
       {ws.inputMode === "fixture" && <FixtureList kind={kind} fixtures={fixtures} onPick={onPickFixture} />}
       {ws.inputMode === "paste" && <PasteInput />}
-      {ws.inputMode === "snapshot" && <SnapshotList projectId={projectId} kind={kind} snapshots={snapshots} onSnapshotsChanged={onSnapshotsChanged} />}
+      {ws.inputMode === "snapshot" && <SnapshotList projectId={projectId} kind={kind} snapshots={snapshots} onSnapshotsChanged={onSnapshotsChanged} onMore={onMoreSnapshots} />}
       {ws.inputMode === "upload" && <UploadInput projectId={projectId} kind={kind} onCreated={onSnapshotsChanged} />}
       {ws.inputMode === "jiuli" && <JiuliImport projectId={projectId} capability={capability} onCreated={onSnapshotsChanged} />}
     </div>
@@ -202,7 +213,7 @@ function PasteInput() {
 
 const KIND_SHORT: Record<string, string> = { JIULI_P1: "P1", JIULI_P2: "P2", JIULI_P3: "P3", JIULI_P4: "P4", GENERIC_JSON: "通用" };
 
-function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged }: { projectId: string; kind: PromptKind; snapshots: SnapshotListItem[]; onSnapshotsChanged: () => void }) {
+function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged, onMore }: { projectId: string; kind: PromptKind; snapshots: SnapshotListItem[]; onSnapshotsChanged: () => void; onMore?: () => void }) {
   const [ws, patch] = useWorkspace();
   const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -320,6 +331,11 @@ function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged }: { proj
           );
         })}
       </ul>
+      {onMore && (
+        <Btn onClick={onMore} className="w-full justify-center">
+          加载更早的快照（已显示最近 {snapshots.length} 个）
+        </Btn>
+      )}
       {err && <p className="text-[12px] text-stamp">{err}</p>}
     </div>
   );

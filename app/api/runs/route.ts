@@ -1,4 +1,4 @@
-import { body, fail, handle, ok } from "@/lib/api/respond";
+import { body, fail, handle, limitParam, ok } from "@/lib/api/respond";
 import type { ModelParams } from "@/lib/contracts/run";
 import { getFixture } from "@/lib/fixtures/catalog";
 import { snapshotForFixture } from "@/lib/fixtures/snapshot";
@@ -9,7 +9,7 @@ import { renderOnly, startModelRun } from "@/lib/runs/service";
 export const GET = (req: Request) =>
   handle(() => {
     const sp = new URL(req.url).searchParams;
-    return ok(listRuns(sp.get("project") ?? DEFAULT_PROJECT_ID, sp.get("promptId") ?? undefined));
+    return ok(listRuns(sp.get("project") ?? DEFAULT_PROJECT_ID, sp.get("promptId") ?? undefined, limitParam(sp, 100)));
   });
 
 interface RunBody {

@@ -288,7 +288,7 @@ test("多项目：新建项目、切换项目，运行按项目隔离；不存�
   await expect(page.getByRole("button", { name: "运行历史（1）" })).toBeVisible();
   await page.getByLabel("切换项目").selectOption("jiuli");
   await expect(page).toHaveURL(/\/projects\/jiuli\/playground/);
-  await expect(page.getByRole("button", { name: /运行历史（\d{2,}）/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /运行历史（\d{2,}\+?）/ })).toBeVisible();
   await page.goto("/projects/no-such-project/playground");
   await expect(page.getByTestId("project-missing")).toBeVisible();
 });
@@ -355,6 +355,29 @@ test("重渲染 / 回放 / 保存版本失败时显示错误，不静默", async
   await page.getByRole("button", { name: "保存为新版本" }).click();
   await expect(page.getByTestId("error-message")).toContainText("SAVE_BOOM");
   await expect(page.getByLabel("新版本名称")).toHaveValue("会失败的版本");
+});
+
+test("运行历史只列当前 Prompt，超过 100 条可加载更多；没有记录时显示空状态", async ({ page }) => {
+  const project = await page.request.post("/api/projects", { data: { name: `历史分页 ${Date.now()}`, template: "JIULI" } }).then((r) => r.json());
+  const pid: string = project.data.project_id;
+  const raw = await page.request.get("/api/fixtures/item?id=constructed/p1-v3-conflict.json").then((r) => r.json());
+  for (let i = 0; i < 101; i++) {
+    await page.request.post("/api/runs", { data: { mode: "RENDER_ONLY", projectId: pid, promptId: `${pid}-p1`, raw: raw.data.raw, label: `批量 ${i}` } });
+  }
+  await page.goto(`/projects/${pid}/playground`);
+  // 进入项目默认落在 P1，而不是通用 JSON
+  await expect(page.locator("header")).toContainText("P1 委托材料识别");
+  await page.getByRole("button", { name: "运行历史（100+）" }).click();
+  const rows = page.getByTestId("history").locator("tbody tr");
+  await expect(rows).toHaveCount(100);
+  await page.getByRole("button", { name: /加载更多/ }).click();
+  await expect(rows).toHaveCount(101);
+  await expect(page.getByRole("button", { name: /加载更多/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "运行历史（101）" })).toBeVisible();
+  // 其他 Prompt 没有记录：显示空状态，不借用 P1 的记录
+  await page.getByTestId("sidebar").locator("[data-prompt]").filter({ hasText: "查货材料识别" }).click();
+  await expect(page.getByTestId("history")).toContainText("当前 Prompt 还没有运行记录");
+  await expect(page.getByTestId("history").locator("tbody tr")).toHaveCount(1);
 });
 
 test("未登记 Schema 的结果不显示「解析成功」，结果区与历史均标为未校验", async ({ page }) => {
