@@ -1,7 +1,7 @@
 "use client";
 import type { ChangeView } from "@/lib/contracts/view-model";
 import { FIELD_LABELS } from "@/lib/schemas/common";
-import { useStudio } from "@/lib/state/studio-store";
+import { useAnnotatedPointers, useStudio } from "@/lib/state/studio-store";
 import { Badge, CellValue, cx, Empty, stateTone } from "@/components/ui";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -18,6 +18,7 @@ export function FieldDiff({ changes, filter }: { changes: ChangeView[]; filter?:
   const sel = useStudio((s) => s.selection);
   const select = useStudio((s) => s.select);
   const setStore = useStudio((s) => s.set);
+  const annotated = useAnnotatedPointers();
   const shown = changes.filter((c) => (filter ? filter(c) : true));
   return (
     <div data-region="field-diff">
@@ -45,6 +46,7 @@ export function FieldDiff({ changes, filter }: { changes: ChangeView[]; filter?:
                 <tr
                   key={c.id}
                   data-change-id={c.id}
+                  data-annotated={annotated.has(c.jsonPointer) ? "" : undefined}
                   onClick={() => {
                     select({ tableId: "fieldDecisions", rowId: c.id, fieldKey: "decision", jsonPointer: c.jsonPointer, sourceRefId: c.sourceRefIds[0] });
                     setStore("evidenceOpen", true);
@@ -53,6 +55,11 @@ export function FieldDiff({ changes, filter }: { changes: ChangeView[]; filter?:
                 >
                   <td className="px-2 py-1 whitespace-nowrap">
                     <span className="font-mono text-ink-400">{c.rowId}</span> · {FIELD_LABELS[c.field] ?? c.field}
+                    {annotated.has(c.jsonPointer) && (
+                      <span className="ml-1 rounded bg-info/20 px-1 text-[10px] text-info" title="已有标注（见右侧「来源与标注」）">
+                        标
+                      </span>
+                    )}
                   </td>
                   <td className="px-2 py-1">
                     <Badge tone={stateTone(c.action)}>{c.action}</Badge>

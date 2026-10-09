@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TableRow, TableView } from "@/lib/contracts/view-model";
-import { useStudio } from "@/lib/state/studio-store";
+import { useAnnotatedPointers, useStudio } from "@/lib/state/studio-store";
 import { Badge, CellValue, cx, Empty } from "@/components/ui";
 
 export interface DataTableOptions {
@@ -25,6 +25,7 @@ export function DataTable({ table, options = {} }: { table: TableView; options?:
   const sel = useStudio((s) => s.selection);
   const select = useStudio((s) => s.select);
   const setStore = useStudio((s) => s.set);
+  const annotated = useAnnotatedPointers();
   const hasCore = table.columns.some((c) => c.core !== undefined);
   const [preset, setPreset] = useState<"core" | "all">(options.fieldPreset ?? "all");
   const [q, setQ] = useState("");
@@ -120,6 +121,7 @@ export function DataTable({ table, options = {} }: { table: TableView; options?:
                         <td
                           key={c.key}
                           data-field={c.key}
+                          data-annotated={cell && annotated.has(cell.jsonPointer) ? "" : undefined}
                           onClick={() => {
                             if (!cell) return;
                             select({ tableId: table.id, rowId: r.id, fieldKey: c.key, jsonPointer: cell.jsonPointer, sourceRefId: cell.sourceRefIds[0] ?? r.sourceRefIds?.[0] });
@@ -137,6 +139,11 @@ export function DataTable({ table, options = {} }: { table: TableView; options?:
                           <div className="flex items-start gap-1 break-words">
                             {cell ? <CellValue value={cell.value} state={cell.state} kind={c.kind} /> : <span className="text-ink-700">—</span>}
                             {cell && cell.sourceRefIds.length > 0 && <span className="mt-[3px] h-1.5 w-1.5 shrink-0 rounded-full bg-verify/70" aria-label="有来源" />}
+                            {cell && annotated.has(cell.jsonPointer) && (
+                              <span className="shrink-0 rounded bg-info/20 px-1 text-[10px] leading-4 text-info" title="已有标注（见右侧「来源与标注」）">
+                                标
+                              </span>
+                            )}
                           </div>
                         </td>
                       );

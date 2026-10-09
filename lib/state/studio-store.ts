@@ -1,4 +1,5 @@
 "use client";
+import { useMemo } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import type { SelectionState } from "@/lib/contracts/renderer-config";
@@ -132,6 +133,12 @@ export const useStudio = create<StudioState>()(
     },
   ),
 );
+
+/** 当前 Run 中已有标注的 JSON 指针（表格据此显示标注角标） */
+export function useAnnotatedPointers(): Set<string> {
+  const anns = useStudio((s) => (s.selection.runId ? s.runs[s.selection.runId]?.annotations : undefined));
+  return useMemo(() => new Set((anns ?? []).map((a) => a.target_json_pointer).filter((p): p is string => !!p)), [anns]);
+}
 
 export function useWorkspace(): [Workspace, (patch: Partial<Workspace>) => void, string] {
   const id = useStudio((s) => s.activePromptId);

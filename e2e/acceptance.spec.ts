@@ -198,6 +198,22 @@ test("模型运行中显示已等待秒数；RUNNING 的 Run 结束后自动显�
   await expect(page.getByText("达到 max_tokens 被截断")).toBeVisible();
 });
 
+test("运行对比：显示关键指标、提示词差异区与输出差异", async ({ page }) => {
+  await renderFixture(page, "jiuli-p3", "constructed/p3-v3-multi-candidate.json");
+  await page.click('[data-fixture-id="constructed/p3-v3-unknown-enum.json"]');
+  await page.click('[data-testid="btn-render"]');
+  await page.getByRole("button", { name: /运行历史/ }).click();
+  const boxes = page.getByTestId("history").getByRole("checkbox");
+  await boxes.nth(0).check();
+  await boxes.nth(1).check();
+  await page.getByRole("button", { name: "对比 2/2" }).click();
+  const dialog = page.getByRole("dialog", { name: "对比两次运行" });
+  await expect(dialog.getByTestId("compare-metrics")).toContainText("Schema 错误数");
+  await expect(dialog.getByTestId("compare-metrics")).toContainText("原始响应 Hash");
+  await expect(dialog.getByText("至少一方没有记录实际发送的提示词").first()).toBeVisible();
+  await expect(dialog.getByText("输出 JSON 差异")).toBeVisible();
+});
+
 test("重渲染 / 回放 / 保存版本失败时显示错误，不静默", async ({ page }) => {
   await renderFixture(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
   const boom = (code: string) => (route: import("@playwright/test").Route) =>
@@ -225,6 +241,11 @@ test("标注独立保存，不改原始输出", async ({ page }) => {
   await page.getByLabel("标注备注").fill("模型应选箱单 GW");
   await page.getByRole("button", { name: "保存标注" }).click();
   await expect(page.getByTestId("annotation-form")).toContainText("正确值：2.4");
+  // 有标注的行显示角标；可导出 CSV
+  await expect(page.locator('[data-change-id="OR_001:gross_weight"]')).toHaveAttribute("data-annotated", "");
+  const csv = await page.request.get("/api/annotations/export?project=jiuli&format=csv").then((r) => r.text());
+  expect(csv.startsWith("﻿")).toBe(true);
+  expect(csv).toContain("模型应选箱单 GW");
   await page.getByRole("tab", { name: "运行信息" }).click();
   const hash = await page.locator("dd", { hasText: /^[0-9a-f]{64}$/ }).last().textContent();
   const raw = await page.request.get("/api/fixtures/item?id=constructed/p4-v3-conflict.json").then((r) => r.json());

@@ -365,7 +365,19 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
 
   return (
     <div className="border-t border-ink-700 pt-2" data-testid="annotation-form">
-      <h4 className="mb-1 text-[11.5px] font-semibold text-ink-300">评测标注（独立保存，不改模型输出）</h4>
+      <h4 className="mb-1 flex items-center gap-2 text-[11.5px] font-semibold text-ink-300">
+        评测标注（独立保存，不改模型输出）
+        <span className="ml-auto font-normal">
+          导出全部：
+          <a href={`/api/annotations/export?project=${detail.run.project_id}&format=csv`} className="text-info hover:underline" data-testid="export-annotations-csv">
+            CSV
+          </a>
+          {" / "}
+          <a href={`/api/annotations/export?project=${detail.run.project_id}&format=json`} target="_blank" rel="noopener noreferrer" className="text-info hover:underline">
+            JSON
+          </a>
+        </span>
+      </h4>
       <div className="space-y-1.5">
         <div className="text-[11px] text-ink-400">目标：{target ?? "（未选择，标注整个 Run）"}</div>
         <select value={type} onChange={(e) => setType(e.target.value)} aria-label="标注类型" className="w-full rounded border border-ink-700 bg-ink-950 px-1 py-0.5 text-[12px]">

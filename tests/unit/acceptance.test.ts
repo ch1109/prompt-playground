@@ -590,3 +590,39 @@ describe("运行中状态与截断诊断", () => {
     expect(r.error?.code).toBe("INTERRUPTED");
   });
 });
+
+describe("运行对比：提示词差异与关键指标", () => {
+  it("找出改动的提示词行，并列出状态/Token/Schema 错误数", async () => {
+    const { compareRuns } = await import("@/components/playground/run-compare");
+    const base = renderOnly({ projectId: "jiuli", promptId: "jiuli-p2", raw: "{}" });
+    const sys = ["第一行", "read_status 每项为 {...}", "第三行"].join("\n");
+    const a = { ...base, mode: "MODEL_RUN" as const, status: "SCHEMA_INVALID" as const, actual_prompt: { system: sys, user: "U" }, token_usage: { prompt_tokens: 3005, completion_tokens: 10564 }, built_input_hash: "h1",
+      schema_diagnostics: [{ phase: "SCHEMA" as const, level: "ERROR" as const, code: "SCHEMA_TYPE", message: "x", jsonPointer: "/output/read_status" }] };
+    const b = { ...a, status: "SUCCEEDED" as const, actual_prompt: { system: sys.replace("read_status 每项为", "read_status 必须是数组，每项为"), user: "U" }, token_usage: { prompt_tokens: 3015, completion_tokens: 13840 }, schema_diagnostics: [] };
+    const c = compareRuns(a, b);
+    expect(c.system!.flatMap((h) => h.lines)).toEqual(expect.arrayContaining(["-read_status 每项为 {...}", "+read_status 必须是数组，每项为 {...}"]));
+    expect(c.user).toEqual([]);
+    const row = (k: string) => c.metrics.find((m) => m.key === k)!;
+    expect(row("状态")).toMatchObject({ a: "SCHEMA_INVALID", b: "SUCCEEDED", differs: true });
+    expect(row("Schema 错误数")).toMatchObject({ a: "1", b: "0" });
+    expect(row("构造输入 Hash")).toMatchObject({ differs: false });
+    // 仅渲染的 Run 没有提示词：明确为 null，而不是"无差异"
+    expect(compareRuns(base, b).system).toBeNull();
+  });
+});
+
+describe("标注导出", () => {
+  it("导出行带 Run 信息与模型原值；CSV 含 BOM 并正确转义", async () => {
+    const { exportAnnotations, annotationsToCsv } = await import("@/lib/repositories/annotations-export");
+    const f = fx("constructed/p1-v3-conflict.json");
+    const run = renderOnly({ projectId: "jiuli", promptId: "jiuli-p1", raw: f.raw, label: "导出测试" });
+    addAnnotation({ run_id: run.run_id, target_json_pointer: "/output/rows/0/values/model", target: "orderRows / row-1 / model", issue_type: "CORRECT_VALUE", expected_value: 'ABC-02 "正确"', note: "第一行\n第二行" });
+    const rows = exportAnnotations("jiuli").filter((r) => r.run_id === run.run_id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ run_label: "导出测试", prompt_kind: "JIULI_P1", issue_type: "CORRECT_VALUE", model_value: "ABC-01", expected_value: 'ABC-02 "正确"' });
+    const csv = annotationsToCsv(rows);
+    expect(csv.startsWith("﻿")).toBe(true);
+    expect(csv).toContain('"ABC-02 ""正确"""');
+    expect(csv).toContain('"第一行\n第二行"');
+  });
+});
