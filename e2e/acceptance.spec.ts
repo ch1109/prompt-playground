@@ -110,6 +110,14 @@ test("在 P3/P4 下打开上传文件时事先说明原件只能构造 P1/P2", a
   await expect(page.getByTestId("upload-kind-note")).toHaveCount(0);
 });
 
+test("样本运行的证据只有元数据时说明原因", async ({ page }) => {
+  await renderFixture(page, "jiuli-p1", "v3/SC-08-audit/P1");
+  await page.locator('[data-table-id="orderRows"] [data-row-id="row-1"] [data-field="model"]').click();
+  const drawer = page.getByTestId("evidence-drawer");
+  await expect(drawer.getByText("METADATA_ONLY").first()).toBeVisible();
+  await expect(drawer.getByTestId("evidence-note").first()).toContainText("样本只带模型输出与请求");
+});
+
 test("AT19 来源无原文：显示 METADATA_ONLY / MISSING，不提供越权下载", async ({ page }) => {
   await renderFixture(page, "jiuli-p3", "constructed/p3-v3-multi-candidate.json");
   await page.locator('[data-table-id="orderRows"] [data-row-id="OR_001"] [data-field="match_status"]').click();

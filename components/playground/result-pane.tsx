@@ -168,7 +168,7 @@ export function ResultPane({
           </div>
           <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
             <SelectionInfo />
-            {vm ? <EvidenceViewer vm={vm} canPreview={canPreview} /> : <p className="text-[12px] text-ink-400">无业务视图，无法定位来源。</p>}
+            {vm ? <EvidenceViewer vm={vm} canPreview={canPreview} snapshotSource={detail?.snapshot?.source_type} /> : <p className="text-[12px] text-ink-400">无业务视图，无法定位来源。</p>}
             <AnnotationForm detail={detail!} />
           </div>
         </aside>

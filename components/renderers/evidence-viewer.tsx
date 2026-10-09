@@ -28,17 +28,31 @@ export function selectedRefIds(vm: ViewModel, sel: ReturnType<typeof useStudio.g
   return null;
 }
 
-export function EvidenceCard({ e, active, canPreview }: { e: EvidenceView; active?: boolean; canPreview: boolean }) {
+/** 可用性之外的补充说明：让徽章与能否打开原件保持一致，并说明"只有元数据"的原因 */
+export function availabilityNote(e: EvidenceView, previewable: boolean, snapshotSource?: string | null): string | null {
+  if (e.availability === "AVAILABLE" && e.fileId && !previewable) return "原件在快照中登记为可用，但当前九立连接未接通，暂时无法打开。";
+  if (e.availability === "METADATA_ONLY" && snapshotSource === "FIXTURE") return "样本只带模型输出与请求，不含原件文件，所以只有元数据。想核对原件，可从九立导入同一任务后再运行。";
+  return null;
+}
+
+export function EvidenceCard({ e, active, canPreview, snapshotSource }: { e: EvidenceView; active?: boolean; canPreview: boolean; snapshotSource?: string | null }) {
   const select = useStudio((s) => s.select);
   const setStore = useStudio((s) => s.set);
   const sel = useStudio((s) => s.selection);
   const a = AVAIL[e.availability];
+  const previewable = !!e.fileId && (canPreview || e.fileId.startsWith("U-"));
+  const note = availabilityNote(e, previewable, snapshotSource);
   return (
     <div data-evidence-id={e.id} className={cx("rounded border border-ink-700 bg-ink-950/60 p-2", active && "border-stamp/70")}>
       <div className="flex flex-wrap items-center gap-1.5">
         <Badge tone={a.tone}>{e.availability}</Badge>
         <span className="text-[11px] text-ink-400">{a.text}</span>
       </div>
+      {note && (
+        <p className="mt-1 text-[11px] text-risk" data-testid="evidence-note">
+          {note}
+        </p>
+      )}
       {e.label && <div className="mt-1 text-[12px] text-ink-100">{e.label}</div>}
       <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-2 text-[11px] text-ink-300">
         <dt className="text-ink-400">文件</dt>
@@ -67,7 +81,7 @@ export function EvidenceCard({ e, active, canPreview }: { e: EvidenceView; activ
             在 JSON 中定位
           </button>
         )}
-        {e.availability === "AVAILABLE" && e.fileId && (canPreview || e.fileId.startsWith("U-")) && (
+        {e.availability === "AVAILABLE" && previewable && (
           <a href={previewHref(e)} target="_blank" rel="noopener noreferrer" className="text-[11px] text-verify hover:underline">
             {e.page != null ? `打开原文件第 ${e.page} 页（授权预览）` : "打开原文件（授权预览）"}
           </a>
@@ -77,7 +91,7 @@ export function EvidenceCard({ e, active, canPreview }: { e: EvidenceView; activ
   );
 }
 
-export function EvidenceViewer({ vm, canPreview }: { vm: ViewModel; canPreview: boolean }) {
+export function EvidenceViewer({ vm, canPreview, snapshotSource }: { vm: ViewModel; canPreview: boolean; snapshotSource?: string | null }) {
   const sel = useStudio((s) => s.selection);
   const refs = selectedRefIds(vm, sel);
   const byId = new Map(vm.evidence.map((e) => [e.id, e]));
@@ -90,7 +104,7 @@ export function EvidenceViewer({ vm, canPreview }: { vm: ViewModel; canPreview: 
     <div className="space-y-2">
       {refs.map((id) => {
         const e = byId.get(id);
-        return e ? <EvidenceCard key={id} e={e} active={sel.sourceRefId === id} canPreview={canPreview} /> : <div key={id} className="text-[12px] text-stamp">引用 {id} 无法定位</div>;
+        return e ? <EvidenceCard key={id} e={e} active={sel.sourceRefId === id} canPreview={canPreview} snapshotSource={snapshotSource} /> : <div key={id} className="text-[12px] text-stamp">引用 {id} 无法定位</div>;
       })}
     </div>
   );

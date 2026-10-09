@@ -796,6 +796,18 @@ describe.skipIf(!hasDemo)("九立导入 P1 带辅助材料", () => {
   });
 });
 
+describe("证据可用性说明", () => {
+  it("可用但当前打不开时说明原因；样本只有元数据时说明原因；其余不额外提示", async () => {
+    const { availabilityNote } = await import("@/components/renderers/evidence-viewer");
+    const ev = (availability: "AVAILABLE" | "METADATA_ONLY" | "MISSING" | "FORBIDDEN") => ({ id: "e", fileId: "F-1", availability }) as Parameters<typeof availabilityNote>[0];
+    expect(availabilityNote(ev("AVAILABLE"), false)).toContain("暂时无法打开");
+    expect(availabilityNote(ev("AVAILABLE"), true)).toBeNull();
+    expect(availabilityNote(ev("METADATA_ONLY"), false, "FIXTURE")).toContain("样本");
+    expect(availabilityNote(ev("METADATA_ONLY"), false, "JIULI_READONLY")).toBeNull();
+    expect(availabilityNote(ev("FORBIDDEN"), false, "FIXTURE")).toBeNull();
+  });
+});
+
 describe("证据按页跳转", () => {
   it("有页码时预览链接带 #page=N，无页码时不带", async () => {
     const { previewHref } = await import("@/components/renderers/evidence-viewer");
