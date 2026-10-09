@@ -163,10 +163,19 @@ export async function previewModelRun(input: { promptId: string; snapshotId: str
   };
 }
 
+type ModelRunInput = Base & { snapshotId: string; system: string; userTemplate: string; promptVersionId?: string | null; params: ModelParams; attachImages?: boolean };
+
 /** MODEL_RUN：服务端代理真实模型调用；失败保存失败 Run，绝不回退为 Mock */
-export async function modelRun(
-  input: Base & { snapshotId: string; system: string; userTemplate: string; promptVersionId?: string | null; params: ModelParams; attachImages?: boolean },
-): Promise<Run> {
+export async function modelRun(input: ModelRunInput): Promise<Run> {
+  return startModelRun(input).done;
+}
+
+/**
+ * 登记 RUNNING Run 后立即返回 runId，模型调用在后台继续（done 结束时 Run 已落到终态）。
+ * 浏览器拿到 runId 即可轮询，刷新或关闭页面也不会丢失这次运行。
+ * 开始前就能发现的问题（未配置、输入无法构造、文件格式不支持）直接抛错，不留下 RUNNING 记录。
+ */
+export function startModelRun(input: ModelRunInput): { runId: string; done: Promise<Run> } {
   const prompt = loadPrompt(input.promptId);
   const snapshot = loadSnapshot(input.snapshotId)!;
   const provider = getProvider();
@@ -219,59 +228,65 @@ export async function modelRun(
   // 先登记 RUNNING：调用期间历史中可见；进程中断时启动会标为 INTERRUPTED
   startRun({ ...common, ...noResult, status: "RUNNING", ended_at: null, latency_ms: null, raw_response: "", raw_response_hash: "", error: null });
 
-  try {
-    const pages = input.attachImages ? await buildPageImages(referencedFileIds(built.request)) : null;
-    const images = pages?.images.map((i) => ({ mediaType: i.media_type, base64: i.base64 }));
-    const result = await provider.complete({ system: input.system, user, params: input.params, images });
-    const done = {
-      ...common,
-      // 附带图片时，图片 hash 也计入实际提示词 hash
-      actual_prompt_hash: pages?.images.length ? contentHash(input.system, `${user}\n${pages.images.map((i) => i.sha256).join(",")}`) : common.actual_prompt_hash,
-      attached_images: pages ? pages.images.map(({ base64: _b, ...m }) => m) : null,
-      input_builder_warnings: [...built.warnings, ...(pages?.warnings ?? [])],
-      ended_at: new Date().toISOString(),
-      latency_ms: result.latencyMs,
-    };
+  const request = built.request;
+  const builderWarnings = built.warnings;
+  return { runId, done: finishModelRun() };
 
-    if (!result.ok) {
-      const raw = result.partialRaw ?? "";
-      return finishRun({ ...done, ...noResult, status: "MODEL_ERROR", raw_response: raw, raw_response_hash: sha256(raw), error: { code: result.code, message: result.message } });
+  async function finishModelRun(): Promise<Run> {
+    try {
+      const pages = input.attachImages ? await buildPageImages(referencedFileIds(request)) : null;
+      const images = pages?.images.map((i) => ({ mediaType: i.media_type, base64: i.base64 }));
+      const result = await provider.complete({ system: input.system, user, params: input.params, images });
+      const done = {
+        ...common,
+        // 附带图片时，图片 hash 也计入实际提示词 hash
+        actual_prompt_hash: pages?.images.length ? contentHash(input.system, `${user}\n${pages.images.map((i) => i.sha256).join(",")}`) : common.actual_prompt_hash,
+        attached_images: pages ? pages.images.map(({ base64: _b, ...m }) => m) : null,
+        input_builder_warnings: [...builderWarnings, ...(pages?.warnings ?? [])],
+        ended_at: new Date().toISOString(),
+        latency_ms: result.latencyMs,
+      };
+
+      if (!result.ok) {
+        const raw = result.partialRaw ?? "";
+        return finishRun({ ...done, ...noResult, status: "MODEL_ERROR", raw_response: raw, raw_response_hash: sha256(raw), error: { code: result.code, message: result.message } });
+      }
+
+      const finishReason = typeof result.responseMeta.finish_reason === "string" ? result.responseMeta.finish_reason : null;
+      const pr = runPipeline({ raw: result.raw, promptKind: prompt.prompt_kind, context: { ...contextFromSnapshot(runId, prompt.prompt_kind, snapshot), request: request } });
+      // 达到 max_tokens 被截断：单独说明原因，避免只看到"JSON 解析失败"
+      const truncated: Diagnostic[] =
+        finishReason === "length"
+          ? [{ phase: "PARSE", level: "ERROR", code: "MODEL_OUTPUT_TRUNCATED", message: `模型输出达到 max_tokens 上限被截断（finish_reason=length，max_tokens=${input.params.max_tokens ?? "服务商默认"}）。可调大 max_tokens 后重跑。` }]
+          : [];
+      const diag = diagByPhase(pr);
+      return finishRun({
+        ...done,
+        ...versionsOf(pr),
+        status: pr.status,
+        raw_response: result.raw,
+        raw_response_hash: sha256(result.raw),
+        parsed_json: pr.parse.value,
+        parse_diagnostics: [...truncated, ...diag.parse_diagnostics],
+        schema_diagnostics: diag.schema_diagnostics,
+        view_model: pr.viewModel ? { ...pr.viewModel, diagnostics: [...truncated, ...pr.viewModel.diagnostics] } : null,
+        token_usage: result.usage,
+        finish_reason: finishReason,
+        error: null,
+      });
+    } catch (e) {
+      // 任何意外异常也要落到终态，不能永远停在 RUNNING
+      return finishRun({
+        ...common,
+        ...noResult,
+        ended_at: new Date().toISOString(),
+        latency_ms: null,
+        status: "MODEL_ERROR",
+        raw_response: "",
+        raw_response_hash: sha256(""),
+        error: { code: "RUN_INTERNAL_ERROR", message: redactSecrets(e instanceof Error ? e.message : String(e)) },
+      });
     }
-
-    const finishReason = typeof result.responseMeta.finish_reason === "string" ? result.responseMeta.finish_reason : null;
-    const pr = runPipeline({ raw: result.raw, promptKind: prompt.prompt_kind, context: { ...contextFromSnapshot(runId, prompt.prompt_kind, snapshot), request: built.request } });
-    // 达到 max_tokens 被截断：单独说明原因，避免只看到"JSON 解析失败"
-    const truncated: Diagnostic[] =
-      finishReason === "length"
-        ? [{ phase: "PARSE", level: "ERROR", code: "MODEL_OUTPUT_TRUNCATED", message: `模型输出达到 max_tokens 上限被截断（finish_reason=length，max_tokens=${input.params.max_tokens ?? "服务商默认"}）。可调大 max_tokens 后重跑。` }]
-        : [];
-    const diag = diagByPhase(pr);
-    return finishRun({
-      ...done,
-      ...versionsOf(pr),
-      status: pr.status,
-      raw_response: result.raw,
-      raw_response_hash: sha256(result.raw),
-      parsed_json: pr.parse.value,
-      parse_diagnostics: [...truncated, ...diag.parse_diagnostics],
-      schema_diagnostics: diag.schema_diagnostics,
-      view_model: pr.viewModel ? { ...pr.viewModel, diagnostics: [...truncated, ...pr.viewModel.diagnostics] } : null,
-      token_usage: result.usage,
-      finish_reason: finishReason,
-      error: null,
-    });
-  } catch (e) {
-    // 任何意外异常也要落到终态，不能永远停在 RUNNING
-    return finishRun({
-      ...common,
-      ...noResult,
-      ended_at: new Date().toISOString(),
-      latency_ms: null,
-      status: "MODEL_ERROR",
-      raw_response: "",
-      raw_response_hash: sha256(""),
-      error: { code: "RUN_INTERNAL_ERROR", message: redactSecrets(e instanceof Error ? e.message : String(e)) },
-    });
   }
 }
 

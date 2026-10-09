@@ -47,8 +47,6 @@ export function Playground({ projectId }: { projectId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [compare, setCompare] = useState<string[]>([]);
   const [showCompare, setShowCompare] = useState(false);
-  /** 本窗口发起的模型调用开始时间（显示已等待秒数） */
-  const [runningSince, setRunningSince] = useState<number | null>(null);
   const narrow = useNarrow();
   const [narrowPane, setNarrowPane] = useState<"editor" | "result">("editor");
 
@@ -108,6 +106,14 @@ export function Playground({ projectId }: { projectId: string }) {
     }, 3000);
     return () => clearInterval(t);
   }, [runningRunId, s, loadRuns]);
+
+  // 历史中有运行中的记录（可能来自其他窗口或刷新前）：定时刷新，状态不停在「运行中」
+  const anyRunning = runs.some((r) => r.status === "RUNNING");
+  useEffect(() => {
+    if (!anyRunning) return;
+    const t = setInterval(loadRuns, 3000);
+    return () => clearInterval(t);
+  }, [anyRunning, loadRuns]);
 
   const loadSnapshots = useCallback(() => api<SnapshotListItem[]>(`/api/snapshots?project=${projectId}`).then(setSnapshots), [projectId]);
 
@@ -213,10 +219,7 @@ export function Playground({ projectId }: { projectId: string }) {
   async function modelRun() {
     setError(null);
     setBusy(true);
-    setRunningSince(Date.now());
     setNarrowPane("result");
-    // 调用期间定时刷新历史，让 RUNNING 记录可见
-    const poll = setInterval(loadRuns, 3000);
     try {
       // 与请求预览同一来源（runSnapshotId）；样本快照尚未就绪时在此补建
       let w = ws;
@@ -233,13 +236,12 @@ export function Playground({ projectId }: { projectId: string }) {
       const run = await api<{ run_id: string }>("/api/runs", {
         json: { mode: "MODEL_RUN", projectId, promptId, snapshotId, system: w.system, userTemplate: w.userTemplate, promptVersionId: w.versionId, params: w.params, attachImages: w.attachImages },
       });
+      // 服务端登记 RUNNING 后立即返回：先打开这条 Run（ID 存入工作区，刷新也能接上），结果由轮询自动显示
       await openRun(run.run_id, { sig: inputSignature(w, "MODEL_RUN"), mode: "MODEL_RUN" });
       loadRuns();
     } catch (e) {
       setError(e instanceof ApiError ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : String(e));
     } finally {
-      clearInterval(poll);
-      setRunningSince(null);
       setBusy(false);
     }
   }
@@ -328,7 +330,13 @@ export function Playground({ projectId }: { projectId: string }) {
           <Btn tone="outline" onClick={renderOnly} disabled={busy} data-testid="btn-render">
             ▤ 仅渲染
           </Btn>
-          <Btn tone="primary" onClick={modelRun} disabled={busy || !provider?.configured} title={provider?.configured ? "调用真实模型" : "未配置模型"} data-testid="btn-run">
+          <Btn
+            tone="primary"
+            onClick={modelRun}
+            disabled={busy || !provider?.configured || runningRunId !== null}
+            title={!provider?.configured ? "未配置模型" : runningRunId ? "当前 Prompt 的上一次运行尚未结束" : "调用真实模型"}
+            data-testid="btn-run"
+          >
             ▶ 运行模型
           </Btn>
           <Btn onClick={() => setShowCompare(true)} disabled={compare.length !== 2}>
@@ -464,7 +472,7 @@ export function Playground({ projectId }: { projectId: string }) {
                     该项目不存在或没有提示词。请在左侧切换或新建项目。
                   </p>
                 ) : (
-                  <ResultPane detail={detail} dirty={dirty} canPreview={capability?.status === "CONNECTED_DEMO_FILES"} loading={busy} runningSince={runningSince} />
+                  <ResultPane detail={detail} dirty={dirty} canPreview={capability?.status === "CONNECTED_DEMO_FILES"} loading={busy} />
                 )}
               </div>
             )}

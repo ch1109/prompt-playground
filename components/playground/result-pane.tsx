@@ -48,7 +48,7 @@ function Elapsed({ since }: { since: number }) {
   return <>{Math.max(0, Math.round((now - since) / 1000))}</>;
 }
 
-export function ResultPane({ detail, dirty, canPreview, loading, runningSince }: { detail?: RunDetail; dirty: boolean; canPreview: boolean; loading: boolean; runningSince?: number | null }) {
+export function ResultPane({ detail, dirty, canPreview, loading }: { detail?: RunDetail; dirty: boolean; canPreview: boolean; loading: boolean }) {
   const tab = useStudio((s) => s.resultTab);
   const setStore = useStudio((s) => s.set);
   const maximized = useStudio((s) => s.maximized);
@@ -89,14 +89,13 @@ export function ResultPane({ detail, dirty, canPreview, loading, runningSince }:
         </div>
       </div>
 
-      {runningSince && (
+      {run?.status === "RUNNING" && (
         <Banner tone="info">
           <span data-testid="running-banner">
-            模型运行中… 已等待 <Elapsed since={runningSince} /> 秒（超时上限约 300 秒）。「运行历史」中可看到这条运行中的记录。
+            模型运行中… 已等待 <Elapsed since={Date.parse(run.started_at)} /> 秒（超时上限约 300 秒）。结果返回后自动显示；刷新或关闭页面不影响这次运行。
           </span>
         </Banner>
       )}
-      {run?.status === "RUNNING" && !runningSince && <Banner tone="info">该运行仍在进行中（可能在刷新前或其他窗口发起），结果返回后自动显示。</Banner>}
       {run?.finish_reason === "length" && (
         <Banner tone="bad">模型输出达到 max_tokens 上限被截断（finish_reason=length）。请在「模型」页调大 max_tokens 后重跑。</Banner>
       )}

@@ -4,7 +4,7 @@ import { getFixture } from "@/lib/fixtures/catalog";
 import { snapshotForFixture } from "@/lib/fixtures/snapshot";
 import { DEFAULT_PROJECT_ID } from "@/lib/repositories/prompts";
 import { listRuns } from "@/lib/repositories/runs";
-import { modelRun, renderOnly } from "@/lib/runs/service";
+import { renderOnly, startModelRun } from "@/lib/runs/service";
 
 export const GET = (req: Request) =>
   handle(() => {
@@ -48,10 +48,10 @@ export const POST = (req: Request) =>
     if (b.mode === "MODEL_RUN") {
       if (!b.snapshotId) return fail("BAD_REQUEST", "真实运行必须选择输入快照");
       if (typeof b.system !== "string" || typeof b.userTemplate !== "string") return fail("BAD_REQUEST", "缺少提示词");
-      return ok(
-        await modelRun({ projectId, promptId: b.promptId, snapshotId: b.snapshotId, system: b.system, userTemplate: b.userTemplate, promptVersionId: b.promptVersionId, params: b.params ?? {}, attachImages: b.attachImages, label: b.label }),
-        201,
-      );
+      // 登记 RUNNING 后立即返回 run_id，模型在后台运行；浏览器凭 run_id 轮询，刷新页面不丢失
+      const { runId, done } = startModelRun({ projectId, promptId: b.promptId, snapshotId: b.snapshotId, system: b.system, userTemplate: b.userTemplate, promptVersionId: b.promptVersionId, params: b.params ?? {}, attachImages: b.attachImages, label: b.label });
+      done.catch((e) => console.error(`Run ${runId} 收尾失败`, e));
+      return ok({ run_id: runId, status: "RUNNING" }, 202);
     }
     return fail("BAD_REQUEST", "mode 只能是 RENDER_ONLY 或 MODEL_RUN");
   });

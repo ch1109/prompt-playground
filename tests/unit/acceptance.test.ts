@@ -573,6 +573,29 @@ describe("运行中状态与截断诊断", () => {
     expect(getRun(done.run_id)!.raw_response_hash).toBe(createHash("sha256").update(fx("v3/SC-08/P1").raw).digest("hex"));
   });
 
+  it("开始运行立即返回 Run ID（不等模型）：刷新页面后可凭 ID 继续等待结果", async () => {
+    let release!: (r: Response) => void;
+    setProviderForTests(new OpenAICompatibleProvider(cfg, fakeFetch(() => new Promise<Response>((r) => (release = r)))));
+    const { startModelRun } = await import("@/lib/runs/service");
+    const { runId, done } = startModelRun({ projectId: "jiuli", promptId: "jiuli-p1", snapshotId: snap().snapshot_id, system: "S", userTemplate: "{{input_json}}", params: {} });
+    expect(getRun(runId)!.status).toBe("RUNNING");
+    await new Promise((r) => setTimeout(r, 20));
+    release(okBody(fx("v3/SC-08/P1").raw));
+    expect((await done).status).toBe("SUCCEEDED");
+    setProviderForTests(undefined);
+    expect(getRun(runId)!.status).toBe("SUCCEEDED");
+  });
+
+  it("开始前就能发现的问题（如未配置模型）直接报错，不留下 RUNNING 记录", async () => {
+    const { startModelRun } = await import("@/lib/runs/service");
+    const { listRuns } = await import("@/lib/repositories/runs");
+    const before = listRuns("jiuli").length;
+    setProviderForTests(new OpenAICompatibleProvider({ baseUrl: "", model: "", apiKey: "" }));
+    expect(() => startModelRun({ projectId: "jiuli", promptId: "jiuli-p1", snapshotId: snap().snapshot_id, system: "S", userTemplate: "{{input_json}}", params: {} })).toThrow(RunServiceError);
+    setProviderForTests(undefined);
+    expect(listRuns("jiuli").length).toBe(before);
+  });
+
   it("finish_reason=length → 记录结束原因并给出截断诊断", async () => {
     setProviderForTests(new OpenAICompatibleProvider(cfg, fakeFetch(async () => okBody('{"schema_version":"jiuli-ai-v3","out', "length"))));
     const run = await modelRun({ projectId: "jiuli", promptId: "jiuli-p1", snapshotId: snap().snapshot_id, system: "S", userTemplate: "{{input_json}}", params: { max_tokens: 10 } });

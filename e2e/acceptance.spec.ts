@@ -158,44 +158,52 @@ test("刷新页面不丢工作区：草稿、输入选择、当前结果都恢�
   expect(consoleErrors).toEqual([]);
 });
 
-test("模型运行中显示已等待秒数；RUNNING 的 Run 结束后自动显示；截断有明确提示", async ({ page }) => {
-  // 1) 本窗口发起的调用：用拦截模拟"已配置模型 + 慢响应"
+test("模型运行中显示已等待秒数；刷新页面后仍接着等待并自动显示结果；截断有明确提示", async ({ page }) => {
+  // 用一个已有的 Run 模拟"刚开始的模型运行"：finished 之前查询返回 RUNNING，之后返回真实结果（并标为截断）
+  await renderFixture(page, "jiuli-p1", "v3/SC-08-audit/P1");
+  const runs = await page.request.get("/api/runs?project=jiuli&promptId=jiuli-p1").then((r) => r.json());
+  const runId: string = runs.data[0].run_id;
+  let finished = false;
+  await page.route(`**/api/runs/${runId}`, async (r) => {
+    const res = await r.fetch();
+    const body = await res.json();
+    if (!finished) body.data.run = { ...body.data.run, status: "RUNNING", view_model: null, started_at: new Date(Date.now() - 5000).toISOString() };
+    else body.data.run = { ...body.data.run, finish_reason: "length" };
+    await r.fulfill({ response: res, json: body });
+  });
+  await page.route("**/api/models", (r) =>
+    r.fulfill({ json: { ok: true, data: { provider: "openai-compatible@fake", model: "fake", configured: true, supportsFileInput: false, adapterVersion: "1.0.0" }, request_id: "x" } }),
+  );
+  await page.route("**/api/runs", (r) => (r.request().method() === "POST" ? r.fulfill({ status: 202, json: { ok: true, data: { run_id: runId, status: "RUNNING" }, request_id: "x" } }) : r.continue()));
+  await page.reload();
+  await page.getByTestId("btn-run").click();
+  await expect(page.getByTestId("running-banner")).toContainText("已等待");
+  // 运行中不能重复发起
+  await expect(page.getByTestId("btn-run")).toBeDisabled();
+  // 运行中刷新页面：仍显示这条运行，结束后自动显示结果
+  await page.reload();
+  await expect(page.getByTestId("running-banner")).toBeVisible();
+  finished = true;
+  await expect(page.getByTestId("running-banner")).toHaveCount(0, { timeout: 10000 });
+  await expect(page.getByText("被截断（finish_reason=length）")).toBeVisible();
+  await page.getByRole("tab", { name: "运行信息" }).click();
+  await expect(page.getByText("达到 max_tokens 被截断")).toBeVisible();
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("模型运行开始前的错误直接显示在顶栏，不出现运行中提示", async ({ page }) => {
   await page.route("**/api/models", (r) =>
     r.fulfill({ json: { ok: true, data: { provider: "openai-compatible@fake", model: "fake", configured: true, supportsFileInput: false, adapterVersion: "1.0.0" }, request_id: "x" } }),
   );
   await page.goto("/projects/jiuli/playground");
   await page.click('[data-prompt="jiuli-p1"]');
   await page.click('[data-fixture-id="v3/SC-08-audit/P1"]');
-  await page.route("**/api/runs", async (r) => {
-    if (r.request().method() !== "POST") return r.continue();
-    await new Promise((res) => setTimeout(res, 2500));
-    await r.fulfill({ status: 502, json: { ok: false, error: { code: "FAKE_SLOW", message: "模拟慢调用结束" }, request_id: "x" } });
-  });
+  await page.route("**/api/runs", (r) =>
+    r.request().method() === "POST" ? r.fulfill({ status: 400, json: { ok: false, error: { code: "FILE_INPUT_UNSUPPORTED", message: "模拟阻断" }, request_id: "x" } }) : r.continue(),
+  );
   await page.getByTestId("btn-run").click();
-  await expect(page.getByTestId("running-banner")).toContainText("已等待");
-  await expect(page.getByTestId("error-message")).toContainText("FAKE_SLOW");
+  await expect(page.getByTestId("error-message")).toContainText("FILE_INPUT_UNSUPPORTED");
   await expect(page.getByTestId("running-banner")).toHaveCount(0);
-  await page.unroute("**/api/runs");
-
-  // 2) 打开一个仍在 RUNNING 的 Run：结束后自动显示；3) 截断提示
-  await page.click('[data-testid="btn-render"]');
-  await expect(page.locator('[data-table-id="orderRows"]')).toBeVisible();
-  let calls = 0;
-  await page.route(/\/api\/runs\/run_[^/]+$/, async (r) => {
-    const res = await r.fetch();
-    const body = await res.json();
-    calls++;
-    if (calls <= 1) body.data.run = { ...body.data.run, status: "RUNNING", view_model: null };
-    else body.data.run = { ...body.data.run, finish_reason: "length" };
-    await r.fulfill({ response: res, json: body });
-  });
-  await page.getByRole("button", { name: /运行历史/ }).click();
-  await page.getByTestId("history").getByRole("button", { name: "回放" }).first().click();
-  await expect(page.getByText("该运行仍在进行中")).toBeVisible();
-  await expect(page.getByText("该运行仍在进行中")).toHaveCount(0, { timeout: 8000 });
-  await expect(page.getByText("被截断（finish_reason=length）")).toBeVisible();
-  await page.getByRole("tab", { name: "运行信息" }).click();
-  await expect(page.getByText("达到 max_tokens 被截断")).toBeVisible();
 });
 
 test("AT26 快照刷新生成新快照（记录来源），快照列表按 Prompt 过滤", async ({ page }) => {
