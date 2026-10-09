@@ -409,6 +409,11 @@ function UploadInput({ projectId, kind, onCreated }: { projectId: string; kind: 
 
   return (
     <div className="space-y-2 text-[12px]" data-testid="upload-input">
+      {(kind === "JIULI_P3" || kind === "JIULI_P4") && (
+        <p className="rounded border border-risk/40 bg-risk/10 px-2 py-1 text-risk" data-testid="upload-kind-note">
+          原件只能构造 P1（委托单/发票/箱单）和 P2（查货文件）的输入；{kind === "JIULI_P3" ? "P3" : "P4"} 需要上游的结构化结果，不能直接由原件构造。仍可上传，建好的快照可切到 P1 / P2 使用。
+        </p>
+      )}
       <p className="text-[11px] text-ink-400">
         支持 PDF、Excel（xlsx/xls）、PNG、JPG，单个最大 30MB。文字型 PDF 与 Excel 会抽取文本；扫描件和图片没有文本，需在「模型」页勾选「附带原件图片」。原件只保存在 Studio 私有目录，不写回九立。
       </p>

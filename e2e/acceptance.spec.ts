@@ -99,6 +99,17 @@ test("空状态按情况引导：有样本的 Prompt 指向样本库，空白项
   await expect(pane).toContainText("样本库");
 });
 
+test("在 P3/P4 下打开上传文件时事先说明原件只能构造 P1/P2", async ({ page }) => {
+  await page.goto("/projects/jiuli/playground");
+  await page.click('[data-prompt="jiuli-p3"]');
+  await page.getByRole("button", { name: "上传文件" }).click();
+  await expect(page.getByTestId("upload-kind-note")).toContainText("P3 需要上游的结构化结果");
+  await page.click('[data-prompt="jiuli-p1"]');
+  await page.getByRole("button", { name: "上传文件" }).click();
+  await expect(page.getByTestId("upload-input")).toBeVisible();
+  await expect(page.getByTestId("upload-kind-note")).toHaveCount(0);
+});
+
 test("AT19 来源无原文：显示 METADATA_ONLY / MISSING，不提供越权下载", async ({ page }) => {
   await renderFixture(page, "jiuli-p3", "constructed/p3-v3-multi-candidate.json");
   await page.locator('[data-table-id="orderRows"] [data-row-id="OR_001"] [data-field="match_status"]').click();
