@@ -5,8 +5,8 @@ import { FIELD_LABELS } from "@/lib/schemas/common";
 // 从快照显式构造 P1~P4 请求（v3 外层：schema_version / prompt / request_id / context / input）。
 // 构造是纯函数，只使用快照中的数据，不隐式拉取业务数据。
 
-// 1.1.0：P1 按单证分段纳入发票 / 箱单辅助材料
-export const INPUT_BUILDER_VERSION = "1.1.0";
+// 1.1.0：P1 按单证分段纳入发票 / 箱单辅助材料；1.2.0：支持上传文件快照（P1/P2）
+export const INPUT_BUILDER_VERSION = "1.2.0";
 
 export type BuildResult =
   | { ok: true; request: Record<string, unknown>; builderId: string; warnings: string[]; requiresFiles: string[] }
@@ -50,6 +50,8 @@ export function buildInput(kind: PromptKind, snapshot: InputSnapshot): BuildResu
   if (kind === "GENERIC_JSON") {
     return { ok: true, request: payload, builderId: "generic-snapshot-payload", warnings: [], requiresFiles: [] };
   }
+
+  if (snapshot.source_type === "FILE_IMPORT") return buildFromUpload(kind, snapshot);
 
   if (snapshot.source_type !== "JIULI_READONLY") {
     return { ok: false, code: "NO_INPUT_FOR_KIND", message: `该快照没有可用于 ${PCODE[kind]} 的请求数据。请导入对应阶段的 request JSON，或从九立只读导入。` };
@@ -174,6 +176,55 @@ export function buildInput(kind: PromptKind, snapshot: InputSnapshot): BuildResu
     }
   }
   return { ok: false, code: "UNKNOWN_KIND", message: `未知 Prompt 种类 ${kind}` };
+}
+
+interface UploadMeta {
+  file_id: string;
+  file_name: string;
+  material_type: string;
+  segments: string[];
+  has_text: boolean;
+}
+
+/** 上传文件快照 → P1（委托/发票/箱单）或 P2（查货文件）输入；P3/P4 需要上游结构化结果，不能由原始文件构造 */
+function buildFromUpload(kind: PromptKind, snapshot: InputSnapshot): BuildResult {
+  const payload = snapshot.normalized_payload as Rec;
+  const fi = (payload.file_import as { customer_name: string | null; materials: UploadMeta[] } | undefined) ?? { customer_name: null, materials: [] };
+  const extracted = (payload.extracted as Rec) ?? {};
+  const warnings: string[] = [];
+  const customerId = fi.customer_name ? "UPLOAD-CUSTOMER" : "";
+  const noText = (ms: UploadMeta[]) => [...new Set(ms.filter((m) => !m.has_text).map((m) => m.file_id))];
+  if (kind === "JIULI_P1") {
+    const ms = fi.materials.filter((m) => ["ORDER", "INVOICE", "PACKING_LIST"].includes(m.material_type));
+    if (!ms.some((m) => m.material_type === "ORDER")) return { ok: false, code: "NO_ORDER_FILE", message: "上传的文件中没有标为「委托单」的材料，无法构造 P1 输入" };
+    if (!fi.customer_name) warnings.push("上传时未填写客户名称：P1 的客户目录为空，模型无法匹配客户");
+    return {
+      ok: true,
+      builderId: "file-import-p1",
+      warnings,
+      requiresFiles: noText(ms),
+      request: envelope(
+        kind,
+        snapshot,
+        { customer_directory: fi.customer_name ? [{ customer_id: customerId, customer_name: fi.customer_name, aliases: [] }] : [], normalization: {} },
+        { materials: ms.map((m) => ({ file_id: m.file_id, material_type: m.material_type, segments: m.segments, content: extracted[m.file_id] ?? null })) },
+      ),
+    };
+  }
+  if (kind === "JIULI_P2") {
+    const ms = fi.materials.filter((m) => m.material_type === "INSPECTION");
+    if (!ms.length) return { ok: false, code: "NO_INSPECTION", message: "上传的文件中没有标为「查货文件」的材料，无法构造 P2 输入" };
+    if (!fi.customer_name) warnings.push("上传时未填写客户名称：P2 的 customer_id 为空");
+    return {
+      ok: true,
+      builderId: "file-import-p2",
+      warnings,
+      requiresFiles: noText(ms),
+      request: envelope(kind, snapshot, { customer_id: customerId, normalization: {} }, { files: ms.map((m) => ({ file_id: m.file_id, segments: m.segments, content: extracted[m.file_id] ?? null })) }),
+    };
+  }
+  if (kind === "GENERIC_JSON") return { ok: true, request: payload, builderId: "generic-snapshot-payload", warnings: [], requiresFiles: [] };
+  return { ok: false, code: "NO_INPUT_FOR_KIND", message: `${PCODE[kind]} 需要上游结构化结果（委托行、查货行或已确定关系），不能直接由上传的原始文件构造` };
 }
 
 /** 该快照能构造出输入的 Prompt 种类（用于快照列表按当前 Prompt 过滤） */

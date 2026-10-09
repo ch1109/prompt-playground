@@ -448,6 +448,11 @@ describe("AT25 只读安全", () => {
       const src = readFileSync(f, "utf8");
       // 唯一的外部 HTTP 写调用只允许是模型网关
       if (/method:\s*"(POST|PUT|PATCH|DELETE)"/.test(src) && !f.endsWith("openai-compatible.ts") && !f.startsWith("lib/client") && !f.startsWith("components")) throw new Error(`${f} 含写请求`);
+      // 唯一允许的写文件：上传原件存入 Studio 私有目录 data/materials（路径只经 materialsDir/uploadedPath 生成）
+      if (f === join("lib", "materials", "store.ts") || f === join("lib", "repositories", "snapshots.ts")) {
+        expect(/materialsDir\(|uploadedPath\(/.test(src), `${f} 写文件必须限定在 Studio 私有目录`).toBe(true);
+        continue;
+      }
       expect(/writeFileSync|appendFileSync|createWriteStream|unlinkSync|rmSync|renameSync/.test(src), `${f} 写文件`).toBe(false);
     }
     const connectorSrc = readdirSync("lib/connectors").map((n) => readFileSync(join("lib/connectors", n), "utf8")).join("\n");
@@ -676,7 +681,7 @@ describe.skipIf(!hasDemo)("九立导入 P1 带辅助材料", () => {
     expect(inv.content!.pages!.map((p) => p.page)).toEqual([1]);
     expect(pl.content!.pages!.map((p) => p.page)).toEqual([2, 3]);
     expect(built.warnings.join()).not.toContain("未标明");
-    expect(INPUT_BUILDER_VERSION).toBe("1.1.0");
+    expect(INPUT_BUILDER_VERSION).toBe("1.2.0");
   });
 });
 
@@ -748,5 +753,76 @@ describe("多项目", () => {
     expect(listRuns(p.project_id)).toHaveLength(1);
     expect(listRuns("jiuli").some((r) => r.prompt_id === p2.prompt_id)).toBe(false);
     expect(() => createProject({ name: " ", template: "BLANK" })).toThrow();
+  });
+});
+
+describe("文件导入（PDF / Excel / 图片）", () => {
+  // 按文件 ID 查九立 Demo 文件清单里的路径（文件名含特殊空格，不手写）
+  const demo = (fileId: string) => {
+    const files = JSON.parse(readFileSync(join(DEMO_ROOT, "demo-generated/mock/source-files.json"), "utf8")) as { id: string; path: string }[];
+    return readFileSync(join(DEMO_ROOT, files.find((f) => f.id === fileId)!.path));
+  };
+  const xlsxBuf = async () => {
+    const XLSX = await import("xlsx");
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["型号", "数量"], ["ABC-01", 10]]), "委托");
+    return Buffer.from(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }));
+  };
+
+  it("Excel 按 Sheet 抽为单元格；文件类型与内容不符时拒绝", async () => {
+    const { preprocessFile } = await import("@/lib/materials/preprocess");
+    const r = await preprocessFile(await xlsxBuf(), "委托.xlsx");
+    expect(r.has_text).toBe(true);
+    expect(r.content).toMatchObject({ sheets: [{ name: "委托", cells: expect.arrayContaining([{ row: 2, column: 1, value: "ABC-01" }]) }] });
+    expect(r.segments).toEqual(["sheet:委托"]);
+    expect(r.preprocessor_version).toMatch(/sheetjs@0\.20\.3/);
+    await expect(preprocessFile(Buffer.from("not a pdf"), "x.pdf")).rejects.toThrow(/内容与扩展名不符/);
+    await expect(preprocessFile(Buffer.from("x"), "x.exe")).rejects.toThrow(/不支持/);
+  });
+
+  it.skipIf(!hasDemo)("文字型 PDF 按页抽文字；扫描件无文字层时如实标记并提示改用原件图片", async () => {
+    const { preprocessFile } = await import("@/lib/materials/preprocess");
+    const text = await preprocessFile(demo("F-0971c3fd7c49"), "a.pdf");
+    expect(text.has_text).toBe(true);
+    expect((text.content as { pages: { page: number; text: string }[] }).pages[0]).toMatchObject({ page: 1, text: expect.stringContaining("委托方") });
+    expect(text.segments).toEqual(["page:1"]);
+    expect(text.preprocessor_version).toMatch(/pdftotext/);
+    const scanned = await preprocessFile(demo("F-1f89bab4fe64"), "b.pdf");
+    expect(scanned.has_text).toBe(false);
+    expect(scanned.warnings.join()).toMatch(/没有文字层/);
+  });
+
+  it("上传建快照：P1/P2 输入按材料类型构造，原件 Hash 与预处理版本留痕；删除快照后无人引用的原件被移除", async () => {
+    const { createFileSnapshot, resolveUploadedFile } = await import("@/lib/materials/store");
+    const { buildInput, usableKinds } = await import("@/lib/input-builders");
+    const { deleteSnapshot } = await import("@/lib/repositories/snapshots");
+    const { existsSync } = await import("node:fs");
+    process.env.STUDIO_MATERIALS_DIR = join(process.cwd(), "data", "test-materials");
+    const buf = await xlsxBuf();
+    const snap = await createFileSnapshot({
+      projectId: "jiuli",
+      label: "上传测试",
+      customerName: "测试客户",
+      files: [
+        { name: "委托.xlsx", buffer: buf, materialType: "ORDER" },
+        { name: "查货.xlsx", buffer: buf, materialType: "INSPECTION" },
+      ],
+    });
+    expect(snap.source_type).toBe("FILE_IMPORT");
+    expect(snap.materials[0]).toMatchObject({ file_name: "委托.xlsx", content_hash: createHash("sha256").update(buf).digest("hex"), availability: "AVAILABLE", has_text_content: true });
+    expect(usableKinds(snap)).toEqual(["JIULI_P1", "JIULI_P2", "GENERIC_JSON"]);
+    const p1 = buildInput("JIULI_P1", snap);
+    expect(p1.ok && p1.builderId).toBe("file-import-p1");
+    if (!p1.ok) return;
+    const m = (p1.request.input as { materials: { file_id: string; material_type: string; segments: string[] }[] }).materials;
+    expect(m).toEqual([expect.objectContaining({ material_type: "ORDER", segments: ["sheet:委托"] })]);
+    expect((p1.request.context as { customer_directory: { customer_name: string }[] }).customer_directory[0].customer_name).toBe("测试客户");
+    const p2 = buildInput("JIULI_P2", snap);
+    expect(p2.ok && (p2.request.input as { files: unknown[] }).files).toHaveLength(1);
+    const path = resolveUploadedFile(m[0].file_id)!.absolutePath;
+    expect(existsSync(path)).toBe(true);
+    deleteSnapshot(snap.snapshot_id);
+    expect(resolveUploadedFile(m[0].file_id)).toBeUndefined();
+    expect(existsSync(path)).toBe(false);
   });
 });

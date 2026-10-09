@@ -1,5 +1,7 @@
 import type { InputSnapshot, SnapshotMaterial, SnapshotSourceType } from "@/lib/contracts/snapshot";
 import { newId, sha256, stableStringify } from "@/lib/hash";
+import { existsSync, unlinkSync } from "node:fs";
+import { uploadedPath } from "@/lib/materials/dir";
 import { db } from "./db";
 
 export { INPUT_BUILDER_VERSION } from "@/lib/input-builders";
@@ -88,7 +90,13 @@ export function deleteSnapshot(id: string): boolean {
   if (!row) return false;
   const s = JSON.parse(row.body) as InputSnapshot;
   const tombstone = { snapshot_id: s.snapshot_id, project_id: s.project_id, source_type: s.source_type, label: s.label, content_hash: s.content_hash, imported_at: s.imported_at, deleted: true };
+  const refs = (d.prepare("SELECT DISTINCT authorized_file_ref AS ref FROM input_materials WHERE snapshot_id = ?").all(id) as { ref: string | null }[]).map((r) => r.ref);
   d.prepare("DELETE FROM input_materials WHERE snapshot_id = ?").run(id);
+  // 上传的原件不再被任何快照引用时一并删除
+  for (const ref of refs) {
+    const abs = ref ? uploadedPath(ref) : undefined;
+    if (abs && !d.prepare("SELECT 1 FROM input_materials WHERE authorized_file_ref = ? LIMIT 1").get(ref) && existsSync(abs)) unlinkSync(abs);
+  }
   d.prepare("UPDATE input_snapshots SET body = ?, deleted_at = ? WHERE snapshot_id = ?").run(JSON.stringify(tombstone), new Date().toISOString(), id);
   return true;
 }
