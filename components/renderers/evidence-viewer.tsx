@@ -30,6 +30,7 @@ export function selectedRefIds(vm: ViewModel, sel: ReturnType<typeof useStudio.g
 
 export function EvidenceCard({ e, active, canPreview }: { e: EvidenceView; active?: boolean; canPreview: boolean }) {
   const select = useStudio((s) => s.select);
+  const setStore = useStudio((s) => s.set);
   const sel = useStudio((s) => s.selection);
   const a = AVAIL[e.availability];
   return (
@@ -57,7 +58,10 @@ export function EvidenceCard({ e, active, canPreview }: { e: EvidenceView; activ
       <div className="mt-1.5 flex gap-2">
         {e.jsonPointer !== undefined && (
           <button
-            onClick={() => select({ ...sel, sourceRefId: e.id, jsonPointer: (e.location === "REQUEST" ? "req:" : "") + e.jsonPointer })}
+            onClick={() => {
+              select({ ...sel, sourceRefId: e.id, jsonPointer: (e.location === "REQUEST" ? "req:" : "") + e.jsonPointer });
+              setStore("resultTab", "json");
+            }}
             className="text-[11px] text-info hover:underline"
           >
             在 JSON 中定位

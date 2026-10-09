@@ -58,6 +58,14 @@ test("AT18 单元格 / 问题 / 关系边 共享同一选择状态并跨标签�
   await expect(page.locator('[data-pointer="/output/row_relations/0/selected_raw_row_ids"]')).toHaveClass(/ring-stamp/);
 });
 
+test("证据卡点「在 JSON 中定位」自动切到原始 JSON 并高亮来源", async ({ page }) => {
+  await renderFixture(page, "jiuli-p1", "v3/SC-08-audit/P1");
+  await page.locator('[data-table-id="orderRows"] [data-row-id="row-1"] [data-field="model"]').click();
+  await page.getByTestId("evidence-drawer").getByRole("button", { name: "在 JSON 中定位" }).first().click();
+  await expect(page.locator('[data-testid="result-pane"] [role="tab"][aria-selected="true"]')).toHaveText("原始 JSON");
+  await expect(page.locator("[data-pointer].ring-stamp")).toHaveCount(1);
+});
+
 test("AT19 来源无原文：显示 METADATA_ONLY / MISSING，不提供越权下载", async ({ page }) => {
   await renderFixture(page, "jiuli-p3", "constructed/p3-v3-multi-candidate.json");
   await page.locator('[data-table-id="orderRows"] [data-row-id="OR_001"] [data-field="match_status"]').click();
