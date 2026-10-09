@@ -68,6 +68,12 @@ export function Playground({ projectId }: { projectId: string }) {
   const ws = s.workspaces[promptId] ?? emptyWorkspace();
   const detail = ws.runId ? s.runs[ws.runId] : undefined;
   const lastMode = s.lastMode[promptId];
+  const hasFixtures = !!prompt && fixtures.some((f) => f.promptKind === prompt.prompt_kind);
+  const emptyHint =
+    (hasFixtures
+      ? "在「输入 → 样本库」选择样本后点「仅渲染」；或选择带 ctx 的样本 / 已有快照后点「运行模型」。"
+      : "在「输入 → 粘贴 / 文件 JSON」粘贴模型输出后点「仅渲染」；要真实运行，先把请求上下文「存为快照」再点「运行模型」。") +
+    (provider && !provider.configured ? "（模型未配置，目前只能仅渲染）" : "");
   /** 顶栏显示的当前版本；文本与该版本不同即为未保存草稿（与「提示词」页签的判断一致） */
   const currentVersion = versions[promptId]?.find((v) => v.version_id === ws.versionId);
   const versionDraft = !!currentVersion && (currentVersion.system_prompt !== ws.system || currentVersion.user_prompt_template !== ws.userTemplate);
@@ -669,7 +675,7 @@ export function Playground({ projectId }: { projectId: string }) {
                     该项目不存在或没有提示词。请在左侧切换或新建项目。
                   </p>
                 ) : (
-                  <ResultPane detail={detail} dirty={dirty} canPreview={capability?.status === "CONNECTED_DEMO_FILES"} loading={busy} onCancel={cancelRun} />
+                  <ResultPane detail={detail} dirty={dirty} canPreview={capability?.status === "CONNECTED_DEMO_FILES"} loading={busy} onCancel={cancelRun} emptyHint={emptyHint} />
                 )}
               </div>
             )}

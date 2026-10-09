@@ -165,7 +165,7 @@ function FixtureList({ kind, fixtures, onPick }: { kind: PromptKind; fixtures: F
   const [ws] = useWorkspace();
   const list = fixtures.filter((f) => f.promptKind === kind);
   const groups = useMemo(() => [...new Set(list.map((f) => f.group))], [list]);
-  if (!list.length) return <Empty>当前 Prompt 没有样本。</Empty>;
+  if (!list.length) return <Empty>当前 Prompt 没有样本。可在「粘贴 / 文件 JSON」粘贴模型输出或请求上下文，或从九立导入 / 上传文件创建快照。</Empty>;
   return (
     <div className="space-y-2" data-testid="fixture-list">
       <p className="text-[11px] text-ink-400">样本来源已标注：规格结构示例 / 真实录制模型输出（非 Gold）/ 人工构造。均不能用于宣称准确率。</p>

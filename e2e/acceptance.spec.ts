@@ -86,6 +86,19 @@ test("没有业务视图（未登记 Schema）时自动显示原始 JSON；之�
   await expect(selectedTab).toHaveText("可视化");
 });
 
+test("空状态按情况引导：有样本的 Prompt 指向样本库，空白项目指向粘贴", async ({ page }) => {
+  const created = await page.request.post("/api/projects", { data: { name: `空状态 ${Date.now()}`, template: "BLANK" } }).then((r) => r.json());
+  await page.goto(`/projects/${created.data.project_id}/playground`);
+  const pane = page.getByTestId("result-pane");
+  await expect(pane).toContainText("粘贴 / 文件 JSON");
+  await expect(pane).not.toContainText("选择样本");
+  await expect(pane).toContainText("模型未配置");
+  await expect(page.getByTestId("editor-pane")).toContainText("当前 Prompt 没有样本。可在「粘贴 / 文件 JSON」");
+  const p1 = await page.request.post("/api/projects", { data: { name: `空状态九立 ${Date.now()}`, template: "JIULI" } }).then((r) => r.json());
+  await page.goto(`/projects/${p1.data.project_id}/playground`);
+  await expect(pane).toContainText("样本库");
+});
+
 test("AT19 来源无原文：显示 METADATA_ONLY / MISSING，不提供越权下载", async ({ page }) => {
   await renderFixture(page, "jiuli-p3", "constructed/p3-v3-multi-candidate.json");
   await page.locator('[data-table-id="orderRows"] [data-row-id="OR_001"] [data-field="match_status"]').click();

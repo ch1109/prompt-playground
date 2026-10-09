@@ -49,7 +49,22 @@ function Elapsed({ since }: { since: number }) {
   return <>{Math.max(0, Math.round((now - since) / 1000))}</>;
 }
 
-export function ResultPane({ detail, dirty, canPreview, loading, onCancel }: { detail?: RunDetail; dirty: boolean; canPreview: boolean; loading: boolean; onCancel?: (runId: string) => void }) {
+export function ResultPane({
+  detail,
+  dirty,
+  canPreview,
+  loading,
+  onCancel,
+  emptyHint,
+}: {
+  detail?: RunDetail;
+  dirty: boolean;
+  canPreview: boolean;
+  loading: boolean;
+  onCancel?: (runId: string) => void;
+  /** 还没有结果时的引导（按当前 Prompt 是否有样本、模型是否已配置给出） */
+  emptyHint: string;
+}) {
   const tab = useStudio((s) => s.resultTab);
   const setStore = useStudio((s) => s.set);
   const maximized = useStudio((s) => s.maximized);
@@ -136,7 +151,7 @@ export function ResultPane({ detail, dirty, canPreview, loading, onCancel }: { d
       <div className="flex min-h-0 flex-1">
       <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3" data-testid={`tab-${tab}`}>
         {loading && <p className="text-ink-400">处理中…</p>}
-        {!run && !loading && <Empty>选择样本并点「仅渲染」，或配置模型后「运行」。</Empty>}
+        {!run && !loading && <Empty>{emptyHint}</Empty>}
         {run && tab === "visual" && (vm && detail?.renderer ? <BusinessView vm={vm} cfg={detail.renderer} canPreview={canPreview} /> : <Empty>{run.status === "SUCCEEDED" ? "无业务视图（未登记 Schema）。" : "没有可展示的业务视图。"}</Empty>)}
         {run && tab === "json" && <JsonTab detail={detail!} />}
         {run && tab === "schema" && <SchemaTab detail={detail!} />}
