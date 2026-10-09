@@ -206,9 +206,10 @@ test("AT26 快照刷新生成新快照（记录来源），快照列表按 Promp
   await page.getByLabel("委托任务").selectOption({ index: 1 });
   await page.getByRole("button", { name: "只读读取并创建隔离快照" }).click();
   const list = page.getByTestId("snapshot-list");
-  const first = list.locator("[data-snapshot-id]").first();
-  const oldId = await first.getAttribute("data-snapshot-id");
-  await expect(first).toHaveClass(/ring-stamp/);
+  // 等列表刷新出刚创建并选中的九立快照，再取它的 ID
+  const created = list.locator("[data-snapshot-id].ring-1");
+  await expect(created).toContainText("JIULI_READONLY");
+  const oldId = await created.getAttribute("data-snapshot-id");
   await page.getByRole("button", { name: `刷新快照 ${oldId}` }).click();
   await expect(list).toContainText(`刷新自 ${oldId}`);
   const selected = list.locator("[data-snapshot-id].ring-1");
@@ -260,6 +261,28 @@ test("快照可设置保留期限、可删除；历史 Run 保留并标明快照
   await page.getByTestId("history").getByRole("button", { name: "回放" }).first().click();
   await page.getByRole("tab", { name: "运行信息" }).click();
   await expect(page.getByTestId("tab-meta")).toContainText("已删除或到期");
+});
+
+test("多项目：新建项目、切换项目，运行按项目隔离；不存在的项目有明确提示", async ({ page }) => {
+  await page.goto("/projects/jiuli/playground");
+  await page.getByRole("button", { name: "＋ 新建项目" }).click();
+  const name = `E2E 项目 ${Date.now()}`;
+  await page.getByLabel("项目名称").fill(name);
+  await page.getByTestId("new-project-form").getByRole("button", { name: "创建" }).click();
+  await expect(page).toHaveURL(/\/projects\/proj_[^/]+\/playground/);
+  await expect(page.getByLabel("切换项目")).toHaveValue(/proj_/);
+  await expect(page.locator("header")).toContainText(name);
+  await expect(page.getByTestId("sidebar").locator("[data-prompt]")).toHaveCount(5);
+  await page.getByTestId("sidebar").locator("[data-prompt]").filter({ hasText: "委托材料识别" }).click();
+  await page.click('[data-fixture-id="constructed/p1-v3-conflict.json"]');
+  await page.click('[data-testid="btn-render"]');
+  await expect(page.locator('[data-table-id="orderRows"]')).toBeVisible();
+  await expect(page.getByRole("button", { name: "运行历史（1）" })).toBeVisible();
+  await page.getByLabel("切换项目").selectOption("jiuli");
+  await expect(page).toHaveURL(/\/projects\/jiuli\/playground/);
+  await expect(page.getByRole("button", { name: /运行历史（\d{2,}）/ })).toBeVisible();
+  await page.goto("/projects/no-such-project/playground");
+  await expect(page.getByTestId("project-missing")).toBeVisible();
 });
 
 test("运行对比：显示关键指标、提示词差异区与输出差异", async ({ page }) => {

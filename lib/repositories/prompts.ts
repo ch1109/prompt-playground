@@ -102,6 +102,41 @@ export function syncSeedVersion(promptId: string, source: string, text: string):
   return insertSeed(promptId, `v3.0 原文（文件已更新 ${new Date().toISOString().slice(0, 10)}）`, text, source, latest.version_id);
 }
 
+export type ProjectTemplate = "JIULI" | "BLANK";
+
+/**
+ * 新建项目。JIULI：复制九立项目 P1~P4 当前最新版本作为初始版本（source=copy:<原版本>）+ 通用 JSON；
+ * BLANK：只有通用 JSON。运行、快照、标注都按项目隔离。
+ */
+export function createProject(input: { name: string; description?: string; template: ProjectTemplate }) {
+  ensureSeed();
+  const name = input.name.trim();
+  if (!name) throw new Error("项目名称不能为空");
+  const d = db();
+  const project = { project_id: newId("proj"), name, description: input.description?.trim() || null, created_at: new Date().toISOString() };
+  d.prepare("INSERT INTO projects VALUES (?,?,?,?)").run(project.project_id, project.name, project.description, project.created_at);
+  const sources = input.template === "JIULI" ? listPrompts(DEFAULT_PROJECT_ID) : listPrompts(DEFAULT_PROJECT_ID).filter((x) => x.prompt_kind === "GENERIC_JSON");
+  for (const src of sources) {
+    const promptId = `${project.project_id}-${src.prompt_id.replace(/^jiuli-/, "")}`;
+    d.prepare("INSERT INTO prompts VALUES (?,?,?,?,?,?)").run(promptId, project.project_id, src.prompt_kind, src.name, src.active_schema_version, src.renderer_id);
+    const latest = listVersions(src.prompt_id)[0];
+    if (!latest) continue;
+    d.prepare("INSERT INTO prompt_versions VALUES (?,?,?,?,?,?,?,?,?,?)").run(
+      newId("pv"),
+      promptId,
+      `复制自 九立 AI 核对 · ${latest.label}`,
+      latest.system_prompt,
+      latest.user_prompt_template,
+      latest.variables_schema,
+      latest.content_hash,
+      project.created_at,
+      null,
+      `copy:${latest.version_id}`,
+    );
+  }
+  return project;
+}
+
 export function listProjects() {
   ensureSeed();
   return db().prepare("SELECT * FROM projects ORDER BY created_at").all();

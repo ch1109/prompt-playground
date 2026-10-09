@@ -21,6 +21,7 @@ export function EditorPane(props: {
   onSaveVersion: (label: string) => Promise<boolean>;
   onPickFixture: (fixtureId: string) => void;
   onSnapshotsChanged: () => void;
+  projectId: string;
 }) {
   const [tab, setTab] = useState<EditorTab>("input");
   const [ws, patch] = useWorkspace();
@@ -47,7 +48,9 @@ export function EditorPane(props: {
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-3">
         {tab === "prompt" && <PromptTab versions={props.versions} isDraft={isDraft} onSave={props.onSaveVersion} />}
-        {tab === "input" && <InputTab kind={props.kind} fixtures={props.fixtures} snapshots={props.snapshots} capability={props.capability} onPickFixture={props.onPickFixture} onSnapshotsChanged={props.onSnapshotsChanged} />}
+        {tab === "input" && (
+          <InputTab projectId={props.projectId} kind={props.kind} fixtures={props.fixtures} snapshots={props.snapshots} capability={props.capability} onPickFixture={props.onPickFixture} onSnapshotsChanged={props.onSnapshotsChanged} />
+        )}
         {tab === "model" && <ModelTab provider={props.provider} />}
         {tab === "preview" && <PreviewTab fixtures={props.fixtures} />}
       </div>
@@ -118,7 +121,7 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
   );
 }
 
-function InputTab({ kind, fixtures, snapshots, capability, onPickFixture, onSnapshotsChanged }: { kind: PromptKind; fixtures: FixtureSummary[]; snapshots: SnapshotListItem[]; capability: CapabilityDTO | null; onPickFixture: (fixtureId: string) => void; onSnapshotsChanged: () => void }) {
+function InputTab({ projectId, kind, fixtures, snapshots, capability, onPickFixture, onSnapshotsChanged }: { projectId: string; kind: PromptKind; fixtures: FixtureSummary[]; snapshots: SnapshotListItem[]; capability: CapabilityDTO | null; onPickFixture: (fixtureId: string) => void; onSnapshotsChanged: () => void }) {
   const [ws, patch] = useWorkspace();
   const modes: [InputMode, string][] = [
     ["fixture", "样本库"],
@@ -137,8 +140,8 @@ function InputTab({ kind, fixtures, snapshots, capability, onPickFixture, onSnap
       </div>
       {ws.inputMode === "fixture" && <FixtureList kind={kind} fixtures={fixtures} onPick={onPickFixture} />}
       {ws.inputMode === "paste" && <PasteInput />}
-      {ws.inputMode === "snapshot" && <SnapshotList kind={kind} snapshots={snapshots} onSnapshotsChanged={onSnapshotsChanged} />}
-      {ws.inputMode === "jiuli" && <JiuliImport capability={capability} onCreated={onSnapshotsChanged} />}
+      {ws.inputMode === "snapshot" && <SnapshotList projectId={projectId} kind={kind} snapshots={snapshots} onSnapshotsChanged={onSnapshotsChanged} />}
+      {ws.inputMode === "jiuli" && <JiuliImport projectId={projectId} capability={capability} onCreated={onSnapshotsChanged} />}
     </div>
   );
 }
@@ -195,7 +198,7 @@ function PasteInput() {
 
 const KIND_SHORT: Record<string, string> = { JIULI_P1: "P1", JIULI_P2: "P2", JIULI_P3: "P3", JIULI_P4: "P4", GENERIC_JSON: "通用" };
 
-function SnapshotList({ kind, snapshots, onSnapshotsChanged }: { kind: PromptKind; snapshots: SnapshotListItem[]; onSnapshotsChanged: () => void }) {
+function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged }: { projectId: string; kind: PromptKind; snapshots: SnapshotListItem[]; onSnapshotsChanged: () => void }) {
   const [ws, patch] = useWorkspace();
   const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -211,7 +214,7 @@ function SnapshotList({ kind, snapshots, onSnapshotsChanged }: { kind: PromptKin
     setErr(null);
     try {
       const n = await api<{ snapshot_id: string }>("/api/connectors/jiuli/snapshots", {
-        json: { customerId: s.source_ids.customer_id, taskId: s.source_ids.task_id, batchIds: s.source_ids.batch_ids ?? [], parentSnapshotId: s.snapshot_id },
+        json: { projectId, customerId: s.source_ids.customer_id, taskId: s.source_ids.task_id, batchIds: s.source_ids.batch_ids ?? [], parentSnapshotId: s.snapshot_id },
       });
       patch({ snapshotId: n.snapshot_id });
       onSnapshotsChanged();
@@ -334,7 +337,7 @@ interface Batch {
 }
 
 /** 九立只读导入：选客户 → 任务/查货批次 → 创建 Studio 隔离快照。不向九立写任何数据。 */
-function JiuliImport({ capability, onCreated }: { capability: CapabilityDTO | null; onCreated: () => void }) {
+function JiuliImport({ projectId, capability, onCreated }: { projectId: string; capability: CapabilityDTO | null; onCreated: () => void }) {
   const [, patch] = useWorkspace();
   const [q, setQ] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -370,7 +373,7 @@ function JiuliImport({ capability, onCreated }: { capability: CapabilityDTO | nu
     setBusy(true);
     setErr(null);
     try {
-      const s = await api<{ snapshot_id: string; warnings: string[] }>("/api/connectors/jiuli/snapshots", { json: { customerId: customer, taskId: task || undefined, batchIds: [...picked] } });
+      const s = await api<{ snapshot_id: string; warnings: string[] }>("/api/connectors/jiuli/snapshots", { json: { projectId, customerId: customer, taskId: task || undefined, batchIds: [...picked] } });
       patch({ inputMode: "snapshot", snapshotId: s.snapshot_id });
       onCreated();
     } catch (e) {

@@ -1,4 +1,5 @@
 "use client";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { api, ApiError } from "@/lib/client/api";
 import type { CapabilityDTO, FixtureSummary, PromptDef, PromptVersionDTO, ProviderInfoDTO, RunDetail, RunListItem, SnapshotListItem } from "@/lib/client/types";
@@ -24,8 +25,17 @@ function useNarrow(): boolean {
   );
 }
 
+interface ProjectDTO {
+  project_id: string;
+  name: string;
+}
+
 export function Playground({ projectId }: { projectId: string }) {
   const s = useStudio();
+  const router = useRouter();
+  const [projects, setProjects] = useState<ProjectDTO[] | null>(null);
+  const [promptsLoaded, setPromptsLoaded] = useState(false);
+  const [newProject, setNewProject] = useState<{ name: string; template: "JIULI" | "BLANK" } | null>(null);
   const [prompts, setPrompts] = useState<PromptDef[]>([]);
   const [versions, setVersions] = useState<Record<string, PromptVersionDTO[]>>({});
   const [fixtures, setFixtures] = useState<FixtureSummary[]>([]);
@@ -54,6 +64,23 @@ export function Playground({ projectId }: { projectId: string }) {
   useEffect(() => {
     Promise.resolve(useStudio.persist.rehydrate()).then(() => setHydrated(true));
   }, []);
+
+  // 当前选中的 Prompt 不属于本项目（例如刚切换项目）→ 选本项目第一个
+  useEffect(() => {
+    if (hydrated && prompts.length && !prompts.some((p) => p.prompt_id === promptId)) s.setActivePrompt(prompts[0].prompt_id);
+  }, [hydrated, prompts, promptId, s]);
+
+  async function createProject() {
+    if (!newProject?.name.trim()) return setError("请填写项目名称");
+    setError(null);
+    try {
+      const p = await api<ProjectDTO>("/api/projects", { json: newProject });
+      setNewProject(null);
+      router.push(`/projects/${encodeURIComponent(p.project_id)}/playground`);
+    } catch (e) {
+      report(e);
+    }
+  }
 
   // 当前 Run 详情不在内存时按 ID 重新读取；Run 已不存在则清掉引用
   const runId = ws.runId;
@@ -85,7 +112,13 @@ export function Playground({ projectId }: { projectId: string }) {
   const loadSnapshots = useCallback(() => api<SnapshotListItem[]>(`/api/snapshots?project=${projectId}`).then(setSnapshots), [projectId]);
 
   useEffect(() => {
-    api<PromptDef[]>(`/api/prompts?project=${projectId}`).then(setPrompts).catch((e) => setError(e.message));
+    api<ProjectDTO[]>("/api/projects").then(setProjects).catch((e) => setError(e.message));
+    api<PromptDef[]>(`/api/prompts?project=${projectId}`)
+      .then((p) => {
+        setPrompts(p);
+        setPromptsLoaded(true);
+      })
+      .catch((e) => setError(e.message));
     api<{ items: FixtureSummary[] }>("/api/fixtures").then((r) => setFixtures(r.items));
     api<ProviderInfoDTO>("/api/models").then(setProvider);
     api<CapabilityDTO>("/api/connectors/jiuli/capabilities").then(setCapability).catch(() => setCapability(null));
@@ -278,7 +311,9 @@ export function Playground({ projectId }: { projectId: string }) {
           <span className="font-mono text-[13px] font-semibold tracking-tight">
             Prompt<span className="text-stamp">/</span>Studio
           </span>
-          <span className="text-[12px] text-ink-400">九立 AI 核对 / {prompt?.name ?? "…"}</span>
+          <span className="text-[12px] text-ink-400">
+            {projects?.find((p) => p.project_id === projectId)?.name ?? "…"} / {prompt?.name ?? "…"}
+          </span>
         </div>
         {prompt?.active_schema_version && <Badge>{prompt.active_schema_version}</Badge>}
         <div className="ml-auto flex items-center gap-2">
@@ -307,7 +342,51 @@ export function Playground({ projectId }: { projectId: string }) {
         {!s.sidebarCollapsed && (
           <nav className="flex w-[220px] shrink-0 flex-col border-r border-ink-700 bg-ink-900/70" data-testid="sidebar">
             <div className="px-3 pt-3 pb-1 text-[10.5px] tracking-widest text-ink-400">项目</div>
-            <div className="px-3 pb-2 text-[12.5px]">九立 AI 核对</div>
+            <div className="space-y-1 px-3 pb-2">
+              <select
+                value={projectId}
+                onChange={(e) => router.push(`/projects/${encodeURIComponent(e.target.value)}/playground`)}
+                aria-label="切换项目"
+                className="w-full rounded border border-ink-700 bg-ink-950 px-1 py-0.5 text-[12.5px]"
+              >
+                {!projects?.some((p) => p.project_id === projectId) && <option value={projectId}>{projects ? "（项目不存在）" : "…"}</option>}
+                {projects?.map((p) => (
+                  <option key={p.project_id} value={p.project_id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              {newProject ? (
+                <div className="space-y-1 rounded border border-ink-700 p-1.5" data-testid="new-project-form">
+                  <input
+                    value={newProject.name}
+                    onChange={(e) => setNewProject({ ...newProject, name: e.target.value })}
+                    placeholder="项目名称"
+                    aria-label="项目名称"
+                    className="w-full rounded border border-ink-700 bg-ink-950 px-1.5 py-0.5 text-[12px]"
+                  />
+                  <select
+                    value={newProject.template}
+                    onChange={(e) => setNewProject({ ...newProject, template: e.target.value as "JIULI" | "BLANK" })}
+                    aria-label="项目模板"
+                    className="w-full rounded border border-ink-700 bg-ink-950 px-1 py-0.5 text-[12px]"
+                  >
+                    <option value="JIULI">复制九立 P1~P4 提示词</option>
+                    <option value="BLANK">空白（通用 JSON）</option>
+                  </select>
+                  <div className="flex gap-1">
+                    <Btn tone="primary" onClick={createProject}>
+                      创建
+                    </Btn>
+                    <Btn onClick={() => setNewProject(null)}>取消</Btn>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={() => setNewProject({ name: "", template: "JIULI" })} className="text-[11.5px] text-info hover:underline">
+                  ＋ 新建项目
+                </button>
+              )}
+            </div>
             <div className="px-3 pt-2 pb-1 text-[10.5px] tracking-widest text-ink-400">提示词</div>
             <ul>
               {prompts.map((p, i) => (
@@ -371,6 +450,7 @@ export function Playground({ projectId }: { projectId: string }) {
                       onSaveVersion={saveVersion}
                       onPickFixture={pickFixture}
                       onSnapshotsChanged={loadSnapshots}
+                      projectId={projectId}
                     />
                   )}
                 </div>
@@ -379,7 +459,13 @@ export function Playground({ projectId }: { projectId: string }) {
             )}
             {(!narrow || narrowPane === "result") && (
               <div className="min-w-0 flex-1">
-                <ResultPane detail={detail} dirty={dirty} canPreview={capability?.status === "CONNECTED_DEMO_FILES"} loading={busy} runningSince={runningSince} />
+                {promptsLoaded && !prompts.length ? (
+                  <p className="p-4 text-[12.5px] text-risk" data-testid="project-missing">
+                    该项目不存在或没有提示词。请在左侧切换或新建项目。
+                  </p>
+                ) : (
+                  <ResultPane detail={detail} dirty={dirty} canPreview={capability?.status === "CONNECTED_DEMO_FILES"} loading={busy} runningSince={runningSince} />
+                )}
               </div>
             )}
           </div>

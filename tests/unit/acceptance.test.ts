@@ -728,3 +728,25 @@ describe("快照删除与到期", () => {
     expect(getSnapshot(b.snapshot_id)).toBeDefined();
   });
 });
+
+describe("多项目", () => {
+  it("按九立模板新建：复制 P1~P4 当前最新版本为初始版本 + 通用 JSON；空白模板只有通用 JSON；数据按项目隔离", async () => {
+    const { createProject, listPrompts, listVersions, listProjects } = await import("@/lib/repositories/prompts");
+    const { listRuns } = await import("@/lib/repositories/runs");
+    const p = createProject({ name: "  评测项目  ", template: "JIULI" });
+    expect(p.name).toBe("评测项目");
+    const prompts = listPrompts(p.project_id);
+    expect(prompts.map((x) => x.prompt_kind).sort()).toEqual(["GENERIC_JSON", "JIULI_P1", "JIULI_P2", "JIULI_P3", "JIULI_P4"]);
+    const p2 = prompts.find((x) => x.prompt_kind === "JIULI_P2")!;
+    const [copied] = listVersions(p2.prompt_id);
+    expect(copied.system_prompt).toBe(listVersions("jiuli-p2")[0].system_prompt);
+    expect(copied.source).toBe(`copy:${listVersions("jiuli-p2")[0].version_id}`);
+    const blank = createProject({ name: "空白", template: "BLANK" });
+    expect(listPrompts(blank.project_id).map((x) => x.prompt_kind)).toEqual(["GENERIC_JSON"]);
+    expect(listProjects().map((x) => (x as { project_id: string }).project_id)).toEqual(expect.arrayContaining(["jiuli", p.project_id, blank.project_id]));
+    renderOnly({ projectId: p.project_id, promptId: p2.prompt_id, raw: fx("v3/SC-08/P2").raw });
+    expect(listRuns(p.project_id)).toHaveLength(1);
+    expect(listRuns("jiuli").some((r) => r.prompt_id === p2.prompt_id)).toBe(false);
+    expect(() => createProject({ name: " ", template: "BLANK" })).toThrow();
+  });
+});
