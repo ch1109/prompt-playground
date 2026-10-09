@@ -43,7 +43,7 @@ export function EvidenceCard({ e, active, canPreview, snapshotSource }: { e: Evi
   const previewable = !!e.fileId && (canPreview || e.fileId.startsWith("U-"));
   const note = availabilityNote(e, previewable, snapshotSource);
   return (
-    <div data-evidence-id={e.id} className={cx("rounded border border-ink-700 bg-ink-950/60 p-2", active && "border-stamp/70")}>
+    <div data-evidence-id={e.id} className={cx("rounded-lg border border-ink-700 bg-ink-950/60 p-2", active && "border-accent/60 ring-2 ring-accent/15")}>
       <div className="flex flex-wrap items-center gap-1.5">
         <Badge tone={a.tone}>{e.availability}</Badge>
         <span className="text-[11px] text-ink-400">{a.text}</span>

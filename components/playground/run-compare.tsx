@@ -164,7 +164,7 @@ function Hunks({ title, hunks }: { title: string; hunks: StructuredPatchHunk[] |
       ) : hunks.length === 0 ? (
         <p className="text-[12px] text-verify">完全相同</p>
       ) : (
-        <pre className="overflow-auto rounded border border-ink-700 bg-ink-950 p-2 text-[11.5px] leading-5" data-testid="prompt-diff">
+        <pre className="overflow-auto rounded-lg border border-ink-700 bg-ink-950 p-2 text-[11.5px] leading-5" data-testid="prompt-diff">
           {hunks.map((h, i) => (
             <div key={i}>
               <div className="text-info">{`@@ A 第 ${h.oldStart} 行 / B 第 ${h.newStart} 行 @@`}</div>
@@ -192,9 +192,9 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
   const rows = useMemo(() => (a && b ? diffJson(a.run.parsed_json ?? a.run.raw_response, b.run.parsed_json ?? b.run.raw_response) : []), [a, b]);
   const cmp = useMemo(() => (a && b ? compareRuns(a.run, b.run, [a.prompt_version_label, b.prompt_version_label]) : null), [a, b]);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-8" role="dialog" aria-label="对比两次运行">
-      <div className="flex max-h-full w-full max-w-5xl flex-col rounded-md border border-ink-600 bg-ink-900 shadow-2xl">
-        <div className="flex items-center gap-2 border-b border-ink-700 px-3 py-2">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-100/25 p-8 backdrop-blur-[2px]" role="dialog" aria-label="对比两次运行">
+      <div className="flex max-h-full w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-ink-700 bg-ink-900 shadow-2xl">
+        <div className="flex items-center gap-2 border-b border-ink-700 px-4 py-3">
           <span className="font-semibold">运行对比</span>
           <Badge>{ids[0]}</Badge>→<Badge>{ids[1]}</Badge>
           <span className="text-[11px] text-ink-400">A=左 / B=右；仅展示差异，不代表准确率</span>

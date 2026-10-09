@@ -28,7 +28,7 @@ function Banner({ tone, children }: { tone: "warn" | "bad" | "info"; children: R
   return (
     <div
       className={cx(
-        "rise border-b px-3 py-1.5 text-[12px]",
+        "rise mx-3 mt-2 rounded-lg border px-3 py-2 text-[12px]",
         tone === "warn" && "border-risk/30 bg-risk/10 text-risk",
         tone === "bad" && "border-stamp/40 bg-stamp/10 text-stamp",
         tone === "info" && "border-info/30 bg-info/10 text-info",
@@ -79,17 +79,16 @@ export function ResultPane({
 
   return (
     <div className="relative flex h-full min-h-0 flex-col" data-testid="result-pane">
-      <div className="flex items-center gap-1 border-b border-ink-700 bg-ink-900 px-2">
+      <div className="flex items-center gap-1 border-b border-ink-700 bg-ink-900 px-3 py-2">
         {TABS.map((t) => (
           <button
             key={t.id}
             role="tab"
             aria-selected={tab === t.id}
             onClick={() => setStore("resultTab", t.id)}
-            className={cx("relative px-3 py-2 text-[12.5px]", tab === t.id ? "text-ink-100" : "text-ink-400 hover:text-ink-100")}
+            className={cx("rounded-lg px-3 py-1 text-[13px] transition-colors", tab === t.id ? "bg-ink-800 font-medium text-ink-100" : "text-ink-400 hover:bg-ink-850 hover:text-ink-100")}
           >
             {t.label}
-            {tab === t.id && <span className="absolute inset-x-2 -bottom-px h-0.5 bg-stamp" />}
           </button>
         ))}
         <div className="ml-auto flex items-center gap-2">
@@ -151,7 +150,13 @@ export function ResultPane({
       <div className="flex min-h-0 flex-1">
       <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3" data-testid={`tab-${tab}`}>
         {loading && <p className="text-ink-400">处理中…</p>}
-        {!run && !loading && <Empty>{emptyHint}</Empty>}
+        {!run && !loading && (
+          <div className="rise mx-auto mt-[14vh] max-w-md px-6 text-center">
+            <div className="mx-auto mb-4 grid h-11 w-11 place-items-center rounded-2xl border border-ink-700 bg-ink-900 font-mono text-[15px] text-ink-400 shadow-sm">{"{ }"}</div>
+            <div className="mb-1.5 text-[15px] font-semibold text-ink-100">还没有运行结果</div>
+            <p className="text-[12.5px] leading-6 text-ink-400">{emptyHint}</p>
+          </div>
+        )}
         {run && tab === "visual" && (vm && detail?.renderer ? <BusinessView vm={vm} cfg={detail.renderer} canPreview={canPreview} /> : <Empty>{run.status === "SUCCEEDED" ? "无业务视图（未登记 Schema）。" : "没有可展示的业务视图。"}</Empty>)}
         {run && tab === "json" && <JsonTab detail={detail!} />}
         {run && tab === "schema" && <SchemaTab detail={detail!} />}
@@ -183,7 +188,7 @@ function SelectionInfo() {
   const setStore = useStudio((s) => s.set);
   if (!sel.jsonPointer && !sel.rowId) return null;
   return (
-    <div className="rounded border border-ink-700 p-2 text-[11px] text-ink-300">
+    <div className="rounded-lg border border-ink-700 p-2 text-[11px] text-ink-300">
       <div>
         选中：<span className="font-mono">{[sel.tableId, sel.rowId, sel.fieldKey].filter(Boolean).join(" / ") || "—"}</span>
       </div>
@@ -211,7 +216,7 @@ function JsonTab({ detail }: { detail: RunDetail }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <div className="flex overflow-hidden rounded border border-ink-600 text-[11px]">
+        <div className="flex overflow-hidden rounded-lg border border-ink-600 text-[11px]">
           <button onClick={() => setDoc("response")} className={cx("px-2 py-0.5", doc === "response" ? "bg-ink-700" : "text-ink-400")}>
             模型原始响应
           </button>
@@ -222,9 +227,9 @@ function JsonTab({ detail }: { detail: RunDetail }) {
         <Btn onClick={() => navigator.clipboard?.writeText(run.raw_response)}>复制原文</Btn>
         <span className="font-mono text-[11px] text-ink-400">sha256 {run.raw_response_hash.slice(0, 16)}…</span>
       </div>
-      {!found && <p className="rounded border border-risk/40 bg-risk/10 px-2 py-1 text-[12px] text-risk">无法定位：{pointer} 在当前文档中不存在。</p>}
+      {!found && <p className="rounded-lg border border-risk/40 bg-risk/10 px-2 py-1 text-[12px] text-risk">无法定位：{pointer} 在当前文档中不存在。</p>}
       {sel.jsonPointer !== undefined && pointer === undefined && <p className="text-[12px] text-ink-400">所选对象位于{isReq ? "请求上下文" : "模型响应"}，请切换文档查看。</p>}
-      <div className="rounded border border-ink-700 bg-ink-950/70 p-2">
+      <div className="rounded-lg border border-ink-700 bg-ink-950/70 p-2">
         {doc === "response" && run.parsed_json === undefined ? (
           <>
             {run.parse_diagnostics.map((d, i) => (
@@ -363,7 +368,7 @@ function MetaTab({ detail }: { detail: RunDetail }) {
         <Row k="错误" v={r.error ? `${r.error.code}: ${r.error.message}` : "无"} />
       </dl>
       {detail.snapshot?.warnings?.length ? (
-        <div className="rounded border border-risk/30 p-2 text-[11.5px] text-risk">
+        <div className="rounded-lg border border-risk/30 p-2 text-[11.5px] text-risk">
           {detail.snapshot.warnings.map((w) => (
             <div key={w}>⚠ {w}</div>
           ))}
@@ -376,7 +381,7 @@ function MetaTab({ detail }: { detail: RunDetail }) {
             {showPrompt ? "收起" : "查看"}实际发送内容（已脱敏）
           </Btn>
           {showPrompt && (
-            <pre className="mt-2 max-h-96 overflow-auto rounded border border-ink-700 bg-ink-950 p-2 text-[11px] whitespace-pre-wrap">
+            <pre className="mt-2 max-h-96 overflow-auto rounded-lg border border-ink-700 bg-ink-950 p-2 text-[11px] whitespace-pre-wrap">
               {`# system\n${r.actual_prompt.system}\n\n# user\n${r.actual_prompt.user}`}
             </pre>
           )}
@@ -476,15 +481,15 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
       </h4>
       <div className="space-y-1.5">
         <div className="text-[11px] text-ink-400">{editing ? `正在修改：${editing.target ?? editing.target_json_pointer ?? "整个 Run"}` : `目标：${target ?? "（未选择，标注整个 Run）"}`}</div>
-        <select value={type} onChange={(e) => setType(e.target.value)} aria-label="标注类型" className="w-full rounded border border-ink-700 bg-ink-950 px-1 py-0.5 text-[12px]">
+        <select value={type} onChange={(e) => setType(e.target.value)} aria-label="标注类型" className="w-full rounded-lg border border-ink-700 bg-ink-950 px-1 py-0.5 text-[12px]">
           {choices.map((v) => (
             <option key={v} value={v}>
               {ANN_LABEL[v] ?? v}
             </option>
           ))}
         </select>
-        <input value={expected} onChange={(e) => setExpected(e.target.value)} placeholder="正确值（可选）" aria-label="正确值" className="w-full rounded border border-ink-700 bg-ink-950 px-2 py-0.5 text-[12px]" />
-        <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="错误原因 / 备注（可选）" aria-label="标注备注" rows={2} className="w-full rounded border border-ink-700 bg-ink-950 px-2 py-0.5 text-[12px]" />
+        <input value={expected} onChange={(e) => setExpected(e.target.value)} placeholder="正确值（可选）" aria-label="正确值" className="w-full rounded-lg border border-ink-700 bg-ink-950 px-2 py-0.5 text-[12px]" />
+        <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="错误原因 / 备注（可选）" aria-label="标注备注" rows={2} className="w-full rounded-lg border border-ink-700 bg-ink-950 px-2 py-0.5 text-[12px]" />
         <div className="flex gap-1">
           <Btn tone="outline" onClick={save}>
             {editing ? "保存修改" : "保存标注"}
@@ -501,7 +506,7 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
       {detail.annotations.length > 0 && (
         <ul className="mt-2 space-y-1">
           {detail.annotations.map((a) => (
-            <li key={a.annotation_id} className={cx("rounded bg-ink-800 px-2 py-1 text-[11px]", editing?.annotation_id === a.annotation_id && "ring-1 ring-info")}>
+            <li key={a.annotation_id} className={cx("rounded-lg bg-ink-800 px-2 py-1 text-[11px]", editing?.annotation_id === a.annotation_id && "ring-1 ring-info")}>
               <div className="flex items-center gap-1">
                 <Badge tone="info">{ANN_LABEL[a.issue_type] ?? a.issue_type}</Badge> <span className="min-w-0 flex-1 truncate text-ink-400">{a.target ?? a.target_json_pointer}</span>
                 <button onClick={() => startEdit(a)} className="text-info hover:underline" aria-label={`修改标注 ${a.annotation_id}`}>

@@ -45,7 +45,7 @@ const Node = memo(function Node({ name, value, pointer, depth, highlight, onSele
           if (isContainer) setOpen((o) => !o);
           onSelect?.(pointer);
         }}
-        className={cx("flex cursor-pointer items-start gap-1 rounded-sm px-1 hover:bg-ink-800", isHit && "bg-stamp/25 ring-1 ring-stamp flash")}
+        className={cx("flex cursor-pointer items-start gap-1 rounded-md px-1 hover:bg-ink-800", isHit && "bg-accent/15 ring-1 ring-accent flash")}
         style={{ paddingLeft: depth * 14 }}
       >
         <span className="w-3 shrink-0 text-ink-600">{isContainer ? (open ? "▾" : "▸") : ""}</span>

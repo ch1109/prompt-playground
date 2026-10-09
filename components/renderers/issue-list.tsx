@@ -28,7 +28,7 @@ export function IssueList({ issues }: { issues: IssueView[] }) {
         <Badge>{issues.length}</Badge>
         {origins.length > 1 &&
           ["ALL", ...origins].map((o) => (
-            <button key={o} onClick={() => setOrigin(o)} className={cx("rounded px-1.5 text-[11px]", origin === o ? "bg-ink-700 text-ink-100" : "text-ink-400 hover:text-ink-100")}>
+            <button key={o} onClick={() => setOrigin(o)} className={cx("rounded-lg px-1.5 text-[11px]", origin === o ? "bg-ink-700 text-ink-100" : "text-ink-400 hover:text-ink-100")}>
               {o === "ALL" ? "全部" : ORIGIN_LABEL[o as IssueView["origin"]]}
             </button>
           ))}
@@ -52,7 +52,7 @@ export function IssueList({ issues }: { issues: IssueView[] }) {
                   });
                   setStore("evidenceOpen", true);
                 }}
-                className={cx("flex w-full items-start gap-2 px-3 py-1.5 text-left hover:bg-ink-800/60", sel.issueId === i.id && "bg-stamp/[0.08]")}
+                className={cx("flex w-full items-start gap-2 px-3 py-1.5 text-left hover:bg-ink-800/60", sel.issueId === i.id && "bg-accent/[0.07]")}
               >
                 <Badge tone={SEV_TONE[i.severity ?? "UNKNOWN"]} title="严重度：模型未给出时为 UNKNOWN">
                   {i.severity ?? "UNKNOWN"}

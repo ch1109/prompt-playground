@@ -11,11 +11,11 @@ export function Btn({ tone = "ghost", className, ...p }: ButtonHTMLAttributes<HT
     <button
       {...p}
       className={cx(
-        "inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[12px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
-        tone === "primary" && "bg-stamp text-white hover:bg-[#f06a50]",
+        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition-[background-color,border-color,color,transform] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100",
+        tone === "primary" && "bg-ink-100 text-white shadow-sm hover:bg-ink-300",
         tone === "ghost" && "text-ink-300 hover:bg-ink-800 hover:text-ink-100",
-        tone === "outline" && "border border-ink-600 text-ink-100 hover:border-ink-400",
-        tone === "danger" && "border border-stamp/60 text-stamp hover:bg-stamp-soft",
+        tone === "outline" && "border border-ink-700 bg-ink-900 text-ink-100 shadow-[0_1px_0_rgb(0_0_0/0.03)] hover:border-ink-600 hover:bg-ink-850",
+        tone === "danger" && "border border-stamp/40 text-stamp hover:bg-stamp-soft",
         className,
       )}
     />
@@ -23,16 +23,16 @@ export function Btn({ tone = "ghost", className, ...p }: ButtonHTMLAttributes<HT
 }
 
 const TONES: Record<string, string> = {
-  ok: "border-verify/40 bg-verify/10 text-verify",
-  warn: "border-risk/40 bg-risk/10 text-risk",
-  bad: "border-stamp/50 bg-stamp/10 text-stamp",
-  info: "border-info/40 bg-info/10 text-info",
-  mute: "border-ink-600 bg-ink-800 text-ink-300",
+  ok: "border-verify/20 bg-verify/[0.08] text-verify",
+  warn: "border-risk/25 bg-risk/[0.08] text-risk",
+  bad: "border-stamp/25 bg-stamp/[0.07] text-stamp",
+  info: "border-info/20 bg-info/[0.07] text-info",
+  mute: "border-ink-700 bg-ink-850 text-ink-300",
 };
 
 export function Badge({ tone = "mute", children, title, className }: { tone?: keyof typeof TONES; children: ReactNode; title?: string; className?: string }) {
   return (
-    <span title={title} className={cx("inline-flex items-center whitespace-nowrap rounded-sm border px-1.5 py-px font-mono text-[10.5px] leading-4", TONES[tone], className)}>
+    <span title={title} className={cx("inline-flex items-center whitespace-nowrap rounded-md border px-1.5 py-px font-mono text-[10.5px] leading-4", TONES[tone], className)}>
       {children}
     </span>
   );
@@ -87,16 +87,16 @@ export function CellValue({ value, state, kind }: { value: unknown; state?: Cell
   return (
     <span className={cx(state === "EXPLICIT_NONE" && "text-risk")}>
       {s}
-      {state === "EXPLICIT_NONE" && <span className="ml-1 rounded-sm bg-risk/15 px-1 text-[10px] text-risk">明确无牌</span>}
+      {state === "EXPLICIT_NONE" && <span className="ml-1 rounded-md bg-risk/10 px-1 text-[10px] text-risk">明确无牌</span>}
     </span>
   );
 }
 
 export function Section({ title, right, children, className }: { title: ReactNode; right?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <section className={cx("rise rounded-md border border-ink-700 bg-ink-900/80", className)}>
-      <header className="flex items-center justify-between gap-2 border-b border-ink-700 px-3 py-1.5">
-        <h3 className="text-[11.5px] font-semibold tracking-wide text-ink-300">{title}</h3>
+    <section className={cx("rise overflow-hidden rounded-xl border border-ink-700 bg-ink-900 shadow-[0_1px_2px_rgb(0_0_0/0.04)]", className)}>
+      <header className="flex items-center justify-between gap-2 border-b border-ink-700/70 px-3.5 py-2">
+        <h3 className="text-[12px] font-semibold text-ink-100">{title}</h3>
         {right}
       </header>
       {children}
@@ -105,5 +105,5 @@ export function Section({ title, right, children, className }: { title: ReactNod
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <div className="px-3 py-4 text-[12px] text-ink-400">{children}</div>;
+  return <div className="px-3.5 py-5 text-[12.5px] text-ink-400">{children}</div>;
 }

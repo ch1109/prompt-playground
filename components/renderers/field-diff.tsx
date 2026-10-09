@@ -24,7 +24,7 @@ export function FieldDiff({ changes, filter }: { changes: ChangeView[]; filter?:
     <div data-region="field-diff">
       <div className="flex items-center gap-2 border-b border-ink-700 px-3 py-1.5">
         <span className="text-[12px] font-semibold">Patch 预览</span>
-        <span className="stamp inline-block rounded-sm border-2 border-stamp px-1.5 font-mono text-[10.5px] font-bold tracking-widest text-stamp">SIMULATION_ONLY</span>
+        <span className="stamp inline-block rounded-md border-2 border-stamp px-1.5 font-mono text-[10.5px] font-bold tracking-widest text-stamp">SIMULATION_ONLY</span>
         <span className="text-[11px] text-ink-400">仅内存模拟，禁止写回九立</span>
       </div>
       {shown.length === 0 ? (
@@ -32,7 +32,7 @@ export function FieldDiff({ changes, filter }: { changes: ChangeView[]; filter?:
       ) : (
         <div className="max-h-80 overflow-auto">
           <table className="w-full text-[12px]">
-            <thead className="sticky top-0 bg-ink-850 text-ink-300">
+            <thead className="sticky top-0 bg-ink-850 text-[11.5px] text-ink-400">
               <tr>
                 {["委托行 · 字段", "决策", "核验状态", "原值（基准）", "模型结果值", "模拟新值", "规则 / 来源"].map((h) => (
                   <th key={h} className="border-b border-ink-700 px-2 py-1 text-left font-medium whitespace-nowrap">
@@ -51,12 +51,12 @@ export function FieldDiff({ changes, filter }: { changes: ChangeView[]; filter?:
                     select({ tableId: "fieldDecisions", rowId: c.id, fieldKey: "decision", jsonPointer: c.jsonPointer, sourceRefId: c.sourceRefIds[0] });
                     setStore("evidenceOpen", true);
                   }}
-                  className={cx("cursor-pointer border-b border-ink-800 hover:bg-ink-800/60", sel.rowId === c.id && "bg-stamp/[0.07]")}
+                  className={cx("cursor-pointer border-b border-ink-800 hover:bg-ink-800/60", sel.rowId === c.id && "bg-accent/[0.06]")}
                 >
                   <td className="px-2 py-1 whitespace-nowrap">
                     <span className="font-mono text-ink-400">{c.rowId}</span> · {FIELD_LABELS[c.field] ?? c.field}
                     {annotated.has(c.jsonPointer) && (
-                      <span className="ml-1 rounded bg-info/20 px-1 text-[10px] text-info" title="已有标注（见右侧「来源与标注」）">
+                      <span className="ml-1 rounded-lg bg-info/20 px-1 text-[10px] text-info" title="已有标注（见右侧「来源与标注」）">
                         标
                       </span>
                     )}

@@ -132,7 +132,7 @@ function HierarchyLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
       {regions.get("summary") && <Region region={regions.get("summary")!} vm={vm} />}
       <div className="grid grid-cols-[200px_1fr] gap-3">
         <Section title="入仓号">
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="查找入仓号…" aria-label="查找入仓号" className="m-2 w-[calc(100%-16px)] rounded border border-ink-700 bg-ink-950 px-2 py-0.5 text-[12px] outline-none" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="查找入仓号…" aria-label="查找入仓号" className="m-2 w-[calc(100%-16px)] rounded-lg border border-ink-700 bg-ink-950 px-2 py-0.5 text-[12px] outline-none" />
           <ul className="max-h-[520px] overflow-auto pb-1">
             {groups
               .filter((g) => !q || g.label.includes(q))
@@ -145,7 +145,7 @@ function HierarchyLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
                       setMergedSel(null);
                       useStudio.getState().clearSelection();
                     }}
-                    className={cx("flex w-full items-center justify-between px-3 py-1 text-left font-mono text-[12px] hover:bg-ink-800", activeGroup === g.key && "bg-stamp/10 text-stamp")}
+                    className={cx("flex w-full items-center justify-between px-3 py-1 text-left font-mono text-[12px] hover:bg-ink-800", activeGroup === g.key && "bg-accent/[0.07] text-accent")}
                   >
                     <span className={cx(g.key === UNRESOLVED_GROUP && "font-sans text-risk")}>{g.label}</span>
                     <Badge>{g.count}</Badge>
@@ -155,7 +155,7 @@ function HierarchyLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
           </ul>
         </Section>
         <div className="min-w-0 space-y-3">
-          {activeGroup === UNRESOLVED_GROUP && <p className="rounded border border-risk/40 bg-risk/10 px-3 py-1.5 text-[12px] text-risk">以下原始行没有可靠入仓号：原样展示，不归入任何逻辑查货单，也不伪造入仓号。</p>}
+          {activeGroup === UNRESOLVED_GROUP && <p className="rounded-lg border border-risk/40 bg-risk/10 px-3 py-1.5 text-[12px] text-risk">以下原始行没有可靠入仓号：原样展示，不归入任何逻辑查货单，也不伪造入仓号。</p>}
           {li && (
             <Section title={li.title} className="overflow-hidden">
               <DataTable table={li} options={{ hideTitle: true, rowFilter: inGroup, maxHeight: 160 }} />
@@ -221,7 +221,7 @@ function CandidateLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
                 <label className="flex items-center gap-1 text-[11px] text-ink-400">
                   <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} aria-label="显示全部委托行" /> 全部
                 </label>
-                <div className="flex overflow-hidden rounded border border-ink-600 text-[11px]">
+                <div className="flex overflow-hidden rounded-lg border border-ink-600 text-[11px]">
                   {(["table", "graph"] as const).map((m) => (
                     <button key={m} onClick={() => setMode(m)} className={cx("px-2 py-0.5", mode === m ? "bg-ink-700 text-ink-100" : "text-ink-400")}>
                       {m === "table" ? "候选表" : "关系图"}
@@ -262,7 +262,7 @@ function DecisionLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
     return row ? rowFilter(row) : true;
   };
   const toolbar = (
-    <div className="flex overflow-hidden rounded border border-ink-600 text-[11px]">
+    <div className="flex overflow-hidden rounded-lg border border-ink-600 text-[11px]">
       {presets.map((p) => (
         <button key={p} data-preset={p} onClick={() => setPreset(p)} className={cx("px-2 py-0.5", preset === p ? "bg-ink-700 text-ink-100" : "text-ink-400")}>
           {LABEL[p]}

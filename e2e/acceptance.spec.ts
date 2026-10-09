@@ -24,7 +24,7 @@ test("AT17 Schema 不合法：标明并可从诊断跳到 JSON 路径", async ({
   await expect(page.locator('[data-table-id="orderRows"]')).toBeVisible();
   await page.getByRole("tab", { name: "结构校验" }).click();
   await page.locator('[data-testid="diag-pointer"]', { hasText: "/output/rows/0/values/quantity" }).click();
-  await expect(page.locator('[data-pointer="/output/rows/0/values/quantity"]')).toHaveClass(/ring-stamp/);
+  await expect(page.locator('[data-pointer="/output/rows/0/values/quantity"]')).toHaveClass(/ring-accent/);
 });
 
 test("AT18 单元格 / 问题 / 关系边 共享同一选择状态并跨标签保持", async ({ page }) => {
@@ -33,16 +33,16 @@ test("AT18 单元格 / 问题 / 关系边 共享同一选择状态并跨标签�
   await page.locator('[data-table-id="orderRows"] [data-row-id="row-1"] [data-field="model"]').click();
   await expect(page.locator('[data-testid="evidence-drawer"]')).toContainText("ABC-01");
   await page.getByRole("tab", { name: "原始 JSON" }).click();
-  await expect(page.locator('[data-pointer="/output/rows/0/values/model"]')).toHaveClass(/ring-stamp/);
+  await expect(page.locator('[data-pointer="/output/rows/0/values/model"]')).toHaveClass(/ring-accent/);
   // JSON 节点 → 反查到单元格
   await page.locator('[data-pointer="/output/rows/1"]').click();
   await page.locator('[data-pointer="/output/rows/1/values"]').click();
   await page.locator('[data-pointer="/output/rows/1/values/brand"]').click();
   await page.getByRole("tab", { name: "可视化" }).click();
-  await expect(page.locator('[data-table-id="orderRows"] [data-row-id="row-2"] [data-field="brand"]')).toHaveClass(/outline-stamp/);
+  await expect(page.locator('[data-table-id="orderRows"] [data-row-id="row-2"] [data-field="brand"]')).toHaveClass(/outline-accent/);
   // 问题 → 定位行/字段 + 证据
   await page.locator("[data-issue-id]", { hasText: "报关单价" }).click();
-  await expect(page.locator('[data-table-id="orderRows"] [data-row-id="row-1"] [data-field="customs_unit_price"]')).toHaveClass(/outline-stamp/);
+  await expect(page.locator('[data-table-id="orderRows"] [data-row-id="row-1"] [data-field="customs_unit_price"]')).toHaveClass(/outline-accent/);
   await expect(page.locator('[data-testid="evidence-drawer"]')).toContainText("USD 11.00");
   await expect(page.locator('[data-testid="selection-pointer"]')).toHaveText("/output/rows/0/conflicts/0");
 
@@ -55,7 +55,7 @@ test("AT18 单元格 / 问题 / 关系边 共享同一选择状态并跨标签�
   await edge.click({ force: true });
   await expect(page.locator('[data-testid="evidence-drawer"]')).toContainText("E-I-B1-MODEL");
   await page.getByRole("tab", { name: "原始 JSON" }).click();
-  await expect(page.locator('[data-pointer="/output/row_relations/0/selected_raw_row_ids"]')).toHaveClass(/ring-stamp/);
+  await expect(page.locator('[data-pointer="/output/row_relations/0/selected_raw_row_ids"]')).toHaveClass(/ring-accent/);
 });
 
 test("证据卡点「在 JSON 中定位」自动切到原始 JSON 并高亮来源", async ({ page }) => {
@@ -63,7 +63,7 @@ test("证据卡点「在 JSON 中定位」自动切到原始 JSON 并高亮来�
   await page.locator('[data-table-id="orderRows"] [data-row-id="row-1"] [data-field="model"]').click();
   await page.getByTestId("evidence-drawer").getByRole("button", { name: "在 JSON 中定位" }).first().click();
   await expect(page.locator('[data-testid="result-pane"] [role="tab"][aria-selected="true"]')).toHaveText("原始 JSON");
-  await expect(page.locator("[data-pointer].ring-stamp")).toHaveCount(1);
+  await expect(page.locator("[data-pointer].ring-accent")).toHaveCount(1);
 });
 
 test("没有业务视图（未登记 Schema）时自动显示原始 JSON；之后仍可手动切回可视化", async ({ page }) => {
@@ -296,14 +296,14 @@ test("刷新页面不丢工作区：草稿、输入选择、当前结果都恢�
   await page.getByLabel("System 提示词").fill("刷新前的草稿");
   await page.reload();
   // 仍在 P3，结果重新显示，且标明来自上次运行
-  await expect(page.locator('[data-prompt="jiuli-p3"]')).toHaveClass(/bg-ink-800/);
+  await expect(page.locator('[data-prompt="jiuli-p3"]')).toHaveAttribute("aria-current", "true");
   await expect(page.locator('[data-table-id="orderRows"]')).toBeVisible();
   await expect(page.getByText("当前结果来自上次运行")).toBeVisible();
   await page.getByRole("button", { name: /^提示词/ }).click();
   await expect(page.getByLabel("System 提示词")).toHaveValue("刷新前的草稿");
   await expect(page.getByTestId("editor-pane").getByText("未保存草稿")).toBeVisible();
   await page.getByRole("button", { name: "输入" }).click();
-  await expect(page.locator('[data-fixture-id="constructed/p3-v3-multi-candidate.json"]')).toHaveClass(/ring-stamp/);
+  await expect(page.locator('[data-fixture-id="constructed/p3-v3-multi-candidate.json"]')).toHaveClass(/ring-accent/);
   expect(consoleErrors).toEqual([]);
 });
 
