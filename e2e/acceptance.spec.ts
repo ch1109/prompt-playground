@@ -349,6 +349,35 @@ test("重渲染 / 回放 / 保存版本失败时显示错误，不静默", async
   await expect(page.getByLabel("新版本名称")).toHaveValue("会失败的版本");
 });
 
+test("有未保存修改时切换版本先确认：取消则保留草稿，确认才载入旧版本", async ({ page }) => {
+  await page.goto("/projects/jiuli/playground");
+  await page.click('[data-prompt="jiuli-p2"]');
+  await page.getByRole("button", { name: /^提示词/ }).click();
+  const system = page.getByLabel("System 提示词");
+  const versions = page.getByLabel("Prompt 版本");
+  await expect(page.getByText("与版本一致")).toBeVisible();
+  const original = await system.inputValue();
+  const originalId = await versions.inputValue();
+  await system.fill(`${original}\n# 已保存改动 ${Date.now()}`);
+  await page.getByLabel("新版本名称").fill("切换确认测试");
+  await page.getByRole("button", { name: "保存为新版本" }).click();
+  await expect(page.getByText("与版本一致")).toBeVisible();
+  const draft = `未保存的重要改动 ${Date.now()}`;
+  await system.fill(draft);
+  // 取消：草稿保留，版本不变
+  let message = "";
+  page.once("dialog", (d) => ((message = d.message()), d.dismiss()));
+  await versions.selectOption(originalId);
+  expect(message).toContain("未保存的修改");
+  await expect(system).toHaveValue(draft);
+  await expect(page.getByText("未保存草稿")).toBeVisible();
+  // 确认：载入旧版本
+  page.once("dialog", (d) => d.accept());
+  await versions.selectOption(originalId);
+  await expect(system).toHaveValue(original);
+  await expect(page.getByText("与版本一致")).toBeVisible();
+});
+
 test("标注独立保存，不改原始输出", async ({ page }) => {
   await renderFixture(page, "jiuli-p4", "constructed/p4-v3-conflict.json");
   await page.locator('[data-change-id="OR_001:gross_weight"]').click();

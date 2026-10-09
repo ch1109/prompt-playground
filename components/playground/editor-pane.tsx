@@ -72,6 +72,8 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
           value={ws.versionId ?? ""}
           onChange={(e) => {
             const v = versions.find((x) => x.version_id === e.target.value);
+            // 有未保存改动时先确认，避免静默覆盖草稿
+            if (v && isDraft && !window.confirm("当前提示词有未保存的修改，切换版本后这些修改会丢失。\n\n确定切换？（取消后可先「保存为新版本」）")) return;
             if (v) patch({ versionId: v.version_id, versionHash: v.content_hash, system: v.system_prompt, userTemplate: v.user_prompt_template });
           }}
           aria-label="Prompt 版本"
