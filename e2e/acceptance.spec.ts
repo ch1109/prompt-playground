@@ -152,7 +152,7 @@ test("刷新页面不丢工作区：草稿、输入选择、当前结果都恢�
   await expect(page.getByText("当前结果来自上次运行")).toBeVisible();
   await page.getByRole("button", { name: /^提示词/ }).click();
   await expect(page.getByLabel("System 提示词")).toHaveValue("刷新前的草稿");
-  await expect(page.getByText("未保存草稿")).toBeVisible();
+  await expect(page.getByTestId("editor-pane").getByText("未保存草稿")).toBeVisible();
   await page.getByRole("button", { name: "输入" }).click();
   await expect(page.locator('[data-fixture-id="constructed/p3-v3-multi-candidate.json"]')).toHaveClass(/ring-stamp/);
   expect(consoleErrors).toEqual([]);
@@ -543,6 +543,19 @@ test("顶栏显示当前 Prompt 版本，有未保存修改时标为草稿", asy
   await expect(header).not.toContainText("未保存草稿");
 });
 
+test("不填名称保存的版本默认叫「版本 <时间>」，不与未保存草稿混淆", async ({ page }) => {
+  await page.goto("/projects/jiuli/playground");
+  await page.click('[data-prompt="jiuli-p4"]');
+  await page.getByRole("button", { name: /^提示词/ }).click();
+  await expect(page.getByText("与版本一致")).toBeVisible();
+  const system = page.getByLabel("System 提示词");
+  await system.fill(`${await system.inputValue()}\n# 默认名称测试 ${Date.now()}`);
+  await page.getByRole("button", { name: "保存为新版本" }).click();
+  await expect(page.getByText("与版本一致")).toBeVisible();
+  await expect(page.getByTestId("header-version")).toContainText(/版本 版本 \d{4}\//);
+  await expect(page.getByTestId("header-version")).not.toContainText("草稿");
+});
+
 test("版本加载完成前就开始输入：输入内容保留为草稿，不被最新版本覆盖", async ({ page }) => {
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
@@ -559,7 +572,7 @@ test("版本加载完成前就开始输入：输入内容保留为草稿，不�
   await page.getByLabel("System 提示词").fill(typed);
   release();
   await expect(page.getByLabel("Prompt 版本")).not.toHaveValue("");
-  await expect(page.getByText("未保存草稿")).toBeVisible();
+  await expect(page.getByTestId("editor-pane").getByText("未保存草稿")).toBeVisible();
   await expect(page.getByLabel("System 提示词")).toHaveValue(typed);
 });
 
@@ -584,7 +597,7 @@ test("有未保存修改时切换版本先确认：取消则保留草稿，确�
   await versions.selectOption(originalId);
   expect(message).toContain("未保存的修改");
   await expect(system).toHaveValue(draft);
-  await expect(page.getByText("未保存草稿")).toBeVisible();
+  await expect(page.getByTestId("editor-pane").getByText("未保存草稿")).toBeVisible();
   // 确认：载入旧版本
   page.once("dialog", (d) => d.accept());
   await versions.selectOption(originalId);

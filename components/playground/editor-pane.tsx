@@ -123,7 +123,7 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
           disabled={!isDraft}
           onClick={async () => {
             // 保存失败时保留名称，错误显示在顶栏
-            if (await onSave(label || `草稿 ${new Date().toLocaleString("zh-CN")}`)) setLabel("");
+            if (await onSave(label || `版本 ${new Date().toLocaleString("zh-CN")}`)) setLabel("");
           }}
         >
           保存为新版本
