@@ -639,3 +639,20 @@ describe("快照适用的 Prompt 种类", () => {
     expect(usableKinds(snap)).toEqual(["JIULI_P1", "JIULI_P2", "JIULI_P3", "GENERIC_JSON"]);
   });
 });
+
+describe("提示词源文件更新检测", () => {
+  it("文件内容变化时追加新版本（记录 parent），不覆盖旧版本；内容不变不重复追加", async () => {
+    const { listVersions, syncSeedVersion } = await import("@/lib/repositories/prompts");
+    const source = "prompts/jiuli-v3/P2_inspection_facts_FINAL_v3.0.txt";
+    const before = listVersions("jiuli-p2");
+    const seed = before.find((v) => v.source === source)!;
+    const changed = seed.system_prompt + "\n新增规则：read_status 必须是数组。";
+    const v = syncSeedVersion("jiuli-p2", source, changed)!;
+    expect(v.parent_version_id).toBe(seed.version_id);
+    expect(v.label).toContain("文件已更新");
+    expect(syncSeedVersion("jiuli-p2", source, changed)).toBeNull();
+    const after = listVersions("jiuli-p2");
+    expect(after).toHaveLength(before.length + 1);
+    expect(after.find((x) => x.version_id === seed.version_id)!.system_prompt).toBe(seed.system_prompt);
+  });
+});

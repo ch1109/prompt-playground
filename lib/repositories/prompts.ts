@@ -58,24 +58,48 @@ export function ensureSeed() {
       s.kind === "GENERIC_JSON" ? null : "jiuli-ai-v3",
       null,
     );
-    const has = d.prepare("SELECT 1 FROM prompt_versions WHERE prompt_id = ? LIMIT 1").get(s.id);
-    if (!has) {
-      const system = s.file ? readFileSync(join(process.cwd(), "prompts", "jiuli-v3", s.file), "utf8") : "只输出一个合法 JSON 对象。";
-      d.prepare("INSERT INTO prompt_versions VALUES (?,?,?,?,?,?,?,?,?,?)").run(
-        newId("pv"),
-        s.id,
-        s.file ? "v3.0 原文（九立demo）" : "默认",
-        system,
-        DEFAULT_USER_TEMPLATE,
-        JSON.stringify({ input_json: "InputBuilder 构造的请求 JSON" }),
-        contentHash(system, DEFAULT_USER_TEMPLATE),
-        now,
-        null,
-        s.file ? `prompts/jiuli-v3/${s.file}` : "seed",
-      );
+    if (s.file) {
+      seeded.add(d); // syncSeedVersion 内部会调用 ensureSeed，先标记避免递归
+      syncSeedVersion(s.id, `prompts/jiuli-v3/${s.file}`, readFileSync(join(process.cwd(), "prompts", "jiuli-v3", s.file), "utf8"));
+      continue;
     }
+    const has = d.prepare("SELECT 1 FROM prompt_versions WHERE prompt_id = ? LIMIT 1").get(s.id);
+    if (!has) insertSeed(s.id, "默认", "只输出一个合法 JSON 对象。", "seed", null);
   }
   seeded.add(d);
+}
+
+function insertSeed(promptId: string, label: string, system: string, source: string, parent: string | null): PromptVersion {
+  const v: PromptVersion = {
+    version_id: newId("pv"),
+    prompt_id: promptId,
+    label,
+    system_prompt: system,
+    user_prompt_template: DEFAULT_USER_TEMPLATE,
+    variables_schema: JSON.stringify({ input_json: "InputBuilder 构造的请求 JSON" }),
+    content_hash: contentHash(system, DEFAULT_USER_TEMPLATE),
+    created_at: new Date().toISOString(),
+    parent_version_id: parent,
+    source,
+  };
+  db()
+    .prepare("INSERT INTO prompt_versions VALUES (?,?,?,?,?,?,?,?,?,?)")
+    .run(v.version_id, v.prompt_id, v.label, v.system_prompt, v.user_prompt_template, v.variables_schema, v.content_hash, v.created_at, v.parent_version_id, v.source);
+  return v;
+}
+
+/**
+ * 提示词源文件同步（服务启动时检查一次）：首次导入为初始版本；
+ * 文件内容与该来源最新版本不同 → 追加新版本（parent 指向上一版），不覆盖历史。返回新建版本或 null。
+ */
+export function syncSeedVersion(promptId: string, source: string, text: string): PromptVersion | null {
+  ensureSeed();
+  const latest = db().prepare("SELECT * FROM prompt_versions WHERE prompt_id = ? AND source = ? ORDER BY created_at DESC, rowid DESC LIMIT 1").get(promptId, source) as unknown as
+    | PromptVersion
+    | undefined;
+  if (!latest) return insertSeed(promptId, "v3.0 原文（九立demo）", text, source, null);
+  if (latest.system_prompt === text) return null;
+  return insertSeed(promptId, `v3.0 原文（文件已更新 ${new Date().toISOString().slice(0, 10)}）`, text, source, latest.version_id);
 }
 
 export function listProjects() {
