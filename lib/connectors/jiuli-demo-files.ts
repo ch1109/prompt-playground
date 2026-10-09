@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { extname, resolve, sep } from "node:path";
+import { basename, extname, resolve, sep } from "node:path";
 import {
   ConnectorError,
   type AuthorizedPreview,
@@ -89,7 +89,8 @@ export class JiuliDemoFilesConnector implements JiuliReadonlyConnector {
           status: "CONNECTED_DEMO_FILES",
           realApi: false,
           readOnly: true,
-          source: `九立 Demo 本地数据文件（${this.root}/demo-generated/mock）`,
+          // 只给出目录名，不向浏览器暴露本机完整路径（PRD §6.3-6）
+          source: `九立 Demo 本地数据文件（${basename(this.root)}/demo-generated/mock）`,
           message: "已只读连接九立 Demo 本地数据文件。九立真实业务只读 API 尚未接通。",
           canPreviewFiles: true,
         }
@@ -97,7 +98,7 @@ export class JiuliDemoFilesConnector implements JiuliReadonlyConnector {
           status: "CONNECTOR_UNAVAILABLE",
           realApi: false,
           readOnly: true,
-          source: this.root,
+          source: `JIULI_DEMO_ROOT（${basename(this.root)}）`,
           message: "九立 Demo 数据目录不可用（路径或权限配置错误）。离线样本仍可使用。",
           canPreviewFiles: false,
         };

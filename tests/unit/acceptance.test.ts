@@ -307,6 +307,15 @@ describe("AT20 只读连接不可用", () => {
     expect((await new JiuliHttpPlaceholderConnector().capabilities()).status).toBe("NOT_CONFIGURED");
     expect(render("constructed/p1-v3-conflict.json").status).toBe("SUCCEEDED");
   });
+  it("连接说明不向浏览器暴露本机完整路径", async () => {
+    const bad = new JiuliDemoFilesConnector({ root: "/Users/someone/secret/jiuli", allowedCustomers: "*" });
+    expect((await bad.capabilities()).source).not.toContain("/Users/someone");
+    if (hasDemo) {
+      const ok = await new JiuliDemoFilesConnector({ root: DEMO_ROOT, allowedCustomers: "*" }).capabilities();
+      expect(ok.status).toBe("CONNECTED_DEMO_FILES");
+      expect(ok.source).not.toContain(DEMO_ROOT);
+    }
+  });
 });
 
 describe.skipIf(!hasDemo)("AT21 跨客户选择任务", () => {
