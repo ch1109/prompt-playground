@@ -586,6 +586,21 @@ describe("运行中状态与截断诊断", () => {
     expect(getRun(runId)!.status).toBe("SUCCEEDED");
   });
 
+  it("运行中可以取消：停止等待模型，Run 记为 CANCELLED；已结束的 Run 不能取消", async () => {
+    // 假服务一直不返回，直到请求被中止
+    setProviderForTests(new OpenAICompatibleProvider(cfg, fakeFetch((init) => new Promise<Response>((_, rej) => init?.signal?.addEventListener("abort", () => rej(new DOMException("aborted", "AbortError")))))));
+    const { startModelRun, cancelRun } = await import("@/lib/runs/service");
+    const { runId, done } = startModelRun({ projectId: "jiuli", promptId: "jiuli-p1", snapshotId: snap().snapshot_id, system: "S", userTemplate: "{{input_json}}", params: {} });
+    await new Promise((r) => setTimeout(r, 20));
+    cancelRun(runId);
+    const run = await done;
+    setProviderForTests(undefined);
+    expect(run.status).toBe("CANCELLED");
+    expect(run.error?.code).toBe("CANCELLED");
+    expect(getRun(runId)!.status).toBe("CANCELLED");
+    expect(() => cancelRun(runId)).toThrow(RunServiceError);
+  });
+
   it("开始前就能发现的问题（如未配置模型）直接报错，不留下 RUNNING 记录", async () => {
     const { startModelRun } = await import("@/lib/runs/service");
     const { listRuns } = await import("@/lib/repositories/runs");

@@ -287,6 +287,16 @@ export function Playground({ projectId }: { projectId: string }) {
     }
   }
 
+  async function cancelRun(runId: string) {
+    setError(null);
+    try {
+      await api(`/api/runs/${runId}/cancel`, { method: "POST" });
+      // 轮询会在 Run 落到 CANCELLED 后自动刷新结果区与历史
+    } catch (e) {
+      report(e);
+    }
+  }
+
   async function replay(runId: string) {
     setError(null);
     try {
@@ -487,7 +497,7 @@ export function Playground({ projectId }: { projectId: string }) {
                     该项目不存在或没有提示词。请在左侧切换或新建项目。
                   </p>
                 ) : (
-                  <ResultPane detail={detail} dirty={dirty} canPreview={capability?.status === "CONNECTED_DEMO_FILES"} loading={busy} />
+                  <ResultPane detail={detail} dirty={dirty} canPreview={capability?.status === "CONNECTED_DEMO_FILES"} loading={busy} onCancel={cancelRun} />
                 )}
               </div>
             )}

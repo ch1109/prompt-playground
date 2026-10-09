@@ -163,6 +163,16 @@ export async function previewModelRun(input: { promptId: string; snapshotId: str
   };
 }
 
+/** 运行中调用的中止开关（按 runId）；放在 globalThis，开发模式热更新后仍是同一份 */
+const running = ((globalThis as unknown as { __studioRunAborts?: Map<string, AbortController> }).__studioRunAborts ??= new Map());
+
+/** 取消运行中的调用：停止等待模型，Run 记为 CANCELLED。服务商可能已开始处理并计费。 */
+export function cancelRun(runId: string) {
+  const ac = running.get(runId);
+  if (!ac) throw new RunServiceError("RUN_NOT_RUNNING", "这次运行已结束或不在本服务进程中，无法取消", 409);
+  ac.abort();
+}
+
 type ModelRunInput = Base & { snapshotId: string; system: string; userTemplate: string; promptVersionId?: string | null; params: ModelParams; attachImages?: boolean };
 
 /** MODEL_RUN：服务端代理真实模型调用；失败保存失败 Run，绝不回退为 Mock */
@@ -230,13 +240,28 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
 
   const request = built.request;
   const builderWarnings = built.warnings;
-  return { runId, done: finishModelRun() };
+  const abort = new AbortController();
+  running.set(runId, abort);
+  const cancelled = () =>
+    finishRun({
+      ...common,
+      ...noResult,
+      ended_at: new Date().toISOString(),
+      latency_ms: Date.now() - Date.parse(started),
+      status: "CANCELLED",
+      raw_response: "",
+      raw_response_hash: sha256(""),
+      error: { code: "CANCELLED", message: "用户取消了这次运行（服务商可能已开始处理并计费）" },
+    });
+  return { runId, done: finishModelRun().finally(() => running.delete(runId)) };
 
   async function finishModelRun(): Promise<Run> {
     try {
       const pages = input.attachImages ? await buildPageImages(referencedFileIds(request)) : null;
+      if (abort.signal.aborted) return cancelled();
       const images = pages?.images.map((i) => ({ mediaType: i.media_type, base64: i.base64 }));
-      const result = await provider.complete({ system: input.system, user, params: input.params, images });
+      const result = await provider.complete({ system: input.system, user, params: input.params, images, signal: abort.signal });
+      if (abort.signal.aborted) return cancelled();
       const done = {
         ...common,
         // 附带图片时，图片 hash 也计入实际提示词 hash

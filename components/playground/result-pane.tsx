@@ -48,7 +48,7 @@ function Elapsed({ since }: { since: number }) {
   return <>{Math.max(0, Math.round((now - since) / 1000))}</>;
 }
 
-export function ResultPane({ detail, dirty, canPreview, loading }: { detail?: RunDetail; dirty: boolean; canPreview: boolean; loading: boolean }) {
+export function ResultPane({ detail, dirty, canPreview, loading, onCancel }: { detail?: RunDetail; dirty: boolean; canPreview: boolean; loading: boolean; onCancel?: (runId: string) => void }) {
   const tab = useStudio((s) => s.resultTab);
   const setStore = useStudio((s) => s.set);
   const maximized = useStudio((s) => s.maximized);
@@ -94,6 +94,11 @@ export function ResultPane({ detail, dirty, canPreview, loading }: { detail?: Ru
           <span data-testid="running-banner">
             模型运行中… 已等待 <Elapsed since={Date.parse(run.started_at)} /> 秒（超时上限约 300 秒）。结果返回后自动显示；刷新或关闭页面不影响这次运行。
           </span>
+          {onCancel && (
+            <Btn tone="danger" className="ml-2" onClick={() => onCancel(run.run_id)} title="停止等待模型结果；服务商可能已开始处理并计费">
+              取消运行
+            </Btn>
+          )}
         </Banner>
       )}
       {run?.finish_reason === "length" && (
@@ -108,6 +113,7 @@ export function ResultPane({ detail, dirty, canPreview, loading }: { detail?: Ru
           模型调用失败：{run.error?.code} — {run.error?.message}（已保存失败 Run，未回退为 Mock 结果）
         </Banner>
       )}
+      {run?.status === "CANCELLED" && <Banner tone="warn">这次运行已取消，没有取得模型结果（服务商可能已开始处理并计费）。</Banner>}
       {run && !vm && run.status === "SUCCEEDED" && <Banner tone="info">未登记 Schema（UNKNOWN_SCHEMA）：不套用九立模板，请在「原始 JSON」查看 JSON 树，或选择正确的 Prompt/Schema。</Banner>}
       {run?.rerender_note && <Banner tone="info">{run.rerender_note}（原始结果 Hash 未变：{run.raw_response_hash.slice(0, 12)}…）</Banner>}
 
