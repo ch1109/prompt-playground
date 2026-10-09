@@ -69,6 +69,17 @@ test("AT19 来源无原文：显示 METADATA_ONLY / MISSING，不提供越权下
   expect(traversal.status()).toBe(400);
 });
 
+test("原件打不开时显示中文说明页（不是裸 JSON），状态码不变", async ({ page }) => {
+  const res = await page.goto("/api/materials/U-0000000000000000000000000000000000000000000000000000000000000000/preview");
+  expect(res!.status()).toBe(404);
+  await expect(page.locator("h1")).toHaveText("原件无法打开");
+  await expect(page.locator("body")).toContainText("可重新导入快照后再打开");
+  await expect(page.locator("body")).not.toContainText('"ok":false');
+  const forbidden = await page.goto("/api/materials/F-000000000000/preview");
+  expect(forbidden!.status()).toBe(403);
+  await expect(page.locator("body")).toContainText("无权");
+});
+
 test("AT23 运行后修改 Prompt 未再运行：结果标识来自之前运行", async ({ page }) => {
   await renderFixture(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
   await expect(page.getByText("当前结果来自上次运行")).toHaveCount(0);
