@@ -16,6 +16,9 @@ export interface Workspace {
   pasteRaw: string;
   pasteRequest: string;
   fixtureId: string | null;
+  /** 当前样本对应的快照（样本带请求上下文时，选中即创建/复用）；无上下文为 null */
+  fixtureSnapshotId: string | null;
+  /** 「已有快照」/九立导入选中的快照 */
   snapshotId: string | null;
   params: { temperature: number; max_tokens: number };
   /** 是否随请求附带原件页面图片（视觉模型） */
@@ -34,6 +37,7 @@ export const emptyWorkspace = (): Workspace => ({
   pasteRaw: "",
   pasteRequest: "",
   fixtureId: null,
+  fixtureSnapshotId: null,
   snapshotId: null,
   params: { temperature: 0, max_tokens: 16000 },
   attachImages: false,
@@ -41,12 +45,22 @@ export const emptyWorkspace = (): Workspace => ({
   runInputSig: null,
 });
 
+/**
+ * 真实运行将使用的快照：请求预览、运行、DIRTY 判断都只认这里，保证"预览的就是要发送的"。
+ * 只取当前输入模式自己的快照，不沿用其他模式留下的选择；粘贴模式仅用于仅渲染。
+ */
+export function runSnapshotId(w: Workspace): string | null {
+  if (w.inputMode === "fixture") return w.fixtureSnapshotId;
+  if (w.inputMode === "snapshot") return w.snapshotId;
+  return null;
+}
+
 /** 任何影响结果的编辑（提示词、参数、输入）都会改变签名；与产生当前 Run 时的签名不同即 DIRTY */
 export function inputSignature(w: Workspace, mode: "RENDER_ONLY" | "MODEL_RUN"): string {
   const input =
     mode === "RENDER_ONLY"
       ? { inputMode: w.inputMode, raw: w.inputMode === "paste" ? w.pasteRaw : null, req: w.inputMode === "paste" ? w.pasteRequest : null, fixture: w.inputMode === "fixture" ? w.fixtureId : null }
-      : { snapshot: w.snapshotId };
+      : { snapshot: runSnapshotId(w) };
   return JSON.stringify({ mode, input, system: w.system, user: w.userTemplate, params: w.params, attachImages: mode === "MODEL_RUN" && w.attachImages });
 }
 

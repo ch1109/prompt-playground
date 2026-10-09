@@ -110,6 +110,34 @@ test("九立只读导入：选客户/任务/批次 → 隔离快照 → 请求�
   await expect(page.getByTestId("request-preview")).toContainText("retrieval_complete=false");
 });
 
+test("请求预览与真实运行使用同一份输入：切换输入来源后不沿用旧快照", async ({ page }) => {
+  await page.goto("/projects/jiuli/playground");
+  await page.click('[data-prompt="jiuli-p1"]');
+  // 先从九立导入一个快照
+  await page.getByRole("button", { name: "从九立导入" }).click();
+  await page.getByRole("button", { name: /上海浦壹/ }).click();
+  await page.getByLabel("委托任务").selectOption({ index: 1 });
+  await page.getByRole("button", { name: "只读读取并创建隔离快照" }).click();
+  await expect(page.getByTestId("snapshot-list")).toContainText("JIULI_READONLY");
+  // 再切到样本库选录制样本：预览必须是样本自带的请求，而不是刚才的九立快照
+  await page.getByRole("button", { name: "样本库" }).click();
+  await page.click('[data-fixture-id="v3/SC-08-audit/P1"]');
+  await page.getByRole("button", { name: "请求预览" }).click();
+  await expect(page.getByTestId("request-preview")).toContainText("passthrough-snapshot-request");
+  await expect(page.getByTestId("request-preview")).not.toContainText("jiuli-demo-p1");
+  // 没有请求上下文的样本：明确说明不能真实运行，不显示其他快照的预览
+  await page.getByRole("button", { name: "输入" }).click();
+  await page.click('[data-fixture-id="v2/p1-original-output-example.json"]');
+  await page.getByRole("button", { name: "请求预览" }).click();
+  await expect(page.getByTestId("editor-pane")).toContainText("没有请求上下文");
+  await expect(page.getByTestId("request-preview")).toHaveCount(0);
+  // 粘贴模式只用于仅渲染：同样不沿用旧快照
+  await page.getByRole("button", { name: "输入" }).click();
+  await page.getByRole("button", { name: "粘贴 / 文件 JSON" }).click();
+  await page.getByRole("button", { name: "请求预览" }).click();
+  await expect(page.getByTestId("request-preview")).toHaveCount(0);
+});
+
 test("标注独立保存，不改原始输出", async ({ page }) => {
   await renderFixture(page, "jiuli-p4", "constructed/p4-v3-conflict.json");
   await page.locator('[data-change-id="OR_001:gross_weight"]').click();

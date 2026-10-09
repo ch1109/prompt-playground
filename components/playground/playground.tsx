@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/client/api";
 import type { CapabilityDTO, FixtureSummary, PromptDef, PromptVersionDTO, ProviderInfoDTO, RunDetail, RunListItem, SnapshotListItem } from "@/lib/client/types";
-import { emptyWorkspace, inputSignature, useStudio } from "@/lib/state/studio-store";
+import { emptyWorkspace, inputSignature, runSnapshotId, useStudio } from "@/lib/state/studio-store";
 import { Badge, Btn, cx, RUN_STATUS_LABEL, RUN_STATUS_TONE } from "@/components/ui";
 import { EditorPane } from "./editor-pane";
 import { ResultPane } from "./result-pane";
@@ -99,22 +99,45 @@ export function Playground({ projectId }: { projectId: string }) {
     }
   }
 
+  /** 带请求上下文的样本 → 创建（或复用同内容的）快照；没有上下文返回 null */
+  async function fixtureSnapshot(fixtureId: string): Promise<string | null> {
+    if (!fixtures.find((f) => f.id === fixtureId)?.hasRequest) return null;
+    const snap = await api<{ snapshot_id: string }>("/api/snapshots/import", { json: { projectId, fixtureId } });
+    return snap.snapshot_id;
+  }
+
+  /** 选中样本时立即准备快照，让请求预览在运行前就显示实际要发送的内容 */
+  async function pickFixture(fixtureId: string) {
+    s.patchWorkspace(promptId, { fixtureId, fixtureSnapshotId: null });
+    try {
+      const id = await fixtureSnapshot(fixtureId);
+      // 期间用户又换了样本，就不覆盖
+      if (useStudio.getState().workspaces[promptId]?.fixtureId === fixtureId) s.patchWorkspace(promptId, { fixtureSnapshotId: id });
+    } catch (e) {
+      setError(e instanceof ApiError ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : String(e));
+    }
+  }
+
   async function modelRun() {
     setError(null);
     setBusy(true);
     try {
-      let snapshotId = ws.snapshotId;
-      if (ws.inputMode === "fixture") {
-        if (!ws.fixtureId) throw new Error("请选择样本");
-        const snap = await api<{ snapshot_id: string }>("/api/snapshots/import", { json: { projectId, fixtureId: ws.fixtureId } });
-        snapshotId = snap.snapshot_id;
-        s.patchWorkspace(promptId, { snapshotId });
+      // 与请求预览同一来源（runSnapshotId）；样本快照尚未就绪时在此补建
+      let w = ws;
+      if (w.inputMode === "fixture") {
+        if (!w.fixtureId) throw new Error("请选择样本");
+        if (!w.fixtureSnapshotId) {
+          w = { ...w, fixtureSnapshotId: await fixtureSnapshot(w.fixtureId) };
+          s.patchWorkspace(promptId, { fixtureSnapshotId: w.fixtureSnapshotId });
+        }
+        if (!w.fixtureSnapshotId) throw new Error("该样本没有请求上下文，不能真实运行，只能「仅渲染」");
       }
-      if (!snapshotId) throw new Error("真实运行必须选择输入快照（样本需带请求上下文，或从九立只读导入）");
+      const snapshotId = runSnapshotId(w);
+      if (!snapshotId) throw new Error("真实运行必须选择输入快照（带 ctx 的样本、已有快照，或从九立只读导入）；粘贴的 JSON 只能「仅渲染」");
       const run = await api<{ run_id: string }>("/api/runs", {
-        json: { mode: "MODEL_RUN", projectId, promptId, snapshotId, system: ws.system, userTemplate: ws.userTemplate, promptVersionId: ws.versionId, params: ws.params, attachImages: ws.attachImages },
+        json: { mode: "MODEL_RUN", projectId, promptId, snapshotId, system: w.system, userTemplate: w.userTemplate, promptVersionId: w.versionId, params: w.params, attachImages: w.attachImages },
       });
-      await openRun(run.run_id, { sig: inputSignature({ ...ws, snapshotId }, "MODEL_RUN"), mode: "MODEL_RUN" });
+      await openRun(run.run_id, { sig: inputSignature(w, "MODEL_RUN"), mode: "MODEL_RUN" });
       loadRuns();
     } catch (e) {
       setError(e instanceof ApiError ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : String(e));
@@ -243,6 +266,7 @@ export function Playground({ projectId }: { projectId: string }) {
                       provider={provider}
                       capability={capability}
                       onSaveVersion={saveVersion}
+                      onPickFixture={pickFixture}
                       onSnapshotsChanged={loadSnapshots}
                     />
                   )}

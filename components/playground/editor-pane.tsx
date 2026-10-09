@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "@/lib/client/api";
 import type { CapabilityDTO, FixtureSummary, PromptVersionDTO, ProviderInfoDTO, SnapshotListItem } from "@/lib/client/types";
 import type { PromptKind } from "@/lib/contracts/run";
-import { useWorkspace, type InputMode } from "@/lib/state/studio-store";
+import { runSnapshotId, useWorkspace, type InputMode } from "@/lib/state/studio-store";
 import { Badge, Btn, cx, Empty } from "@/components/ui";
 
 type EditorTab = "prompt" | "input" | "model" | "preview";
@@ -19,6 +19,7 @@ export function EditorPane(props: {
   provider: ProviderInfoDTO | null;
   capability: CapabilityDTO | null;
   onSaveVersion: (label: string) => Promise<void>;
+  onPickFixture: (fixtureId: string) => void;
   onSnapshotsChanged: () => void;
 }) {
   const [tab, setTab] = useState<EditorTab>("input");
@@ -46,12 +47,13 @@ export function EditorPane(props: {
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-3">
         {tab === "prompt" && <PromptTab versions={props.versions} isDraft={isDraft} onSave={props.onSaveVersion} />}
-        {tab === "input" && <InputTab kind={props.kind} fixtures={props.fixtures} snapshots={props.snapshots} capability={props.capability} onSnapshotsChanged={props.onSnapshotsChanged} />}
+        {tab === "input" && <InputTab kind={props.kind} fixtures={props.fixtures} snapshots={props.snapshots} capability={props.capability} onPickFixture={props.onPickFixture} onSnapshotsChanged={props.onSnapshotsChanged} />}
         {tab === "model" && <ModelTab provider={props.provider} />}
-        {tab === "preview" && <PreviewTab />}
+        {tab === "preview" && <PreviewTab fixtures={props.fixtures} />}
       </div>
       <div className="border-t border-ink-700 px-3 py-1 text-[11px] text-ink-400">
-        输入：{ws.inputMode === "fixture" ? `样本 ${ws.fixtureId ?? "未选"}` : ws.inputMode === "paste" ? "粘贴 JSON" : `快照 ${ws.snapshotId ?? "未选"}`}
+        输入：{ws.inputMode === "fixture" ? `样本 ${ws.fixtureId ?? "未选"}` : ws.inputMode === "paste" ? "粘贴 JSON（仅渲染）" : ws.inputMode === "jiuli" ? "九立导入（创建快照后使用）" : `快照 ${ws.snapshotId ?? "未选"}`}
+        {runSnapshotId(ws) && ws.inputMode === "fixture" && ` · 快照 ${runSnapshotId(ws)}`}
       </div>
     </div>
   );
@@ -116,7 +118,7 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
   );
 }
 
-function InputTab({ kind, fixtures, snapshots, capability, onSnapshotsChanged }: { kind: PromptKind; fixtures: FixtureSummary[]; snapshots: SnapshotListItem[]; capability: CapabilityDTO | null; onSnapshotsChanged: () => void }) {
+function InputTab({ kind, fixtures, snapshots, capability, onPickFixture, onSnapshotsChanged }: { kind: PromptKind; fixtures: FixtureSummary[]; snapshots: SnapshotListItem[]; capability: CapabilityDTO | null; onPickFixture: (fixtureId: string) => void; onSnapshotsChanged: () => void }) {
   const [ws, patch] = useWorkspace();
   const modes: [InputMode, string][] = [
     ["fixture", "样本库"],
@@ -133,7 +135,7 @@ function InputTab({ kind, fixtures, snapshots, capability, onSnapshotsChanged }:
           </button>
         ))}
       </div>
-      {ws.inputMode === "fixture" && <FixtureList kind={kind} fixtures={fixtures} />}
+      {ws.inputMode === "fixture" && <FixtureList kind={kind} fixtures={fixtures} onPick={onPickFixture} />}
       {ws.inputMode === "paste" && <PasteInput />}
       {ws.inputMode === "snapshot" && <SnapshotList snapshots={snapshots} />}
       {ws.inputMode === "jiuli" && <JiuliImport capability={capability} onCreated={onSnapshotsChanged} />}
@@ -141,8 +143,8 @@ function InputTab({ kind, fixtures, snapshots, capability, onSnapshotsChanged }:
   );
 }
 
-function FixtureList({ kind, fixtures }: { kind: PromptKind; fixtures: FixtureSummary[] }) {
-  const [ws, patch] = useWorkspace();
+function FixtureList({ kind, fixtures, onPick }: { kind: PromptKind; fixtures: FixtureSummary[]; onPick: (fixtureId: string) => void }) {
+  const [ws] = useWorkspace();
   const list = fixtures.filter((f) => f.promptKind === kind);
   const groups = useMemo(() => [...new Set(list.map((f) => f.group))], [list]);
   if (!list.length) return <Empty>当前 Prompt 没有样本。</Empty>;
@@ -159,7 +161,7 @@ function FixtureList({ kind, fixtures }: { kind: PromptKind; fixtures: FixtureSu
                 <li key={f.id}>
                   <button
                     data-fixture-id={f.id}
-                    onClick={() => patch({ fixtureId: f.id })}
+                    onClick={() => onPick(f.id)}
                     className={cx("flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[12px] hover:bg-ink-800", ws.fixtureId === f.id && "bg-stamp/10 ring-1 ring-stamp/50")}
                   >
                     <span className="min-w-0 flex-1 truncate">{f.title}</span>
@@ -390,17 +392,35 @@ interface PreviewDTO {
   provider: ProviderInfoDTO;
 }
 
-function PreviewTab() {
+function PreviewTab({ fixtures }: { fixtures: FixtureSummary[] }) {
   const [ws, , promptId] = useWorkspace();
+  // 与「运行模型」同一来源，保证预览的就是要发送的
+  const snapshotId = runSnapshotId(ws);
   const [p, setP] = useState<PreviewDTO | null>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
-    if (!ws.snapshotId) return;
-    api<PreviewDTO>("/api/runs/preview", { json: { promptId, snapshotId: ws.snapshotId, system: ws.system, userTemplate: ws.userTemplate, attachImages: ws.attachImages } })
+    setP(null);
+    setErr(null);
+    if (!snapshotId) return;
+    api<PreviewDTO>("/api/runs/preview", { json: { promptId, snapshotId, system: ws.system, userTemplate: ws.userTemplate, attachImages: ws.attachImages } })
       .then(setP)
       .catch((e) => setErr(e.message));
-  }, [ws.snapshotId, ws.system, ws.userTemplate, ws.attachImages, promptId]);
-  if (!ws.snapshotId) return <Empty>请先在「输入」选择快照（或带请求上下文的样本会在运行时自动建快照）。真实运行只使用快照数据。</Empty>;
+  }, [snapshotId, ws.system, ws.userTemplate, ws.attachImages, promptId]);
+  if (!snapshotId) {
+    const why =
+      ws.inputMode === "fixture"
+        ? !ws.fixtureId
+          ? "请先在「输入 → 样本库」选择样本。"
+          : !fixtures.find((f) => f.id === ws.fixtureId)?.hasRequest
+            ? "该样本没有请求上下文（无 ctx 标记），不能真实运行，只能「仅渲染」。"
+            : "正在准备样本快照…"
+        : ws.inputMode === "paste"
+          ? "粘贴的 JSON 只用于「仅渲染」。真实运行请选择带 ctx 的样本、已有快照，或从九立只读导入。"
+          : ws.inputMode === "jiuli"
+            ? "请先在「输入 → 从九立导入」创建快照。"
+            : "请先在「输入 → 已有快照」选择快照。";
+    return <Empty>{why}真实运行只使用快照数据。</Empty>;
+  }
   if (err) return <p className="text-stamp">{err}</p>;
   if (!p) return <p className="text-ink-400">构造中…</p>;
   if (!p.ok) return <p className="rounded border border-stamp/40 bg-stamp/10 p-2 text-[12px] text-stamp">无法构造输入：[{p.code}] {p.message}</p>;

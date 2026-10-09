@@ -523,3 +523,15 @@ describe("渲染配置白名单", () => {
     expect(validateRendererConfig({ ...base, regions: [{ id: "a", component: "data-table", binding: "issues", options: { fmt: "(x) => alert(1)" } }] }).ok).toBe(false);
   });
 });
+
+describe("预览与运行使用同一份输入", () => {
+  it("按当前输入模式决定快照，不沿用其他模式留下的快照", async () => {
+    const { emptyWorkspace, runSnapshotId } = await import("@/lib/state/studio-store");
+    const ws = { ...emptyWorkspace(), snapshotId: "snap_jiuli", fixtureId: "v3/x/P1", fixtureSnapshotId: "snap_fixture" };
+    expect(runSnapshotId({ ...ws, inputMode: "fixture" })).toBe("snap_fixture");
+    expect(runSnapshotId({ ...ws, inputMode: "fixture", fixtureSnapshotId: null })).toBeNull();
+    expect(runSnapshotId({ ...ws, inputMode: "snapshot" })).toBe("snap_jiuli");
+    expect(runSnapshotId({ ...ws, inputMode: "paste" })).toBeNull();
+    expect(runSnapshotId({ ...ws, inputMode: "jiuli" })).toBeNull();
+  });
+});
