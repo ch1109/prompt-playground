@@ -253,7 +253,7 @@ function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged, onMore }
     setErr(null);
     try {
       const n = await api<{ snapshot_id: string }>("/api/connectors/jiuli/snapshots", {
-        json: { projectId, customerId: s.source_ids.customer_id, taskId: s.source_ids.task_id, batchIds: s.source_ids.batch_ids ?? [], parentSnapshotId: s.snapshot_id },
+        json: { projectId, customerId: s.source_ids.customer_id, taskId: s.source_ids.task_id, batchIds: s.source_ids.batch_ids ?? [], excludeFileIds: s.source_ids.excluded_file_ids ?? [], parentSnapshotId: s.snapshot_id },
       });
       patch({ snapshotId: n.snapshot_id });
       onSnapshotsChanged();
@@ -482,6 +482,18 @@ interface Batch {
   warehouse_no?: string;
   line_count: number;
 }
+interface SelectionFile {
+  file_id: string;
+  file_name: string;
+  role: "ORDER" | "SUPPORTING" | "INSPECTION";
+  optional: boolean;
+  authorized: boolean;
+  exists: boolean;
+  has_text_content: boolean;
+  segments: string[];
+}
+const ROLE_LABEL = { ORDER: "主委托文件", SUPPORTING: "辅助材料", INSPECTION: "查货文件" } as const;
+const SEGMENT_LABEL: Record<string, string> = { invoice: "发票", "packing-list": "箱单", entrustment: "委托书" };
 
 /** 九立只读导入：选客户 → 任务/查货批次 → 创建 Studio 隔离快照。不向九立写任何数据。 */
 function JiuliImport({ projectId, capability, onCreated }: { projectId: string; capability: CapabilityDTO | null; onCreated: () => void }) {
@@ -493,6 +505,9 @@ function JiuliImport({ projectId, capability, onCreated }: { projectId: string; 
   const [batches, setBatches] = useState<Batch[]>([]);
   const [task, setTask] = useState<string>("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  /** 本次将带上的文件；excluded 为用户取消勾选的辅助材料 */
+  const [files, setFiles] = useState<SelectionFile[] | null>(null);
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const connected = capability?.status === "CONNECTED_DEMO_FILES";
@@ -516,11 +531,24 @@ function JiuliImport({ projectId, capability, onCreated }: { projectId: string; 
       .catch((e) => setErr(e instanceof ApiError ? `${e.code}: ${e.message}` : String(e)));
   }, [customer]);
 
+  // 选择变化时重新列出将带上的文件，默认全部纳入
+  const batchKey = [...picked].sort().join(",");
+  useEffect(() => {
+    setFiles(null);
+    setExcluded(new Set());
+    if (!customer || (!task && !batchKey)) return;
+    api<SelectionFile[]>(`/api/connectors/jiuli/files?customerId=${encodeURIComponent(customer)}&taskId=${encodeURIComponent(task)}&batchIds=${encodeURIComponent(batchKey)}`)
+      .then(setFiles)
+      .catch((e) => setErr(e instanceof ApiError ? `${e.code}: ${e.message}` : String(e)));
+  }, [customer, task, batchKey]);
+
   async function create() {
     setBusy(true);
     setErr(null);
     try {
-      const s = await api<{ snapshot_id: string; warnings: string[] }>("/api/connectors/jiuli/snapshots", { json: { projectId, customerId: customer, taskId: task || undefined, batchIds: [...picked] } });
+      const s = await api<{ snapshot_id: string; warnings: string[] }>("/api/connectors/jiuli/snapshots", {
+        json: { projectId, customerId: customer, taskId: task || undefined, batchIds: [...picked], excludeFileIds: [...excluded] },
+      });
       patch({ inputMode: "snapshot", snapshotId: s.snapshot_id });
       onCreated();
     } catch (e) {
@@ -579,6 +607,34 @@ function JiuliImport({ projectId, capability, onCreated }: { projectId: string; 
                   </li>
                 ))}
               </ul>
+              {files && (
+                <div data-testid="selection-files">
+                  <label className="block text-[11px] text-ink-400">
+                    将带上的文件（{files.length - excluded.size}/{files.length}）
+                  </label>
+                  <ul className="max-h-40 overflow-auto rounded border border-ink-800">
+                    {files.map((f) => (
+                      <li key={f.file_id} className="flex items-center gap-2 px-2 py-0.5 text-[12px]">
+                        <input
+                          type="checkbox"
+                          checked={!excluded.has(f.file_id)}
+                          disabled={!f.optional}
+                          onChange={(e) => setExcluded((x) => (e.target.checked ? new Set([...x].filter((id) => id !== f.file_id)) : new Set([...x, f.file_id])))}
+                          aria-label={`纳入文件 ${f.file_id}`}
+                          title={f.optional ? "取消勾选则不纳入快照、不发送给模型" : "由上方任务/批次决定；不需要请取消对应任务或批次"}
+                        />
+                        <Badge tone={f.role === "SUPPORTING" ? "info" : "mute"}>{ROLE_LABEL[f.role]}</Badge>
+                        <span className="min-w-0 flex-1 truncate" title={`${f.file_id} · ${f.file_name}`}>
+                          {f.file_name}
+                        </span>
+                        {f.segments.length > 0 && <span className="text-[10.5px] text-ink-400">{[...new Set(f.segments.map((k) => SEGMENT_LABEL[k] ?? k))].join("/")}</span>}
+                        {!f.authorized ? <Badge tone="bad">无权读取</Badge> : !f.exists ? <Badge tone="bad">原件缺失</Badge> : !f.has_text_content && <Badge tone="warn">无可读文本</Badge>}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-[10.5px] text-ink-400">主委托文件与查货文件由任务/批次决定；发票、箱单等辅助材料可取消勾选。</p>
+                </div>
+              )}
               <Btn tone="primary" disabled={busy || (!task && !picked.size)} onClick={create}>
                 {busy ? "读取中…" : "只读读取并创建隔离快照"}
               </Btn>

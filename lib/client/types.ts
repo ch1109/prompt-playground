@@ -78,7 +78,7 @@ export interface SnapshotListItem {
   usable_kinds: string[];
   /** 到期时间；null = 永不到期 */
   expires_at: string | null;
-  source_ids: { customer_id?: string; task_id?: string; batch_ids?: string[]; fixture_id?: string };
+  source_ids: { customer_id?: string; task_id?: string; batch_ids?: string[]; fixture_id?: string; excluded_file_ids?: string[] };
 }
 
 export interface ProviderInfoDTO {

@@ -121,6 +121,45 @@ test("九立只读导入：选客户/任务/批次 → 隔离快照 → 请求�
   await expect(page.getByTestId("request-preview")).toContainText("retrieval_complete=false");
 });
 
+test("九立导入前列出将带上的文件；取消勾选的辅助材料不进快照，刷新时沿用", async ({ page }) => {
+  // 找到带发票/箱单辅助材料的 Demo 任务所属客户
+  const customers = await page.request.get("/api/connectors/jiuli/customers?q=").then((r) => r.json());
+  let customerName = "";
+  for (const c of customers.data.items as { customer_id: string; name: string }[]) {
+    const tasks = await page.request.get(`/api/connectors/jiuli/tasks?customerId=${c.customer_id}`).then((r) => r.json());
+    if ((tasks.data.items as { task_id: string }[]).some((t) => t.task_id === "D-1df4f4d83480")) customerName = c.name;
+  }
+  expect(customerName).not.toBe("");
+  await page.goto("/projects/jiuli/playground");
+  await page.click('[data-prompt="jiuli-p1"]');
+  await page.getByRole("button", { name: "从九立导入" }).click();
+  await page.getByRole("button", { name: new RegExp(customerName) }).click();
+  await page.getByLabel("委托任务").selectOption({ value: "D-1df4f4d83480" });
+  const list = page.getByTestId("selection-files");
+  await expect(list).toContainText("主委托文件");
+  await expect(list).toContainText("辅助材料");
+  await expect(page.getByLabel("纳入文件 F-80d89610605b")).toBeChecked();
+  // 主委托文件不能取消
+  await expect(list.locator('input[type="checkbox"]').first()).toBeDisabled();
+  await page.getByLabel("纳入文件 F-80d89610605b").uncheck();
+  await page.getByRole("button", { name: "只读读取并创建隔离快照" }).click();
+  const selected = page.getByTestId("snapshot-list").locator("[data-snapshot-id].ring-1");
+  await expect(selected).toContainText("JIULI_READONLY");
+  const id = await selected.getAttribute("data-snapshot-id");
+  const snap = await page.request.get(`/api/snapshots/${id}`).then((r) => r.json());
+  expect(snap.data.source_ids.excluded_file_ids).toEqual(["F-80d89610605b"]);
+  expect(snap.data.materials.some((m: { file_id: string }) => m.file_id === "F-80d89610605b")).toBe(false);
+  await page.getByRole("button", { name: "请求预览" }).click();
+  await expect(page.getByTestId("request-preview")).not.toContainText("F-80d89610605b");
+  // 刷新快照沿用同样的排除
+  await page.getByRole("button", { name: "输入" }).click();
+  await page.getByRole("button", { name: `刷新快照 ${id}` }).click();
+  await expect(page.getByTestId("snapshot-list")).toContainText(`刷新自 ${id}`);
+  const newId = await page.getByTestId("snapshot-list").locator("[data-snapshot-id].ring-1").getAttribute("data-snapshot-id");
+  const refreshed = await page.request.get(`/api/snapshots/${newId}`).then((r) => r.json());
+  expect(refreshed.data.source_ids.excluded_file_ids).toEqual(["F-80d89610605b"]);
+});
+
 test("请求预览与真实运行使用同一份输入：切换输入来源后不沿用旧快照", async ({ page }) => {
   await page.goto("/projects/jiuli/playground");
   await page.click('[data-prompt="jiuli-p1"]');

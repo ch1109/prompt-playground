@@ -6,7 +6,7 @@ import { DEFAULT_PROJECT_ID } from "@/lib/repositories/prompts";
 /** 在 Studio 中创建快照：只读取九立数据，写入 Studio 自有存储；不会向九立发送任何写请求 */
 export const POST = (req: Request) =>
   handle(async () => {
-    const b = await body<{ projectId?: string; customerId?: string; taskId?: string; batchIds?: string[]; parentSnapshotId?: string }>(req);
+    const b = await body<{ projectId?: string; customerId?: string; taskId?: string; batchIds?: string[]; parentSnapshotId?: string; excludeFileIds?: string[] }>(req);
     if (!b.customerId) return fail("BAD_REQUEST", "缺少 customerId");
     const connector = getJiuliConnector();
     const cap = await connector.capabilities();
@@ -17,6 +17,7 @@ export const POST = (req: Request) =>
       taskId: b.taskId || undefined,
       batchIds: Array.isArray(b.batchIds) ? b.batchIds.map(String) : [],
       parentSnapshotId: b.parentSnapshotId ?? null,
+      excludeFileIds: Array.isArray(b.excludeFileIds) ? b.excludeFileIds.map(String) : [],
     });
     return ok(snap, 201);
   });

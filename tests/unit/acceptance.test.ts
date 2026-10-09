@@ -763,6 +763,28 @@ describe.skipIf(!hasDemo)("九立导入 P1 带辅助材料", () => {
     expect(built.warnings.join()).not.toContain("未标明");
     expect(INPUT_BUILDER_VERSION).toBe("1.2.0");
   });
+
+  it("导入前列出将带上的文件；排除的辅助材料不进快照、不进 P1 请求；主委托文件不能排除", async () => {
+    const { listSelectionFiles } = await import("@/lib/connectors/snapshot-builder");
+    const { buildInput } = await import("@/lib/input-builders");
+    const c = new JiuliDemoFilesConnector({ root: DEMO_ROOT, allowedCustomers: "*" });
+    const drafts = JSON.parse(readFileSync(join(DEMO_ROOT, "demo-generated/mock/entrustment-drafts.json"), "utf8")) as { id: string; customerId: string }[];
+    const task = drafts.find((d) => d.id === "D-1df4f4d83480")!;
+    const files = await listSelectionFiles(c, { customerId: task.customerId, taskId: task.id, batchIds: [] });
+    const main = files.find((f) => f.role === "ORDER")!;
+    expect(main.optional).toBe(false);
+    const sup = files.find((f) => f.file_id === "F-80d89610605b")!;
+    expect(sup.role).toBe("SUPPORTING");
+    expect(sup.optional).toBe(true);
+    expect(sup.file_name).toBeTruthy();
+    const snap = await buildJiuliSnapshot(c, { projectId: "jiuli", customerId: task.customerId, taskId: task.id, batchIds: [], excludeFileIds: [sup.file_id] });
+    expect(snap.materials.some((m) => m.file_id === sup.file_id)).toBe(false);
+    expect(snap.source_ids.excluded_file_ids).toEqual([sup.file_id]);
+    expect(snap.warnings.join()).toContain(sup.file_id);
+    const built = buildInput("JIULI_P1", snap);
+    expect(built.ok && JSON.stringify(built.request).includes(sup.file_id)).toBe(false);
+    await expect(buildJiuliSnapshot(c, { projectId: "jiuli", customerId: task.customerId, taskId: task.id, batchIds: [], excludeFileIds: [main.file_id] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
 });
 
 describe("证据按页跳转", () => {
