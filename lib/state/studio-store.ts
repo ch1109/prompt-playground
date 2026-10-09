@@ -44,7 +44,8 @@ export const emptyWorkspace = (): Workspace => ({
   fixtureSnapshotId: null,
   snapshotId: null,
   uploadSnapshotId: null,
-  params: { temperature: 0, max_tokens: 16000 },
+  // 2026-10-09 批量实测：16000 时 22 次中 4 次截断（含推理输出），默认提高到 32000
+  params: { temperature: 0, max_tokens: 32000 },
   attachImages: false,
   runId: null,
   runInputSig: null,
