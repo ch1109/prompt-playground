@@ -524,6 +524,25 @@ test("未登记 Schema 的结果不显示「解析成功」，结果区与历史
   await expect(row).not.toContainText("解析成功");
 });
 
+test("顶栏显示当前 Prompt 版本，有未保存修改时标为草稿", async ({ page }) => {
+  await page.goto("/projects/jiuli/playground");
+  await page.click('[data-prompt="jiuli-p4"]');
+  await page.getByRole("button", { name: /^提示词/ }).click();
+  await expect(page.getByText("与版本一致")).toBeVisible();
+  const header = page.getByTestId("header-version");
+  const label = await page.getByLabel("Prompt 版本").locator("option:checked").textContent();
+  await expect(header).toContainText(label!.split(" · ")[0]);
+  await expect(header).not.toContainText("未保存草稿");
+  const system = page.getByLabel("System 提示词");
+  await system.fill(`${await system.inputValue()}\n# 顶栏版本测试 ${Date.now()}`);
+  await expect(header).toContainText("未保存草稿");
+  const name = `顶栏版本 ${Date.now()}`;
+  await page.getByLabel("新版本名称").fill(name);
+  await page.getByRole("button", { name: "保存为新版本" }).click();
+  await expect(header).toContainText(name);
+  await expect(header).not.toContainText("未保存草稿");
+});
+
 test("版本加载完成前就开始输入：输入内容保留为草稿，不被最新版本覆盖", async ({ page }) => {
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));

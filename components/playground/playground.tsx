@@ -68,6 +68,9 @@ export function Playground({ projectId }: { projectId: string }) {
   const ws = s.workspaces[promptId] ?? emptyWorkspace();
   const detail = ws.runId ? s.runs[ws.runId] : undefined;
   const lastMode = s.lastMode[promptId];
+  /** 顶栏显示的当前版本；文本与该版本不同即为未保存草稿（与「提示词」页签的判断一致） */
+  const currentVersion = versions[promptId]?.find((v) => v.version_id === ws.versionId);
+  const versionDraft = !!currentVersion && (currentVersion.system_prompt !== ws.system || currentVersion.user_prompt_template !== ws.userTemplate);
   const dirty = !!detail && !!ws.runInputSig && !!lastMode && inputSignature(ws, lastMode) !== ws.runInputSig;
 
   // 挂载后恢复本地保存的工作区（刷新不丢）
@@ -415,6 +418,14 @@ export function Playground({ projectId }: { projectId: string }) {
             {projects?.find((p) => p.project_id === projectId)?.name ?? "…"} / {prompt?.name ?? "…"}
           </span>
         </div>
+        {currentVersion && (
+          <span className="flex min-w-0 items-center gap-1" data-testid="header-version" title={`当前版本：${currentVersion.label}`}>
+            <Badge tone="mute" className="max-w-[260px] truncate">
+              版本 {currentVersion.label}
+            </Badge>
+            {versionDraft && <Badge tone="warn">未保存草稿</Badge>}
+          </span>
+        )}
         {prompt?.active_schema_version && <Badge>{prompt.active_schema_version}</Badge>}
         <div className="ml-auto flex items-center gap-2">
           {error && (
