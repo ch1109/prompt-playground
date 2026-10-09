@@ -1,0 +1,57 @@
+{
+  "schema_version": "jiuli-ai-v2",
+  "prompt": "P3",
+  "request_id": "REQ_xxx",
+  "output": {
+    "customer_id": "C001",
+    "order_task_id": "OT_001",
+    "draft_id": "DRAFT_001",
+    "draft_version": 1,
+    "row_relations": [
+      {
+        "order_row_id": "OR_001",
+        "match_status": "MATCHED",
+        "selected_group": {
+          "sources": [
+            {
+              "logical_inspection_id": "LI_001",
+              "merged_product_id": "MP_001",
+              "raw_row_ids": [
+                "IR_001",
+                "IR_008"
+              ]
+            }
+          ]
+        },
+        "coverage": {
+          "status": "COMPLETE",
+          "order_quantity": "1401",
+          "source_ranges": [],
+          "independent_scope_evidence": true
+        },
+        "match_evidence": [
+          {
+            "type": "MODEL",
+            "result": "型号明确一致",
+            "source_refs": [
+              "SRC_201",
+              "SRC_301"
+            ]
+          },
+          {
+            "type": "BRAND",
+            "result": "品牌一致",
+            "source_refs": [
+              "SRC_202",
+              "SRC_302"
+            ]
+          }
+        ],
+        "confidence": "HIGH",
+        "candidate_groups": [],
+        "weak_candidates": []
+      }
+    ],
+    "warnings": []
+  }
+}

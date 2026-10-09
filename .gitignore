@@ -1,0 +1,12 @@
+node_modules/
+.next/
+data/
+.env.local
+*.tsbuildinfo
+next-env.d.ts
+test-results/
+playwright-report/
+.DS_Store
+
+# 真实录制样本含真实客户信息：与九立仓库做法一致，不入库（本地仍可使用）
+fixtures/jiuli-v3.0/

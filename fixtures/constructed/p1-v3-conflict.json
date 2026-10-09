@@ -1,0 +1,317 @@
+{
+  "schema_version": "jiuli-ai-v3",
+  "prompt": "P1",
+  "request_id": "REQ-CONSTRUCTED-P1",
+  "output": {
+    "processing_status": "SUCCESS",
+    "customer_resolution": {
+      "status": "RESOLVED",
+      "customer_id": "C001",
+      "recognized_name": "客户A",
+      "candidate_customer_ids": [
+        "C001"
+      ],
+      "sources": [
+        {
+          "file_id": "F-ORDER",
+          "page": null,
+          "sheet": "Sheet1",
+          "row": 2,
+          "column": "B",
+          "raw_text": "客户A"
+        }
+      ]
+    },
+    "read_status": [
+      {
+        "file_id": "F-ORDER",
+        "read_segments": [
+          "sheet:Sheet1"
+        ],
+        "unread_segments": [],
+        "status": "COMPLETE"
+      },
+      {
+        "file_id": "F-INVOICE",
+        "read_segments": [
+          "page:1"
+        ],
+        "unread_segments": [],
+        "status": "COMPLETE"
+      }
+    ],
+    "rows": [
+      {
+        "row_no": 1,
+        "source": {
+          "file_id": "F-ORDER",
+          "page": null,
+          "sheet": "Sheet1",
+          "row": 5,
+          "column": "B",
+          "raw_text": "ABC-01"
+        },
+        "values": {
+          "customer_name": "客户A",
+          "brand": "MICRON",
+          "model": "ABC-01",
+          "description": "",
+          "product_name": "存储器",
+          "origin": "马来西亚",
+          "unit": "个",
+          "quantity": "1000",
+          "customs_unit_price": "10",
+          "total_price": "10000",
+          "currency": "USD",
+          "packages": "",
+          "net_weight": "",
+          "gross_weight": "",
+          "sku": "",
+          "buyer": "",
+          "supplier_code": "",
+          "supplier": "",
+          "payment_term_days": "",
+          "purchase_order_no": "",
+          "material_no": "",
+          "pallet_count": "",
+          "warehouse_no": "",
+          "production_line": "",
+          "remark": ""
+        },
+        "evidence": [
+          {
+            "field": "model",
+            "value": "ABC-01",
+            "unit": "",
+            "source": {
+              "file_id": "F-ORDER",
+              "page": null,
+              "sheet": "Sheet1",
+              "row": 5,
+              "column": "C",
+              "raw_text": "ABC-01"
+            }
+          },
+          {
+            "field": "customs_unit_price",
+            "value": "10",
+            "unit": "",
+            "source": {
+              "file_id": "F-ORDER",
+              "page": null,
+              "sheet": "Sheet1",
+              "row": 5,
+              "column": "H",
+              "raw_text": "10"
+            }
+          },
+          {
+            "field": "customs_unit_price",
+            "value": "11",
+            "unit": "",
+            "source": {
+              "file_id": "F-INVOICE",
+              "page": 1,
+              "sheet": null,
+              "row": 3,
+              "column": "Unit Price",
+              "raw_text": "USD 11.00"
+            }
+          }
+        ],
+        "conflicts": [
+          {
+            "field": "customs_unit_price",
+            "message": "委托单价 10 与发票单价 11 不同"
+          }
+        ]
+      },
+      {
+        "row_no": 2,
+        "source": {
+          "file_id": "F-ORDER",
+          "page": null,
+          "sheet": "Sheet1",
+          "row": 6,
+          "column": "B",
+          "raw_text": "XYZ-02"
+        },
+        "values": {
+          "customer_name": "客户A",
+          "brand": "无牌",
+          "model": "XYZ-02",
+          "description": "",
+          "product_name": "电阻",
+          "origin": "",
+          "unit": "个",
+          "quantity": "0",
+          "customs_unit_price": "0.5",
+          "total_price": "",
+          "currency": "USD",
+          "packages": "",
+          "net_weight": "",
+          "gross_weight": "",
+          "sku": "",
+          "buyer": "",
+          "supplier_code": "",
+          "supplier": "",
+          "payment_term_days": "",
+          "purchase_order_no": "",
+          "material_no": "",
+          "pallet_count": "",
+          "warehouse_no": "",
+          "production_line": "",
+          "remark": ""
+        },
+        "evidence": [
+          {
+            "field": "brand",
+            "value": "无牌",
+            "unit": "",
+            "source": {
+              "file_id": "F-ORDER",
+              "page": null,
+              "sheet": "Sheet1",
+              "row": 6,
+              "column": "D",
+              "raw_text": "无牌"
+            }
+          },
+          {
+            "field": "quantity",
+            "value": "0",
+            "unit": "PCS",
+            "source": {
+              "file_id": "F-ORDER",
+              "page": null,
+              "sheet": "Sheet1",
+              "row": 6,
+              "column": "G",
+              "raw_text": "0"
+            }
+          }
+        ],
+        "conflicts": []
+      },
+      {
+        "row_no": 3,
+        "source": {
+          "file_id": "F-ORDER",
+          "page": null,
+          "sheet": "Sheet1",
+          "row": 7,
+          "column": "B",
+          "raw_text": "QWE-03"
+        },
+        "values": {
+          "customer_name": "客户A",
+          "brand": "",
+          "model": "QWE-03",
+          "description": "",
+          "product_name": "",
+          "origin": "",
+          "unit": "个",
+          "quantity": "200",
+          "customs_unit_price": "",
+          "total_price": "",
+          "currency": "",
+          "packages": "",
+          "net_weight": "",
+          "gross_weight": "",
+          "sku": "",
+          "buyer": "",
+          "supplier_code": "",
+          "supplier": "",
+          "payment_term_days": "",
+          "purchase_order_no": "",
+          "material_no": "",
+          "pallet_count": "",
+          "warehouse_no": "",
+          "production_line": "",
+          "remark": ""
+        },
+        "evidence": [
+          {
+            "field": "model",
+            "value": "QWE-03",
+            "unit": "",
+            "source": {
+              "file_id": "F-ORDER",
+              "page": null,
+              "sheet": "Sheet1",
+              "row": 7,
+              "column": "C",
+              "raw_text": "QWE-03"
+            }
+          }
+        ],
+        "conflicts": []
+      }
+    ],
+    "scope_records": [
+      {
+        "kind": "ORDER_TOTAL",
+        "member_row_nos": [
+          1,
+          2,
+          3
+        ],
+        "range_complete": false,
+        "measurements": [
+          {
+            "field": "quantity",
+            "value": "1200",
+            "unit": "PCS",
+            "source": {
+              "file_id": "F-ORDER",
+              "page": null,
+              "sheet": "Sheet1",
+              "row": 10,
+              "column": "G",
+              "raw_text": "TOTAL 1200"
+            }
+          }
+        ],
+        "source": {
+          "file_id": "F-ORDER",
+          "page": null,
+          "sheet": "Sheet1",
+          "row": 10,
+          "column": "A",
+          "raw_text": "TOTAL"
+        }
+      }
+    ],
+    "unlinked_records": [
+      {
+        "source": {
+          "file_id": "F-INVOICE",
+          "page": 1,
+          "sheet": null,
+          "row": 9,
+          "column": null,
+          "raw_text": "EXTRA-99 1pc"
+        },
+        "fields": {
+          "model": "EXTRA-99"
+        },
+        "candidate_row_nos": [],
+        "reason": "发票多出的商品，未能唯一对应"
+      }
+    ],
+    "issues": [
+      {
+        "code": "FIELD_MISSING",
+        "row_ref": 3,
+        "field": "brand",
+        "message": "第3行品牌为空"
+      },
+      {
+        "code": "GENERAL_NOTE",
+        "row_ref": null,
+        "field": null,
+        "message": "一般性提示，没有具体位置"
+      }
+    ]
+  }
+}

@@ -1,0 +1,75 @@
+"use client";
+import { useMemo, useState } from "react";
+import type { IssueView } from "@/lib/contracts/view-model";
+import { useStudio } from "@/lib/state/studio-store";
+import { Badge, cx, Empty } from "@/components/ui";
+
+const ORIGIN_LABEL: Record<IssueView["origin"], string> = {
+  MODEL_FINDING: "模型发现",
+  SCHEMA: "结构",
+  ADAPTER: "适配器",
+  RULE: "规则",
+  ANNOTATION: "标注",
+};
+const SEV_TONE = { BLOCKER: "bad", WARNING: "warn", INFO: "info", UNKNOWN: "mute" } as const;
+
+export function IssueList({ issues }: { issues: IssueView[] }) {
+  const sel = useStudio((s) => s.selection);
+  const select = useStudio((s) => s.select);
+  const setStore = useStudio((s) => s.set);
+  const [origin, setOrigin] = useState<string>("ALL");
+  const origins = useMemo(() => [...new Set(issues.map((i) => i.origin))], [issues]);
+  const shown = issues.filter((i) => origin === "ALL" || i.origin === origin);
+
+  return (
+    <div data-region="issues">
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-ink-700 px-3 py-1.5">
+        <span className="text-[12px] font-semibold">问题区</span>
+        <Badge>{issues.length}</Badge>
+        {origins.length > 1 &&
+          ["ALL", ...origins].map((o) => (
+            <button key={o} onClick={() => setOrigin(o)} className={cx("rounded px-1.5 text-[11px]", origin === o ? "bg-ink-700 text-ink-100" : "text-ink-400 hover:text-ink-100")}>
+              {o === "ALL" ? "全部" : ORIGIN_LABEL[o as IssueView["origin"]]}
+            </button>
+          ))}
+      </div>
+      {shown.length === 0 ? (
+        <Empty>没有问题记录（空数组不渲染虚假问题）</Empty>
+      ) : (
+        <ul className="max-h-72 divide-y divide-ink-800 overflow-auto">
+          {shown.map((i) => (
+            <li key={i.id}>
+              <button
+                data-issue-id={i.id}
+                onClick={() => {
+                  select({
+                    issueId: i.id,
+                    tableId: i.target?.tableId,
+                    rowId: i.target?.rowId,
+                    fieldKey: i.target?.fieldKey,
+                    jsonPointer: i.target?.jsonPointer,
+                    sourceRefId: i.sourceRefIds[0],
+                  });
+                  setStore("evidenceOpen", true);
+                }}
+                className={cx("flex w-full items-start gap-2 px-3 py-1.5 text-left hover:bg-ink-800/60", sel.issueId === i.id && "bg-stamp/[0.08]")}
+              >
+                <Badge tone={SEV_TONE[i.severity ?? "UNKNOWN"]} title="严重度：模型未给出时为 UNKNOWN">
+                  {i.severity ?? "UNKNOWN"}
+                </Badge>
+                <span className="min-w-0 flex-1">
+                  <span className="mr-1.5 font-mono text-[11px] text-ink-400">{i.type}</span>
+                  <span className="break-words">{i.summary}</span>
+                  {i.detail && <span className="block text-[11px] text-ink-400">{i.detail}</span>}
+                  <span className="block text-[10.5px] text-ink-600">
+                    {ORIGIN_LABEL[i.origin]} · {i.target?.rowId ? `定位 ${i.target.rowId}${i.target.fieldKey ? " / " + i.target.fieldKey : ""}` : "无具体位置（一般警告）"} · {i.sourceRefIds.length ? `${i.sourceRefIds.length} 个来源` : "未提供来源"}
+                  </span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}

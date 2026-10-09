@@ -1,0 +1,360 @@
+{
+  "schema_version": "jiuli-ai-v3",
+  "prompt": "P2",
+  "request_id": "REQ-CONSTRUCTED-P2",
+  "output": {
+    "processing_status": "NEEDS_REVIEW",
+    "customer_id": "C001",
+    "read_status": [
+      {
+        "file_id": "F-INSP",
+        "read_segments": [
+          "page:1",
+          "page:2",
+          "page:3"
+        ],
+        "unread_segments": [],
+        "status": "COMPLETE"
+      }
+    ],
+    "logical_inspections": [
+      {
+        "warehouse_no": "26091801",
+        "sources": [
+          {
+            "file_id": "F-INSP",
+            "page": 1,
+            "sheet": null,
+            "row": null,
+            "column": null,
+            "raw_text": "条码 26091801"
+          }
+        ],
+        "range_status": "COMPLETE"
+      }
+    ],
+    "raw_rows": [
+      {
+        "record_no": 1,
+        "warehouse_no": "26091801",
+        "candidate_warehouse_nos": [],
+        "source": {
+          "file_id": "F-INSP",
+          "page": 1,
+          "sheet": null,
+          "row": 1,
+          "column": null,
+          "raw_text": "ABC-01 400"
+        },
+        "fields": {
+          "brand": "MICRON",
+          "model": "ABC-01",
+          "quantity": "400",
+          "net_weight": "1.2",
+          "net_weight_unit": "KG"
+        },
+        "field_sources": {
+          "brand": [
+            {
+              "file_id": "F-INSP",
+              "page": 1,
+              "sheet": null,
+              "row": 1,
+              "column": null,
+              "raw_text": "MICRON"
+            }
+          ],
+          "model": [
+            {
+              "file_id": "F-INSP",
+              "page": 1,
+              "sheet": null,
+              "row": 1,
+              "column": null,
+              "raw_text": "ABC-01"
+            }
+          ],
+          "quantity": [
+            {
+              "file_id": "F-INSP",
+              "page": 1,
+              "sheet": null,
+              "row": 1,
+              "column": null,
+              "raw_text": "400"
+            }
+          ],
+          "net_weight": [
+            {
+              "file_id": "F-INSP",
+              "page": 1,
+              "sheet": null,
+              "row": 1,
+              "column": null,
+              "raw_text": "1.2"
+            }
+          ],
+          "net_weight_unit": [
+            {
+              "file_id": "F-INSP",
+              "page": 1,
+              "sheet": null,
+              "row": 1,
+              "column": null,
+              "raw_text": "KG"
+            }
+          ]
+        },
+        "origin_candidates": [
+          {
+            "value": "MALAYSIA",
+            "kind": "PRINTED_COD",
+            "source": {
+              "file_id": "F-INSP",
+              "page": 1,
+              "sheet": null,
+              "row": 1,
+              "column": null,
+              "raw_text": "COD: MALAYSIA"
+            }
+          },
+          {
+            "value": "中国",
+            "kind": "HANDWRITTEN_COD",
+            "source": {
+              "file_id": "F-INSP",
+              "page": 1,
+              "sheet": null,
+              "row": 1,
+              "column": null,
+              "raw_text": "手写 COD 中国"
+            }
+          }
+        ],
+        "manual_marks": []
+      },
+      {
+        "record_no": 2,
+        "warehouse_no": "26091801",
+        "candidate_warehouse_nos": [],
+        "source": {
+          "file_id": "F-INSP",
+          "page": 2,
+          "sheet": null,
+          "row": 2,
+          "column": null,
+          "raw_text": "ABC-01 600"
+        },
+        "fields": {
+          "brand": "MICRON",
+          "model": "ABC-01",
+          "quantity": "600",
+          "net_weight": "1.8",
+          "net_weight_unit": "KG"
+        },
+        "field_sources": {
+          "brand": [
+            {
+              "file_id": "F-INSP",
+              "page": 2,
+              "sheet": null,
+              "row": 2,
+              "column": null,
+              "raw_text": "MICRON"
+            }
+          ],
+          "model": [
+            {
+              "file_id": "F-INSP",
+              "page": 2,
+              "sheet": null,
+              "row": 2,
+              "column": null,
+              "raw_text": "ABC-01"
+            }
+          ],
+          "quantity": [
+            {
+              "file_id": "F-INSP",
+              "page": 2,
+              "sheet": null,
+              "row": 2,
+              "column": null,
+              "raw_text": "600"
+            }
+          ],
+          "net_weight": [
+            {
+              "file_id": "F-INSP",
+              "page": 2,
+              "sheet": null,
+              "row": 2,
+              "column": null,
+              "raw_text": "1.8"
+            }
+          ],
+          "net_weight_unit": [
+            {
+              "file_id": "F-INSP",
+              "page": 2,
+              "sheet": null,
+              "row": 2,
+              "column": null,
+              "raw_text": "KG"
+            }
+          ]
+        },
+        "origin_candidates": [
+          {
+            "value": "MALAYSIA",
+            "kind": "PRINTED_COA",
+            "source": {
+              "file_id": "F-INSP",
+              "page": 2,
+              "sheet": null,
+              "row": 2,
+              "column": null,
+              "raw_text": "COA MALAYSIA"
+            }
+          },
+          {
+            "value": "MALAYSIA",
+            "kind": "COO",
+            "source": {
+              "file_id": "F-INSP",
+              "page": 2,
+              "sheet": null,
+              "row": 2,
+              "column": null,
+              "raw_text": "Made in Malaysia"
+            }
+          }
+        ],
+        "manual_marks": []
+      },
+      {
+        "record_no": 3,
+        "warehouse_no": "",
+        "candidate_warehouse_nos": [
+          "26091801",
+          "26091807"
+        ],
+        "source": {
+          "file_id": "F-INSP",
+          "page": 3,
+          "sheet": null,
+          "row": 3,
+          "column": null,
+          "raw_text": "XYZ-02 50"
+        },
+        "fields": {
+          "model": "XYZ-02",
+          "quantity": "50"
+        },
+        "field_sources": {
+          "model": [
+            {
+              "file_id": "F-INSP",
+              "page": 3,
+              "sheet": null,
+              "row": 3,
+              "column": null,
+              "raw_text": "XYZ-02"
+            }
+          ],
+          "quantity": [
+            {
+              "file_id": "F-INSP",
+              "page": 3,
+              "sheet": null,
+              "row": 3,
+              "column": null,
+              "raw_text": "50"
+            }
+          ]
+        },
+        "origin_candidates": [],
+        "manual_marks": [
+          {
+            "action": "UNCLEAR",
+            "field": "model",
+            "old_value": "",
+            "new_value": "",
+            "source": {
+              "file_id": "F-INSP",
+              "page": 3,
+              "sheet": null,
+              "row": 3,
+              "column": null,
+              "raw_text": "手写 X0Z-02 / XOZ-02 难辨 0/O"
+            }
+          }
+        ]
+      }
+    ],
+    "scope_records": [
+      {
+        "warehouse_no": "26091801",
+        "kind": "LOGICAL_TOTAL",
+        "identifier": "printed-total",
+        "member_record_nos": [
+          1,
+          2
+        ],
+        "range_complete": true,
+        "has_unresolved_goods": false,
+        "measurements": [
+          {
+            "field": "gross_weight",
+            "value": "3.5",
+            "unit": "KG",
+            "fact_kind": "HANDWRITTEN_GW",
+            "source": {
+              "file_id": "F-INSP",
+              "page": 1,
+              "sheet": null,
+              "row": null,
+              "column": null,
+              "raw_text": "GW 3.5KG"
+            }
+          }
+        ],
+        "source": {
+          "file_id": "F-INSP",
+          "page": 1,
+          "sheet": null,
+          "row": null,
+          "column": null,
+          "raw_text": "合计"
+        }
+      },
+      {
+        "warehouse_no": "",
+        "kind": "UNRESOLVED",
+        "identifier": "page-3",
+        "member_record_nos": [
+          3
+        ],
+        "range_complete": false,
+        "has_unresolved_goods": true,
+        "measurements": [],
+        "source": {
+          "file_id": "F-INSP",
+          "page": 3,
+          "sheet": null,
+          "row": null,
+          "column": null,
+          "raw_text": "第3页无条码"
+        }
+      }
+    ],
+    "issues": [
+      {
+        "code": "WAREHOUSE_UNRESOLVED",
+        "row_ref": 3,
+        "field": "warehouse_no",
+        "message": "第3页商品入仓号无法确定（26091801 或 26091807）"
+      }
+    ]
+  }
+}

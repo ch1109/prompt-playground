@@ -1,0 +1,132 @@
+{
+  "schema_version": "jiuli-ai-v3",
+  "prompt": "P4",
+  "request_id": "REQ-CONSTRUCTED-P4",
+  "output": {
+    "processing_status": "SUCCESS",
+    "row_patches": [
+      {
+        "order_row_id": "OR_001",
+        "evaluated_fields": [
+          "brand",
+          "origin",
+          "net_weight",
+          "gross_weight",
+          "product_name"
+        ],
+        "field_decisions": [
+          {
+            "field": "brand",
+            "decision": "KEEP",
+            "result_value": "MICRON",
+            "verification_status": "NO_EVIDENCE",
+            "evidence_keys": [],
+            "candidate_values": [],
+            "referenced_issue_ids": [],
+            "missing_required": false,
+            "reason": "查货无品牌证据"
+          },
+          {
+            "field": "origin",
+            "decision": "UPDATE",
+            "result_value": "马来西亚",
+            "verification_status": "VERIFIED_UPDATED",
+            "evidence_keys": [
+              "E-ORIGIN-1"
+            ],
+            "candidate_values": [],
+            "referenced_issue_ids": [],
+            "missing_required": false,
+            "reason": "完整范围手写 COD 马来西亚"
+          },
+          {
+            "field": "net_weight",
+            "decision": "FILL",
+            "result_value": "1.2",
+            "verification_status": "VERIFIED_UPDATED",
+            "evidence_keys": [
+              "E-NW-1"
+            ],
+            "candidate_values": [],
+            "referenced_issue_ids": [],
+            "missing_required": false,
+            "reason": "商品直接 NW"
+          },
+          {
+            "field": "gross_weight",
+            "decision": "CONFLICT",
+            "result_value": "2.0",
+            "verification_status": "CONFLICT",
+            "evidence_keys": [],
+            "candidate_values": [
+              {
+                "value": "2.1",
+                "evidence_keys": [
+                  "E-GW-1"
+                ]
+              },
+              {
+                "value": "2.4",
+                "evidence_keys": [
+                  "E-GW-2"
+                ]
+              }
+            ],
+            "referenced_issue_ids": [],
+            "missing_required": false,
+            "reason": "两个同级 GW 候选不同"
+          },
+          {
+            "field": "product_name",
+            "decision": "MISSING",
+            "result_value": "",
+            "verification_status": "MISSING_REQUIRED",
+            "evidence_keys": [],
+            "candidate_values": [],
+            "referenced_issue_ids": [],
+            "missing_required": true,
+            "reason": "主体品名为空"
+          }
+        ]
+      },
+      {
+        "order_row_id": "OR_002",
+        "evaluated_fields": [
+          "origin",
+          "net_weight"
+        ],
+        "field_decisions": [
+          {
+            "field": "origin",
+            "decision": "UPDATE",
+            "result_value": "韩国",
+            "verification_status": "VERIFIED_UPDATED",
+            "evidence_keys": [
+              "E-ORIGIN-2"
+            ],
+            "candidate_values": [],
+            "referenced_issue_ids": [],
+            "missing_required": false,
+            "reason": "（构造：模型违规对 LOCKED 字段给出 UPDATE）"
+          },
+          {
+            "field": "net_weight",
+            "decision": "FILL",
+            "result_value": "0.5",
+            "verification_status": "VERIFIED_UPDATED",
+            "evidence_keys": [
+              "E-NW-2"
+            ],
+            "candidate_values": [],
+            "referenced_issue_ids": [
+              "ISS-9"
+            ],
+            "missing_required": false,
+            "reason": "（构造：存在阻断问题仍 FILL）"
+          }
+        ]
+      }
+    ],
+    "issues": []
+  }
+}

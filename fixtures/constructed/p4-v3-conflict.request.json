@@ -1,0 +1,262 @@
+{
+  "schema_version": "jiuli-ai-v3",
+  "prompt": "P4",
+  "request_id": "REQ-CONSTRUCTED-P4",
+  "context": {
+    "customer_id": "C001",
+    "mode": "VERIFY_FIELDS"
+  },
+  "input": {
+    "target_rows": [
+      {
+        "order_row_id": "OR_001",
+        "relation": {
+          "match_status": "MATCHED",
+          "raw_row_ids": [
+            "IR_A1"
+          ],
+          "coverage": {
+            "status": "COMPLETE",
+            "overlap": "DISJOINT",
+            "evidence_keys": []
+          }
+        },
+        "evaluated_fields": [
+          "brand",
+          "origin",
+          "net_weight",
+          "gross_weight",
+          "product_name"
+        ],
+        "fields": {
+          "brand": {
+            "base_value": "MICRON",
+            "current_value": "MICRON",
+            "value_origin": "ORDER",
+            "write_policy": "AUTO",
+            "evidence": [],
+            "unresolved_issues": []
+          },
+          "origin": {
+            "base_value": "中国",
+            "current_value": "中国",
+            "value_origin": "ORDER",
+            "write_policy": "AUTO",
+            "evidence": [
+              {
+                "evidence_key": "E-ORIGIN-1",
+                "value": "马来西亚",
+                "unit": "",
+                "source_kind": "RAW",
+                "scope": {
+                  "coverage": "COMPLETE",
+                  "overlap": "DISJOINT",
+                  "has_extra_goods": false,
+                  "has_unresolved_goods": false
+                },
+                "raw_row_ids": [
+                  "IR_A1"
+                ],
+                "source": {
+                  "file_id": "F-INSP-A",
+                  "page": 1,
+                  "sheet": null,
+                  "row": 4,
+                  "column": null,
+                  "raw_text": "马来西亚"
+                }
+              }
+            ],
+            "unresolved_issues": []
+          },
+          "net_weight": {
+            "base_value": "",
+            "current_value": "",
+            "value_origin": "ORDER",
+            "write_policy": "AUTO",
+            "evidence": [
+              {
+                "evidence_key": "E-NW-1",
+                "value": "1.2",
+                "unit": "",
+                "source_kind": "RAW",
+                "scope": {
+                  "coverage": "COMPLETE",
+                  "overlap": "DISJOINT",
+                  "has_extra_goods": false,
+                  "has_unresolved_goods": false
+                },
+                "raw_row_ids": [
+                  "IR_A1"
+                ],
+                "source": {
+                  "file_id": "F-INSP-A",
+                  "page": 1,
+                  "sheet": null,
+                  "row": 4,
+                  "column": null,
+                  "raw_text": "1.2"
+                }
+              }
+            ],
+            "unresolved_issues": []
+          },
+          "gross_weight": {
+            "base_value": "2.0",
+            "current_value": "2.0",
+            "value_origin": "ORDER",
+            "write_policy": "AUTO",
+            "evidence": [
+              {
+                "evidence_key": "E-GW-1",
+                "value": "2.1",
+                "unit": "",
+                "source_kind": "RAW",
+                "scope": {
+                  "coverage": "COMPLETE",
+                  "overlap": "DISJOINT",
+                  "has_extra_goods": false,
+                  "has_unresolved_goods": false
+                },
+                "raw_row_ids": [
+                  "IR_A1"
+                ],
+                "source": {
+                  "file_id": "F-INSP-A",
+                  "page": 1,
+                  "sheet": null,
+                  "row": 4,
+                  "column": null,
+                  "raw_text": "2.1"
+                }
+              },
+              {
+                "evidence_key": "E-GW-2",
+                "value": "2.4",
+                "unit": "",
+                "source_kind": "RAW",
+                "scope": {
+                  "coverage": "COMPLETE",
+                  "overlap": "DISJOINT",
+                  "has_extra_goods": false,
+                  "has_unresolved_goods": false
+                },
+                "raw_row_ids": [
+                  "IR_A1"
+                ],
+                "source": {
+                  "file_id": "F-INSP-A",
+                  "page": 1,
+                  "sheet": null,
+                  "row": 4,
+                  "column": null,
+                  "raw_text": "2.4"
+                }
+              }
+            ],
+            "unresolved_issues": []
+          },
+          "product_name": {
+            "base_value": "",
+            "current_value": "",
+            "value_origin": "ORDER",
+            "write_policy": "AUTO",
+            "evidence": [],
+            "unresolved_issues": []
+          }
+        }
+      },
+      {
+        "order_row_id": "OR_002",
+        "relation": {
+          "match_status": "MATCHED",
+          "raw_row_ids": [
+            "IR_C1"
+          ],
+          "coverage": {
+            "status": "COMPLETE",
+            "overlap": "DISJOINT",
+            "evidence_keys": []
+          }
+        },
+        "evaluated_fields": [
+          "origin",
+          "net_weight"
+        ],
+        "fields": {
+          "origin": {
+            "base_value": "中国",
+            "current_value": "中国",
+            "value_origin": "HUMAN",
+            "write_policy": "LOCKED",
+            "evidence": [
+              {
+                "evidence_key": "E-ORIGIN-2",
+                "value": "韩国",
+                "unit": "",
+                "source_kind": "RAW",
+                "scope": {
+                  "coverage": "COMPLETE",
+                  "overlap": "DISJOINT",
+                  "has_extra_goods": false,
+                  "has_unresolved_goods": false
+                },
+                "raw_row_ids": [
+                  "IR_A1"
+                ],
+                "source": {
+                  "file_id": "F-INSP-A",
+                  "page": 1,
+                  "sheet": null,
+                  "row": 4,
+                  "column": null,
+                  "raw_text": "韩国"
+                }
+              }
+            ],
+            "unresolved_issues": []
+          },
+          "net_weight": {
+            "base_value": "",
+            "current_value": "",
+            "value_origin": "ORDER",
+            "write_policy": "AUTO",
+            "evidence": [
+              {
+                "evidence_key": "E-NW-2",
+                "value": "0.5",
+                "unit": "",
+                "source_kind": "RAW",
+                "scope": {
+                  "coverage": "COMPLETE",
+                  "overlap": "DISJOINT",
+                  "has_extra_goods": false,
+                  "has_unresolved_goods": false
+                },
+                "raw_row_ids": [
+                  "IR_A1"
+                ],
+                "source": {
+                  "file_id": "F-INSP-A",
+                  "page": 1,
+                  "sheet": null,
+                  "row": 4,
+                  "column": null,
+                  "raw_text": "0.5"
+                }
+              }
+            ],
+            "unresolved_issues": [
+              {
+                "issue_id": "ISS-9",
+                "field": "net_weight",
+                "message": "历史净重冲突未处理",
+                "blocks_auto_write": true
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "renderer_id": "jiuli-p4-v3",
+  "renderer_config_version": "1.0.0",
+  "adapter_id": "jiuli-p4-v3",
+  "supported_prompt_kinds": ["JIULI_P4"],
+  "layout": "field-decisions-and-patch",
+  "regions": [
+    { "id": "summary", "component": "summary-strip", "binding": "metadata.summary" },
+    { "id": "decisions", "component": "data-table", "binding": "tables.fieldDecisions", "options": { "filterPresets": ["all", "changes", "risks"] } },
+    { "id": "changes", "component": "field-diff", "binding": "changes", "options": { "simulationOnly": true } },
+    { "id": "calculation", "component": "data-table", "binding": "tables.calculationChecks" },
+    { "id": "draft", "component": "data-table", "binding": "tables.simulatedDraft" },
+    { "id": "issues", "component": "issue-list", "binding": "issues" },
+    { "id": "evidence", "component": "evidence-viewer", "binding": "evidence", "mode": "drawer" }
+  ]
+}

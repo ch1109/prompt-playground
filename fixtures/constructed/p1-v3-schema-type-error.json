@@ -1,0 +1,59 @@
+{
+  "schema_version": "jiuli-ai-v3",
+  "prompt": "P1",
+  "request_id": "REQ-CONSTRUCTED-P1",
+  "output": {
+    "processing_status": "DONE",
+    "customer_resolution": {
+      "status": "RESOLVED",
+      "customer_id": "C001",
+      "recognized_name": "客户A",
+      "candidate_customer_ids": [],
+      "sources": []
+    },
+    "read_status": [],
+    "rows": [
+      {
+        "row_no": "1",
+        "source": {
+          "file_id": "F-ORDER",
+          "page": null,
+          "sheet": "Sheet1",
+          "row": 5,
+          "column": "B",
+          "raw_text": "ABC-01"
+        },
+        "values": {
+          "customer_name": "",
+          "brand": "",
+          "model": "ABC-01",
+          "description": "",
+          "product_name": "",
+          "origin": "",
+          "unit": "",
+          "quantity": 100,
+          "customs_unit_price": "",
+          "total_price": "",
+          "currency": "",
+          "packages": "",
+          "net_weight": "",
+          "gross_weight": "",
+          "sku": "",
+          "buyer": "",
+          "supplier_code": "",
+          "supplier": "",
+          "payment_term_days": "",
+          "purchase_order_no": "",
+          "material_no": "",
+          "pallet_count": "",
+          "warehouse_no": "",
+          "production_line": "",
+          "remark": ""
+        },
+        "evidence": []
+      }
+    ],
+    "scope_records": [],
+    "unlinked_records": []
+  }
+}

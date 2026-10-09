@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+/* 「报关账册」暗色主题：墨灰底 + 账册格线，朱砂印章色为强调，青色=已核验，琥珀=风险 */
+@theme {
+  --color-ink-950: #0d1014;
+  --color-ink-900: #12161c;
+  --color-ink-850: #171c23;
+  --color-ink-800: #1d232c;
+  --color-ink-700: #2a323d;
+  --color-ink-600: #3a4451;
+  --color-ink-400: #7d8896;
+  --color-ink-300: #a6b0bc;
+  --color-ink-100: #e6e9ed;
+  --color-stamp: #e8553d;
+  --color-stamp-soft: #e8553d22;
+  --color-verify: #3fb8a6;
+  --color-risk: #e0a43a;
+  --color-block: #e8553d;
+  --color-info: #6f9fe0;
+  --font-sans: var(--font-plex), "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: var(--font-jetbrains), "SF Mono", "PingFang SC", monospace;
+}
+
+html,
+body {
+  height: 100%;
+}
+body {
+  background-color: var(--color-ink-950);
+  background-image:
+    linear-gradient(to bottom, transparent 0 31px, #ffffff06 31px 32px),
+    radial-gradient(1200px 600px at 85% -10%, #e8553d14, transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, #3fb8a612, transparent 60%);
+  background-size: 100% 32px, 100% 100%, 100% 100%;
+  color: var(--color-ink-100);
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+
+::selection {
+  background: #e8553d55;
+}
+
+/* 细滚动条 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-ink-600) transparent;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise {
+  animation: rise 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes stamp-in {
+  0% {
+    opacity: 0;
+    transform: scale(1.4) rotate(-8deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(0.96) rotate(-3deg);
+  }
+  100% {
+    transform: scale(1) rotate(-3deg);
+  }
+}
+.stamp {
+  animation: stamp-in 0.38s ease-out both;
+  transform: rotate(-3deg);
+}
+@keyframes flash {
+  from {
+    box-shadow: inset 0 0 0 2px var(--color-stamp);
+  }
+  to {
+    box-shadow: inset 0 0 0 2px transparent;
+  }
+}
+.flash {
+  animation: flash 1.2s ease-out;
+}

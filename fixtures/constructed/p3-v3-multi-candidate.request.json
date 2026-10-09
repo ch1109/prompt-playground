@@ -1,0 +1,328 @@
+{
+  "schema_version": "jiuli-ai-v3",
+  "prompt": "P3",
+  "request_id": "REQ-CONSTRUCTED-P3",
+  "context": {
+    "customer_id": "C001",
+    "retrieval_complete": true
+  },
+  "input": {
+    "order_rows": [
+      {
+        "order_row_id": "OR_001",
+        "customer_id": "C001",
+        "identity": {
+          "model": "ABC-01",
+          "brand": "MICRON",
+          "quantity": "1000"
+        },
+        "evidence": [
+          {
+            "evidence_key": "E-O-1-MODEL",
+            "field": "model",
+            "value": "ABC-01",
+            "source": {
+              "file_id": "F-ORDER",
+              "page": 1,
+              "sheet": null,
+              "row": null,
+              "column": null,
+              "raw_text": "ABC-01"
+            }
+          }
+        ]
+      },
+      {
+        "order_row_id": "OR_002",
+        "customer_id": "C001",
+        "identity": {
+          "model": "DUP-05",
+          "brand": "MICRON",
+          "quantity": "300"
+        },
+        "evidence": [
+          {
+            "evidence_key": "E-O-2-MODEL",
+            "field": "model",
+            "value": "DUP-05",
+            "source": {
+              "file_id": "F-ORDER",
+              "page": 1,
+              "sheet": null,
+              "row": null,
+              "column": null,
+              "raw_text": "DUP-05"
+            }
+          }
+        ]
+      },
+      {
+        "order_row_id": "OR_003",
+        "customer_id": "C001",
+        "identity": {
+          "model": "NEW-77",
+          "brand": "TI",
+          "quantity": "10"
+        },
+        "evidence": []
+      },
+      {
+        "order_row_id": "OR_004",
+        "customer_id": "C001",
+        "identity": {
+          "model": "PART-9",
+          "brand": "MICRON",
+          "quantity": "500"
+        },
+        "evidence": [
+          {
+            "evidence_key": "E-O-4-MODEL",
+            "field": "model",
+            "value": "PART-9",
+            "source": {
+              "file_id": "F-ORDER",
+              "page": 1,
+              "sheet": null,
+              "row": null,
+              "column": null,
+              "raw_text": "PART-9"
+            }
+          }
+        ]
+      }
+    ],
+    "inspection_candidates": [
+      {
+        "raw_row_id": "IR_A1",
+        "customer_id": "C001",
+        "logical_inspection_id": "LI_A",
+        "warehouse_no": "26091801",
+        "merged_product_id": null,
+        "identity": {
+          "model": "ABC-01",
+          "brand": "MICRON",
+          "origin": "MALAYSIA",
+          "quantity": "400",
+          "unit": "PCS"
+        },
+        "scope_summary": {
+          "coverage": "COMPLETE",
+          "overlap": "DISJOINT",
+          "has_extra_goods": false,
+          "has_unresolved_goods": false
+        },
+        "evidence": [
+          {
+            "evidence_key": "E-I-A1-MODEL",
+            "field": "model",
+            "value": "ABC-01",
+            "source": {
+              "file_id": "F-INSP-A",
+              "page": 1,
+              "sheet": null,
+              "row": null,
+              "column": null,
+              "raw_text": "#ABC-01"
+            }
+          }
+        ],
+        "occupied_by_order_row_id": null
+      },
+      {
+        "raw_row_id": "IR_B1",
+        "customer_id": "C001",
+        "logical_inspection_id": "LI_B",
+        "warehouse_no": "26091822",
+        "merged_product_id": null,
+        "identity": {
+          "model": "ABC-01",
+          "brand": "MICRON",
+          "origin": "MALAYSIA",
+          "quantity": "600",
+          "unit": "PCS"
+        },
+        "scope_summary": {
+          "coverage": "COMPLETE",
+          "overlap": "DISJOINT",
+          "has_extra_goods": false,
+          "has_unresolved_goods": false
+        },
+        "evidence": [
+          {
+            "evidence_key": "E-I-B1-MODEL",
+            "field": "model",
+            "value": "ABC-01",
+            "source": {
+              "file_id": "F-INSP-B",
+              "page": 1,
+              "sheet": null,
+              "row": null,
+              "column": null,
+              "raw_text": "ABC-01"
+            }
+          },
+          {
+            "evidence_key": "E-I-B1-SCOPE",
+            "field": "scope",
+            "value": "PO 9988 共同覆盖",
+            "source": {
+              "file_id": "F-INSP-B",
+              "page": 1,
+              "sheet": null,
+              "row": null,
+              "column": null,
+              "raw_text": "PO 9988"
+            }
+          }
+        ],
+        "occupied_by_order_row_id": null
+      },
+      {
+        "raw_row_id": "IR_C1",
+        "customer_id": "C001",
+        "logical_inspection_id": "LI_A",
+        "warehouse_no": "26091801",
+        "merged_product_id": null,
+        "identity": {
+          "model": "DUP-05",
+          "brand": "MICRON",
+          "origin": "MALAYSIA",
+          "quantity": "300",
+          "unit": "PCS"
+        },
+        "scope_summary": {
+          "coverage": "COMPLETE",
+          "overlap": "DISJOINT",
+          "has_extra_goods": false,
+          "has_unresolved_goods": false
+        },
+        "evidence": [
+          {
+            "evidence_key": "E-I-C1-MODEL",
+            "field": "model",
+            "value": "DUP-05",
+            "source": {
+              "file_id": "F-INSP-A",
+              "page": 1,
+              "sheet": null,
+              "row": null,
+              "column": null,
+              "raw_text": "DUP-05"
+            }
+          }
+        ],
+        "occupied_by_order_row_id": null
+      },
+      {
+        "raw_row_id": "IR_C2",
+        "customer_id": "C001",
+        "logical_inspection_id": "LI_B",
+        "warehouse_no": "26091822",
+        "merged_product_id": null,
+        "identity": {
+          "model": "DUP-05",
+          "brand": "MICRON",
+          "origin": "MALAYSIA",
+          "quantity": "300",
+          "unit": "PCS"
+        },
+        "scope_summary": {
+          "coverage": "COMPLETE",
+          "overlap": "DISJOINT",
+          "has_extra_goods": false,
+          "has_unresolved_goods": false
+        },
+        "evidence": [
+          {
+            "evidence_key": "E-I-C2-MODEL",
+            "field": "model",
+            "value": "DUP-05",
+            "source": {
+              "file_id": "F-INSP-B",
+              "page": 1,
+              "sheet": null,
+              "row": null,
+              "column": null,
+              "raw_text": "DUP-05"
+            }
+          }
+        ],
+        "occupied_by_order_row_id": null
+      },
+      {
+        "raw_row_id": "IR_C3",
+        "customer_id": "C001",
+        "logical_inspection_id": "LI_B",
+        "warehouse_no": "26091822",
+        "merged_product_id": null,
+        "identity": {
+          "model": "DUP-05A",
+          "brand": "MICRON",
+          "origin": "MALAYSIA",
+          "quantity": "300",
+          "unit": "PCS"
+        },
+        "scope_summary": {
+          "coverage": "COMPLETE",
+          "overlap": "DISJOINT",
+          "has_extra_goods": false,
+          "has_unresolved_goods": false
+        },
+        "evidence": [
+          {
+            "evidence_key": "E-I-C3-MODEL",
+            "field": "model",
+            "value": "DUP-05A",
+            "source": {
+              "file_id": "F-INSP-B",
+              "page": 1,
+              "sheet": null,
+              "row": null,
+              "column": null,
+              "raw_text": "DUP-05A"
+            }
+          }
+        ],
+        "occupied_by_order_row_id": null
+      },
+      {
+        "raw_row_id": "IR_D1",
+        "customer_id": "C001",
+        "logical_inspection_id": "LI_A",
+        "warehouse_no": "26091801",
+        "merged_product_id": null,
+        "identity": {
+          "model": "PART-9",
+          "brand": "MICRON",
+          "origin": "MALAYSIA",
+          "quantity": "200",
+          "unit": "PCS"
+        },
+        "scope_summary": {
+          "coverage": "COMPLETE",
+          "overlap": "DISJOINT",
+          "has_extra_goods": false,
+          "has_unresolved_goods": false
+        },
+        "evidence": [
+          {
+            "evidence_key": "E-I-D1-MODEL",
+            "field": "model",
+            "value": "PART-9",
+            "source": {
+              "file_id": "F-INSP-A",
+              "page": 1,
+              "sheet": null,
+              "row": null,
+              "column": null,
+              "raw_text": "PART-9"
+            }
+          }
+        ],
+        "occupied_by_order_row_id": null
+      }
+    ],
+    "proposed_groups": [],
+    "comparison_results": []
+  }
+}

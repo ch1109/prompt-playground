@@ -1,0 +1,87 @@
+{
+  "schema_version": "jiuli-ai-v3",
+  "prompt": "P1",
+  "request_id": "REQ-CONSTRUCTED-P1",
+  "output": {
+    "processing_status": "SUCCESS",
+    "customer_resolution": {
+      "status": "UNRESOLVED",
+      "customer_id": null,
+      "recognized_name": "<b>客户</b>",
+      "candidate_customer_ids": [],
+      "sources": []
+    },
+    "read_status": [],
+    "rows": [
+      {
+        "row_no": 1,
+        "source": {
+          "file_id": "F-ORDER",
+          "page": null,
+          "sheet": "Sheet1",
+          "row": 5,
+          "column": "B",
+          "raw_text": "<script>window.__xss=1</script>"
+        },
+        "values": {
+          "customer_name": "",
+          "brand": "",
+          "model": "<img src=x onerror=\"window.__xss=1\">",
+          "description": "javascript:alert(1)",
+          "product_name": "",
+          "origin": "",
+          "unit": "",
+          "quantity": "",
+          "customs_unit_price": "",
+          "total_price": "",
+          "currency": "",
+          "packages": "",
+          "net_weight": "",
+          "gross_weight": "",
+          "sku": "",
+          "buyer": "",
+          "supplier_code": "",
+          "supplier": "",
+          "payment_term_days": "",
+          "purchase_order_no": "",
+          "material_no": "",
+          "pallet_count": "",
+          "warehouse_no": "",
+          "production_line": "",
+          "remark": "<script>window.__xss=1</script>"
+        },
+        "evidence": [
+          {
+            "field": "model",
+            "value": "<img src=x onerror=\"window.__xss=1\">",
+            "unit": "",
+            "source": {
+              "file_id": "F-ORDER",
+              "page": null,
+              "sheet": "Sheet1",
+              "row": 5,
+              "column": "C",
+              "raw_text": "<iframe src=javascript:alert(1)>"
+            }
+          }
+        ],
+        "conflicts": [
+          {
+            "field": "model",
+            "message": "<svg onload=\"window.__xss=1\">"
+          }
+        ]
+      }
+    ],
+    "scope_records": [],
+    "unlinked_records": [],
+    "issues": [
+      {
+        "code": "XSS",
+        "row_ref": 1,
+        "field": "remark",
+        "message": "<img src=x onerror=\"window.__xss=1\">"
+      }
+    ]
+  }
+}

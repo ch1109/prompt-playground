@@ -1,0 +1,91 @@
+{
+  "schema_version": "jiuli-ai-v2",
+  "prompt": "P1",
+  "request_id": "REQ_xxx",
+  "output": {
+    "processing_status": "SUCCESS",
+    "customer_resolution": {
+      "status": "RESOLVED",
+      "customer_id": "C001",
+      "recognized_name": "客户A",
+      "candidates": [],
+      "evidence_refs": [
+        "SRC_TMP_001"
+      ]
+    },
+    "order_task": {
+      "order_task_id": "OT_xxx",
+      "draft_id": "DRAFT_xxx"
+    },
+    "source_materials": [
+      "F001",
+      "F002",
+      "F003"
+    ],
+    "source_refs": [
+      {
+        "local_source_ref": "SRC_TMP_001",
+        "source_type": "ORDER",
+        "file_id": "F001",
+        "file_name": "委托书.xlsx",
+        "page": null,
+        "sheet": "Sheet1",
+        "row": 5,
+        "column": "型号",
+        "raw_text": "ABC-01"
+      }
+    ],
+    "rows": [
+      {
+        "row_seq": 1,
+        "local_row_ref": "ROW_TMP_001",
+        "source_position": {
+          "file_id": "F001",
+          "page": null,
+          "sheet": "Sheet1",
+          "row": 5
+        },
+        "values": {
+          "customer_name": "",
+          "brand": "",
+          "model": "",
+          "description": "",
+          "product_name": "",
+          "origin": "",
+          "unit": "",
+          "quantity": "",
+          "customs_unit_price": "",
+          "total_price": "",
+          "currency": "",
+          "packages": "",
+          "net_weight": "",
+          "gross_weight": "",
+          "sku": "",
+          "buyer": "",
+          "supplier_code": "",
+          "supplier": "",
+          "payment_term_days": "",
+          "purchase_order_no": "",
+          "material_no": "",
+          "pallet_count": "",
+          "warehouse_no": "",
+          "production_line": "",
+          "remark": ""
+        },
+        "normalized_identity": {
+          "model_key": "",
+          "brand_key": ""
+        },
+        "field_sources": {},
+        "field_conflicts": []
+      }
+    ],
+    "source_total_facts": {
+      "quantity": [],
+      "packages": [],
+      "net_weight": [],
+      "gross_weight": []
+    },
+    "warnings": []
+  }
+}

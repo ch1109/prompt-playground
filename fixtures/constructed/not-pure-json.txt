@@ -1,0 +1,7 @@
+好的，以下是识别结果：
+
+```json
+{"schema_version":"jiuli-ai-v3","prompt":"P1","request_id":"REQ-CONSTRUCTED-P1","output":{"processing_status":"SUCCESS"}}
+```
+
+如有疑问请告诉我。

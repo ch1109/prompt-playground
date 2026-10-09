@@ -1,0 +1,13 @@
+{
+  "renderer_id": "jiuli-p1",
+  "renderer_config_version": "1.0.0",
+  "adapter_id": "jiuli-p1-v2",
+  "supported_prompt_kinds": ["JIULI_P1"],
+  "layout": "wide-table-with-issues",
+  "regions": [
+    { "id": "summary", "component": "summary-strip", "binding": "metadata.summary" },
+    { "id": "order-table", "component": "data-table", "binding": "tables.orderRows", "options": { "frozenColumns": ["row_seq", "model"], "fieldPreset": "core" } },
+    { "id": "problems", "component": "issue-list", "binding": "issues", "options": { "defaultVisible": true } },
+    { "id": "evidence", "component": "evidence-viewer", "binding": "evidence", "mode": "drawer" }
+  ]
+}

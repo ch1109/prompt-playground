@@ -1,0 +1,6 @@
+{
+  "schema_version": "jiuli-ai-v3",
+  "prompt": "P1",
+  "request_id": "REQ-CONSTRUCTED-P1",
+  "output": {
+    "processi

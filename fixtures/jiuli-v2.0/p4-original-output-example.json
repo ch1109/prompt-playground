@@ -1,0 +1,46 @@
+{
+  "schema_version": "jiuli-ai-v2",
+  "prompt": "P4",
+  "request_id": "REQ_xxx",
+  "output": {
+    "base_draft_version": 3,
+    "row_patches": [
+      {
+        "order_row_id": "OR_001",
+        "field_decisions": [
+          {
+            "field": "origin",
+            "decision": "UPDATE",
+            "current_value": "中国",
+            "result_value": "马来西亚",
+            "verification_status": "VERIFIED_UPDATED",
+            "rule_id": "ORIGIN_PRIORITY_COMPLETE_COVERAGE",
+            "source_refs": [
+              "SRC_201"
+            ],
+            "conflict_values": []
+          },
+          {
+            "field": "brand",
+            "decision": "KEEP",
+            "current_value": "MICRON",
+            "result_value": "MICRON",
+            "verification_status": "VERIFIED_CONSISTENT",
+            "rule_id": "BRAND_ORDER_VALUE_VERIFIED",
+            "source_refs": [
+              "SRC_202"
+            ],
+            "conflict_values": []
+          }
+        ],
+        "row_verification": {
+          "has_inspection_basis": true,
+          "coverage_status": "COMPLETE",
+          "has_conflict": false,
+          "has_missing_required": false
+        }
+      }
+    ],
+    "warnings": []
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "schema_version": "jiuli-ai-v2",
+  "prompt": "P2",
+  "request_id": "REQ_xxx",
+  "output": {
+    "processing_status": "SUCCESS",
+    "customer_id": "C001",
+    "inspection_ingest_id": "II_001",
+    "source_refs": [
+      {
+        "local_source_ref": "SRC_TMP_101",
+        "source_type": "INSPECTION",
+        "file_id": "F101",
+        "file_name": "查货单.pdf",
+        "page": 2,
+        "sheet": null,
+        "row": 3,
+        "column": "型号",
+        "raw_text": "#ABC-01"
+      }
+    ],
+    "logical_inspections": [
+      {
+        "local_logical_ref": "LI_TMP_001",
+        "warehouse_no": "26091801",
+        "source_file_ids": [
+          "F101"
+        ],
+        "header_facts": {
+          "packages": [],
+          "gross_weight": [],
+          "net_weight": [],
+          "pallet_count": []
+        },
+        "raw_rows": [
+          {
+            "local_raw_row_ref": "IR_TMP_001",
+            "source_position": {
+              "file_id": "F101",
+              "page": 2,
+              "row": 3
+            },
+            "facts": {
+              "brand": "",
+              "model": "",
+              "product_name": "",
+              "origin": "",
+              "unit": "",
+              "quantity": "",
+              "packages": "",
+              "net_weight": "",
+              "gross_weight": "",
+              "sku": "",
+              "purchase_order_no": "",
+              "material_no": "",
+              "pallet_count": "",
+              "warehouse_no": "26091801",
+              "production_line": "",
+              "remark": ""
+            },
+            "relation_features": {
+              "pack_no": "",
+              "box_no": "",
+              "dc": "",
+              "lot": ""
+            },
+            "normalized_identity": {
+              "brand_key": "",
+              "model_key": "",
+              "origin_key": ""
+            },
+            "origin_facts": [],
+            "manual_marks": [],
+            "package_facts": [],
+            "weight_facts": [],
+            "source_refs": []
+          }
+        ],
+        "merged_products": [
+          {
+            "local_merged_ref": "MP_TMP_001",
+            "merge_key": {
+              "brand": "",
+              "model": "",
+              "origin": ""
+            },
+            "raw_row_refs": [
+              "IR_TMP_001"
+            ],
+            "aggregated": {
+              "quantity": "",
+              "packages": "",
+              "net_weight": "",
+              "gross_weight": ""
+            },
+            "field_conflicts": []
+          }
+        ],
+        "scope_uncertain": false
+      }
+    ],
+    "unresolved_scopes": [],
+    "warnings": []
+  }
+}

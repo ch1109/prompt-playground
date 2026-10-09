@@ -1,0 +1,14 @@
+{
+  "renderer_id": "jiuli-p3",
+  "renderer_config_version": "1.0.0",
+  "adapter_id": "jiuli-p3-v2",
+  "supported_prompt_kinds": ["JIULI_P3"],
+  "layout": "candidate-comparison",
+  "regions": [
+    { "id": "order-rows", "component": "data-table", "binding": "tables.orderRows" },
+    { "id": "candidates", "component": "data-table", "binding": "tables.candidateGroups" },
+    { "id": "relations", "component": "relation-canvas", "binding": "relations", "options": { "defaultVisible": false } },
+    { "id": "issues", "component": "issue-list", "binding": "issues" },
+    { "id": "evidence", "component": "evidence-viewer", "binding": "evidence", "mode": "drawer" }
+  ]
+}

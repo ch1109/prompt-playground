@@ -1,0 +1,13 @@
+{
+  "renderer_id": "jiuli-p4",
+  "renderer_config_version": "1.0.0",
+  "adapter_id": "jiuli-p4-v2",
+  "supported_prompt_kinds": ["JIULI_P4"],
+  "layout": "field-decisions-and-patch",
+  "regions": [
+    { "id": "decisions", "component": "data-table", "binding": "tables.fieldDecisions", "options": { "filterPresets": ["all", "changes", "risks"] } },
+    { "id": "changes", "component": "field-diff", "binding": "changes", "options": { "simulationOnly": true } },
+    { "id": "issues", "component": "issue-list", "binding": "issues" },
+    { "id": "evidence", "component": "evidence-viewer", "binding": "evidence", "mode": "drawer" }
+  ]
+}

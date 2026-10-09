@@ -1,0 +1,194 @@
+{
+  "note": "人工构造的测试 Fixture：不是真实单证，不是真实模型输出，不能用于宣称准确率。",
+  "items": [
+    {
+      "file": "p1-v3-conflict.json",
+      "promptKind": "JIULI_P1",
+      "schemaVersion": "jiuli-ai-v3",
+      "origin": "CONSTRUCTED",
+      "title": "P1 冲突 + 无牌/空白/0 + 漏行",
+      "covers": [
+        "AT02",
+        "AT03",
+        "AT04"
+      ],
+      "gold": {
+        "expectedRowCount": 4
+      }
+    },
+    {
+      "file": "p1-v3-schema-type-error.json",
+      "promptKind": "JIULI_P1",
+      "schemaVersion": "jiuli-ai-v3",
+      "origin": "CONSTRUCTED",
+      "title": "Schema 类型错误（quantity 为数字、缺 conflicts/issues、未知枚举）",
+      "covers": [
+        "AT17"
+      ]
+    },
+    {
+      "file": "invalid-json-truncated.txt",
+      "promptKind": "JIULI_P1",
+      "origin": "CONSTRUCTED",
+      "title": "无效 JSON（模拟断流截断）",
+      "covers": [
+        "AT16"
+      ]
+    },
+    {
+      "file": "not-pure-json.txt",
+      "promptKind": "JIULI_P1",
+      "origin": "CONSTRUCTED",
+      "title": "非纯 JSON（夹杂说明文字，不做猜测提取）",
+      "covers": [
+        "AT16"
+      ]
+    },
+    {
+      "file": "p1-v3-xss.json",
+      "promptKind": "JIULI_P1",
+      "schemaVersion": "jiuli-ai-v3",
+      "origin": "CONSTRUCTED",
+      "title": "恶意 HTML 片段（必须按文本显示）",
+      "covers": [
+        "9.4 安全转义"
+      ]
+    },
+    {
+      "file": "unknown-schema-version.json",
+      "promptKind": "JIULI_P1",
+      "origin": "CONSTRUCTED",
+      "title": "未登记 schema_version（UNKNOWN_SCHEMA）",
+      "covers": [
+        "3.5 降级"
+      ]
+    },
+    {
+      "file": "p2-v3-no-warehouse.json",
+      "promptKind": "JIULI_P2",
+      "schemaVersion": "jiuli-ai-v3",
+      "origin": "CONSTRUCTED",
+      "title": "P2 无仓号 + 同仓号多页 + 多来源产地",
+      "covers": [
+        "AT05",
+        "AT06",
+        "AT07"
+      ]
+    },
+    {
+      "file": "p2-v2-merge.json",
+      "promptKind": "JIULI_P2",
+      "schemaVersion": "jiuli-ai-v2",
+      "origin": "CONSTRUCTED",
+      "title": "P2 v2 同仓号多行合并 + 无仓号 + 悬空引用",
+      "covers": [
+        "AT05",
+        "AT06"
+      ]
+    },
+    {
+      "file": "p3-v3-multi-candidate.request.json",
+      "role": "REQUEST_CONTEXT",
+      "for": "p3-v3-multi-candidate.json",
+      "origin": "CONSTRUCTED",
+      "title": "P3 请求上下文"
+    },
+    {
+      "file": "p3-v3-multi-candidate.json",
+      "promptKind": "JIULI_P3",
+      "schemaVersion": "jiuli-ai-v3",
+      "origin": "CONSTRUCTED",
+      "title": "P3 一对多 + 多候选 + UNMATCHED + PARTIAL",
+      "covers": [
+        "AT08",
+        "AT09",
+        "AT10"
+      ],
+      "request": "p3-v3-multi-candidate.request.json"
+    },
+    {
+      "file": "p3-v2-review-status.json",
+      "promptKind": "JIULI_P3",
+      "schemaVersion": "jiuli-ai-v2",
+      "origin": "CONSTRUCTED",
+      "title": "P3 v2 + v2.1 可选字段（复核门控）",
+      "covers": [
+        "AT11"
+      ]
+    },
+    {
+      "file": "p4-v3-conflict.request.json",
+      "role": "REQUEST_CONTEXT",
+      "for": "p4-v3-conflict.json",
+      "origin": "CONSTRUCTED",
+      "title": "P4 请求上下文"
+    },
+    {
+      "file": "p4-v3-conflict.json",
+      "promptKind": "JIULI_P4",
+      "schemaVersion": "jiuli-ai-v3",
+      "origin": "CONSTRUCTED",
+      "title": "P4 KEEP无证据/FILL/UPDATE/CONFLICT/MISSING/锁定",
+      "covers": [
+        "AT12",
+        "AT13",
+        "AT14",
+        "AT15"
+      ],
+      "request": "p4-v3-conflict.request.json"
+    },
+    {
+      "file": "p4-v2-with-base-draft.json",
+      "promptKind": "JIULI_P4",
+      "schemaVersion": "jiuli-ai-v2",
+      "origin": "CONSTRUCTED",
+      "title": "P4 v2 + 匹配版本的完整基准草稿",
+      "covers": [
+        "AT13",
+        "AT14"
+      ],
+      "baseDraft": {
+        "version": 3,
+        "rows": {
+          "OR_001": {
+            "customer_name": "客户A",
+            "brand": "MICRON",
+            "model": "ABC-01",
+            "description": "",
+            "product_name": "",
+            "origin": "中国",
+            "unit": "",
+            "quantity": "1000",
+            "customs_unit_price": "",
+            "total_price": "",
+            "currency": "",
+            "packages": "",
+            "net_weight": "1.0",
+            "gross_weight": "",
+            "sku": "",
+            "buyer": "",
+            "supplier_code": "",
+            "supplier": "",
+            "payment_term_days": "",
+            "purchase_order_no": "",
+            "material_no": "",
+            "pallet_count": "",
+            "warehouse_no": "",
+            "production_line": "",
+            "remark": ""
+          }
+        }
+      }
+    },
+    {
+      "file": "p3-v3-unknown-enum.json",
+      "promptKind": "JIULI_P3",
+      "schemaVersion": "jiuli-ai-v3",
+      "origin": "CONSTRUCTED",
+      "title": "P3 未知枚举（PROBABLY_MATCHED）",
+      "covers": [
+        "9.1 未知枚举"
+      ]
+    }
+  ]
+}
