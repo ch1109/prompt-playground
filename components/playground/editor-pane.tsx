@@ -354,8 +354,15 @@ function ModelTab({ provider }: { provider: ProviderInfoDTO | null }) {
             ? `点击运行后，提示词与构造输入将发送到 ${provider.provider}。API Key 只在服务端使用。`
             : "在项目根目录 .env.local 填写 MODEL_BASE_URL / MODEL_NAME / MODEL_API_KEY 后重启。未配置时只能「仅渲染」。"}
         </p>
-        <p className="text-ink-400">文件直传：{provider?.supportsFileInput ? "支持" : "不支持（只发送预处理文本；缺文本的材料会被阻断）"}</p>
+        <p className="text-ink-400">文件直传：{provider?.supportsFileInput ? "支持" : "不支持（默认只发送预处理文本；缺文本的材料会被阻断。看图请勾选下方「附带原件图片」）"}</p>
       </div>
+      <label className="flex items-start gap-2">
+        <input type="checkbox" checked={ws.attachImages} onChange={(e) => patch({ attachImages: e.target.checked })} aria-label="附带原件图片" className="mt-0.5" />
+        <span>
+          附带原件图片
+          <span className="block text-ink-400">把输入引用的 PDF / 图片原件逐页转成图片，和文字一起发送（最多 20 页）。需要模型支持看图；Excel 不转图。</span>
+        </span>
+      </label>
       <label className="flex items-center gap-2">
         <span className="w-28 text-ink-400">temperature</span>
         <input type="number" step="0.1" min={0} max={2} value={ws.params.temperature} onChange={(e) => patch({ params: { ...ws.params, temperature: Number(e.target.value) } })} aria-label="temperature" className="w-24 rounded border border-ink-700 bg-ink-950 px-2 py-0.5" />
@@ -379,6 +386,7 @@ interface PreviewDTO {
   user?: string;
   actualPromptHash?: string;
   builtInputHash?: string;
+  attachFiles?: { file_id: string; file_name: string; media_type: string; authorized: boolean; exists: boolean }[] | null;
   provider: ProviderInfoDTO;
 }
 
@@ -388,10 +396,10 @@ function PreviewTab() {
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
     if (!ws.snapshotId) return;
-    api<PreviewDTO>("/api/runs/preview", { json: { promptId, snapshotId: ws.snapshotId, system: ws.system, userTemplate: ws.userTemplate } })
+    api<PreviewDTO>("/api/runs/preview", { json: { promptId, snapshotId: ws.snapshotId, system: ws.system, userTemplate: ws.userTemplate, attachImages: ws.attachImages } })
       .then(setP)
       .catch((e) => setErr(e.message));
-  }, [ws.snapshotId, ws.system, ws.userTemplate, promptId]);
+  }, [ws.snapshotId, ws.system, ws.userTemplate, ws.attachImages, promptId]);
   if (!ws.snapshotId) return <Empty>请先在「输入」选择快照（或带请求上下文的样本会在运行时自动建快照）。真实运行只使用快照数据。</Empty>;
   if (err) return <p className="text-stamp">{err}</p>;
   if (!p) return <p className="text-ink-400">构造中…</p>;
@@ -405,6 +413,21 @@ function PreviewTab() {
         <Badge tone={p.provider.configured ? "info" : "warn"}>将发送至 {p.provider.provider}</Badge>
       </div>
       {p.requiresFiles?.length ? <p className="rounded border border-stamp/40 bg-stamp/10 p-2 text-stamp">材料 {p.requiresFiles.join(", ")} 没有预处理文本：当前文本模型会阻断运行。</p> : null}
+      {p.attachFiles && (
+        <div className="rounded border border-ink-700 p-2" data-testid="attach-files">
+          <div className="text-ink-400">将附带原件图片（运行时转换；不是 PDF / 图片或无权读取的会跳过并记入警告）：</div>
+          {p.attachFiles.length ? (
+            p.attachFiles.map((f) => (
+              <div key={f.file_id} className="font-mono text-[11px]">
+                {f.file_id} · {f.file_name} · {f.media_type}
+                {!f.authorized ? " · 无权读取" : !f.exists ? " · 原件不存在" : ""}
+              </div>
+            ))
+          ) : (
+            <div className="text-risk">构造输入没有引用原件文件，不会附带图片</div>
+          )}
+        </div>
+      )}
       {p.warnings?.map((w) => (
         <p key={w} className="text-risk">
           ⚠ {w}

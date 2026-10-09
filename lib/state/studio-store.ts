@@ -18,6 +18,8 @@ export interface Workspace {
   fixtureId: string | null;
   snapshotId: string | null;
   params: { temperature: number; max_tokens: number };
+  /** 是否随请求附带原件页面图片（视觉模型） */
+  attachImages: boolean;
   runId: string | null;
   /** 产生当前 Run 时的输入签名；与当前编辑签名不同 → DIRTY */
   runInputSig: string | null;
@@ -34,6 +36,7 @@ export const emptyWorkspace = (): Workspace => ({
   fixtureId: null,
   snapshotId: null,
   params: { temperature: 0, max_tokens: 16000 },
+  attachImages: false,
   runId: null,
   runInputSig: null,
 });
@@ -44,7 +47,7 @@ export function inputSignature(w: Workspace, mode: "RENDER_ONLY" | "MODEL_RUN"):
     mode === "RENDER_ONLY"
       ? { inputMode: w.inputMode, raw: w.inputMode === "paste" ? w.pasteRaw : null, req: w.inputMode === "paste" ? w.pasteRequest : null, fixture: w.inputMode === "fixture" ? w.fixtureId : null }
       : { snapshot: w.snapshotId };
-  return JSON.stringify({ mode, input, system: w.system, user: w.userTemplate, params: w.params });
+  return JSON.stringify({ mode, input, system: w.system, user: w.userTemplate, params: w.params, attachImages: mode === "MODEL_RUN" && w.attachImages });
 }
 
 interface StudioState {

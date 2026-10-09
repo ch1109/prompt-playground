@@ -24,6 +24,7 @@ interface RunBody {
   userTemplate?: string;
   promptVersionId?: string | null;
   params?: ModelParams;
+  attachImages?: boolean;
 }
 
 export const POST = (req: Request) =>
@@ -48,7 +49,7 @@ export const POST = (req: Request) =>
       if (!b.snapshotId) return fail("BAD_REQUEST", "真实运行必须选择输入快照");
       if (typeof b.system !== "string" || typeof b.userTemplate !== "string") return fail("BAD_REQUEST", "缺少提示词");
       return ok(
-        await modelRun({ projectId, promptId: b.promptId, snapshotId: b.snapshotId, system: b.system, userTemplate: b.userTemplate, promptVersionId: b.promptVersionId, params: b.params ?? {}, label: b.label }),
+        await modelRun({ projectId, promptId: b.promptId, snapshotId: b.snapshotId, system: b.system, userTemplate: b.userTemplate, promptVersionId: b.promptVersionId, params: b.params ?? {}, attachImages: b.attachImages, label: b.label }),
         201,
       );
     }

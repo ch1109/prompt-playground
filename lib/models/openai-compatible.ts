@@ -19,7 +19,8 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
       baseUrl: process.env.MODEL_BASE_URL,
       model: process.env.MODEL_NAME,
       apiKey: process.env.MODEL_API_KEY,
-      timeoutMs: Number(process.env.MODEL_TIMEOUT_MS || 120000),
+      // 视觉模型附带多页图片时常超过 2 分钟
+      timeoutMs: Number(process.env.MODEL_TIMEOUT_MS || 300000),
     },
     private fetchImpl: typeof fetch = fetch,
   ) {}
@@ -51,7 +52,7 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
       return { ok: false, code: "MODEL_NOT_CONFIGURED", message: "未配置 MODEL_BASE_URL / MODEL_NAME / MODEL_API_KEY（.env.local）", latencyMs: 0 };
     }
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(new Error("timeout")), this.env.timeoutMs ?? 120000);
+    const timer = setTimeout(() => controller.abort(new Error("timeout")), this.env.timeoutMs ?? 300000);
     req.signal?.addEventListener("abort", () => controller.abort(req.signal?.reason));
     const url = this.env.baseUrl!.replace(/\/+$/, "") + "/chat/completions";
     try {
@@ -62,7 +63,12 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
           model: this.env.model,
           messages: [
             { role: "system", content: req.system },
-            { role: "user", content: req.user },
+            {
+              role: "user",
+              content: req.images?.length
+                ? [{ type: "text", text: req.user }, ...req.images.map((i) => ({ type: "image_url", image_url: { url: `data:${i.mediaType};base64,${i.base64}` } }))]
+                : req.user,
+            },
           ],
           ...req.params,
           stream: false,

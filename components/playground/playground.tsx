@@ -112,7 +112,7 @@ export function Playground({ projectId }: { projectId: string }) {
       }
       if (!snapshotId) throw new Error("真实运行必须选择输入快照（样本需带请求上下文，或从九立只读导入）");
       const run = await api<{ run_id: string }>("/api/runs", {
-        json: { mode: "MODEL_RUN", projectId, promptId, snapshotId, system: ws.system, userTemplate: ws.userTemplate, promptVersionId: ws.versionId, params: ws.params },
+        json: { mode: "MODEL_RUN", projectId, promptId, snapshotId, system: ws.system, userTemplate: ws.userTemplate, promptVersionId: ws.versionId, params: ws.params, attachImages: ws.attachImages },
       });
       await openRun(run.run_id, { sig: inputSignature({ ...ws, snapshotId }, "MODEL_RUN"), mode: "MODEL_RUN" });
       loadRuns();

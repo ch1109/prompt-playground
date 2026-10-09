@@ -359,6 +359,51 @@ describe("AT22 模型断流 / 超时 / 失败", () => {
   });
 });
 
+describe.skipIf(!hasDemo)("附带原件图片（视觉模型）", () => {
+  const send = async (fixtureId: string, attachImages: boolean) => {
+    let sent: { messages: { content: unknown }[] } | undefined;
+    const f = fx(fixtureId);
+    setProviderForTests(
+      new OpenAICompatibleProvider(
+        cfg,
+        fakeFetch(async (init) => {
+          sent = JSON.parse(String(init?.body));
+          return Response.json({ choices: [{ message: { content: f.raw } }] });
+        }),
+      ),
+    );
+    const run = await modelRun({ projectId: "jiuli", promptId: `jiuli-p${f.promptKind.slice(-1)}`, snapshotId: snapshotForFixture("jiuli", f)!.snapshot_id, system: "S", userTemplate: "{{input_json}}", params: {}, attachImages });
+    setProviderForTests(undefined);
+    return { run, user: sent!.messages[1].content };
+  };
+  beforeAll(() => {
+    process.env.JIULI_DEMO_ROOT = DEMO_ROOT;
+    process.env.JIULI_ALLOWED_CUSTOMERS = "*";
+  });
+
+  it("PDF 原件逐页转图随请求发送，Run 只记录元数据，原件不变", async () => {
+    const pdf = join(DEMO_ROOT, "真实整单样本/2025YBT010-2/查货文件/1765426942103.pdf");
+    const before = createHash("sha256").update(readFileSync(pdf)).digest("hex");
+    const { run, user } = await send("v3/SC-08/P2", true);
+    const parts = user as { type: string; image_url?: { url: string } }[];
+    expect(parts[0].type).toBe("text");
+    expect(parts.length).toBe(2);
+    expect(parts[1].image_url!.url.startsWith("data:image/jpeg;base64,")).toBe(true);
+    expect(run.attached_images).toEqual([expect.objectContaining({ file_id: "F-8bc7177252aa", page: 1, media_type: "image/jpeg" })]);
+    expect(JSON.stringify(getRun(run.run_id))).not.toContain("base64,");
+    expect(createHash("sha256").update(readFileSync(pdf)).digest("hex")).toBe(before);
+  });
+
+  it("Excel 原件不转图并记警告；未开启时只发文字", async () => {
+    const { run } = await send("v3/SC-08/P1", true);
+    expect(run.attached_images).toEqual([]);
+    expect((run as { input_builder_warnings?: string[] }).input_builder_warnings!.join()).toContain("不是 PDF 或图片");
+    const off = await send("v3/SC-08/P2", false);
+    expect(typeof off.user).toBe("string");
+    expect(off.run.attached_images).toBeNull();
+  });
+});
+
 describe("AT24 同快照回放 / 标注不污染原文", () => {
   it("原始输入/输出 Hash 不变，标注独立保存", () => {
     const f = fx("v3/SC-08/P3");

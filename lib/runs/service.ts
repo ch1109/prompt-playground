@@ -10,6 +10,8 @@ import { findRendererConfig } from "@/lib/renderer-config/registry";
 import { contentHash, getPrompt, getVersion } from "@/lib/repositories/prompts";
 import { getRun, saveRun } from "@/lib/repositories/runs";
 import { getSnapshot } from "@/lib/repositories/snapshots";
+import { getJiuliConnector } from "@/lib/connectors/registry";
+import { buildPageImages, referencedFileIds } from "./page-images";
 
 export class RunServiceError extends Error {
   constructor(
@@ -121,15 +123,19 @@ export function renderOnly(input: Base & { raw: string }): Run {
 }
 
 /** 运行前预览：实际发送的系统提示词、用户消息与构造输入 */
-export function previewModelRun(input: { promptId: string; snapshotId: string; system: string; userTemplate: string }) {
+export async function previewModelRun(input: { promptId: string; snapshotId: string; system: string; userTemplate: string; attachImages?: boolean }) {
   const prompt = loadPrompt(input.promptId);
   const snapshot = loadSnapshot(input.snapshotId)!;
   const built = buildInput(prompt.prompt_kind, snapshot);
   const info = getProvider().info();
   if (!built.ok) return { ok: false as const, code: built.code, message: built.message, provider: info };
   const user = renderUserTemplate(input.userTemplate, built.request);
+  // 只列出将附带的原件，不在预览时转换 PDF
+  const ids = input.attachImages ? referencedFileIds(built.request) : [];
+  const attachFiles = ids.length ? await getJiuliConnector().getMaterialMetadata(ids).catch(() => []) : [];
   return {
     ok: true as const,
+    attachFiles: input.attachImages ? attachFiles.map((m) => ({ file_id: m.file_id, file_name: m.file_name, media_type: m.media_type, authorized: m.authorized, exists: m.exists })) : null,
     provider: info,
     builderId: built.builderId,
     warnings: built.warnings,
@@ -144,7 +150,7 @@ export function previewModelRun(input: { promptId: string; snapshotId: string; s
 
 /** MODEL_RUN：服务端代理真实模型调用；失败保存失败 Run，绝不回退为 Mock */
 export async function modelRun(
-  input: Base & { snapshotId: string; system: string; userTemplate: string; promptVersionId?: string | null; params: ModelParams },
+  input: Base & { snapshotId: string; system: string; userTemplate: string; promptVersionId?: string | null; params: ModelParams; attachImages?: boolean },
 ): Promise<Run> {
   const prompt = loadPrompt(input.promptId);
   const snapshot = loadSnapshot(input.snapshotId)!;
@@ -168,7 +174,9 @@ export async function modelRun(
   const user = renderUserTemplate(input.userTemplate, built.request);
   const runId = newId("run");
   const started = new Date().toISOString();
-  const result = await provider.complete({ system: input.system, user, params: input.params });
+  const pages = input.attachImages ? await buildPageImages(referencedFileIds(built.request)) : null;
+  const images = pages?.images.map((i) => ({ mediaType: i.media_type, base64: i.base64 }));
+  const result = await provider.complete({ system: input.system, user, params: input.params, images });
 
   const common = {
     run_id: runId,
@@ -183,8 +191,10 @@ export async function modelRun(
     model_name: info.model,
     provider_adapter_version: info.adapterVersion,
     model_params: input.params,
-    actual_prompt_hash: contentHash(input.system, user),
+    // 附带图片时，图片 hash 也计入实际提示词 hash
+    actual_prompt_hash: contentHash(input.system, pages?.images.length ? `${user}\n${pages.images.map((i) => i.sha256).join(",")}` : user),
     built_input_hash: sha256(stableStringify(built.request)),
+    attached_images: pages ? pages.images.map(({ base64: _b, ...m }) => m) : null,
     actual_prompt: { system: redactSecrets(input.system), user: redactSecrets(user) },
     started_at: started,
     ended_at: new Date().toISOString(),
@@ -192,7 +202,7 @@ export async function modelRun(
     estimated_cost: null,
     label: input.label ?? `${info.model} 运行`,
     input_builder_id: built.builderId,
-    input_builder_warnings: built.warnings,
+    input_builder_warnings: [...built.warnings, ...(pages?.warnings ?? [])],
   };
 
   if (!result.ok) {

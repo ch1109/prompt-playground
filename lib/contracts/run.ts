@@ -87,6 +87,8 @@ export interface Run {
   model_params?: ModelParams | null;
   actual_prompt_hash?: string | null;
   built_input_hash?: string | null;
+  /** 随请求附带的原件页面图片（只记元数据，不存图片本身）；null = 未开启 */
+  attached_images?: { file_id: string; page: number | null; media_type: string; sha256: string }[] | null;
   /** 实际发送的展开后提示词（system + user），密钥已脱敏 */
   actual_prompt?: { system: string; user: string } | null;
   schema_id?: string | null;

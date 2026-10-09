@@ -274,6 +274,7 @@ function MetaTab({ detail }: { detail: RunDetail }) {
         <Row k="模型" v={r.model_provider ? `${r.model_provider} · ${r.model_name}` : "未调用模型"} />
         <Row k="Provider 适配器版本" v={r.provider_adapter_version} />
         <Row k="模型参数" v={r.model_params ? JSON.stringify(r.model_params) : null} />
+        <Row k="附带原件图片" v={r.attached_images ? (r.attached_images.length ? r.attached_images.map((i) => `${i.file_id}${i.page ? ` 第${i.page}页` : ""}`).join("，") : "已开启，但没有可附带的图片") : null} />
         <Row k="Schema" v={r.schema_id ? `${r.schema_id} (${r.schema_version})` : null} />
         <Row k="Adapter" v={r.adapter_id ? `${r.adapter_id}@${r.adapter_version}` : null} />
         <Row k="RendererConfig 版本" v={r.renderer_config_version} />

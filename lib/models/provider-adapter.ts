@@ -4,6 +4,8 @@ export interface ModelRequest {
   system: string;
   user: string;
   params: ModelParams;
+  /** 随用户消息附带的页面图片（视觉模型） */
+  images?: { mediaType: string; base64: string }[];
   signal?: AbortSignal;
 }
 
