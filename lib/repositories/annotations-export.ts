@@ -26,7 +26,7 @@ const text = (v: unknown) => (v === undefined || v === null ? "" : typeof v === 
 /** 项目内全部标注 + 所属 Run 的关键信息，供离线评测使用 */
 export function exportAnnotations(projectId: string): AnnotationExportRow[] {
   const anns = db()
-    .prepare("SELECT a.* FROM annotations a JOIN runs r ON r.run_id = a.run_id WHERE r.project_id = ? ORDER BY a.created_at")
+    .prepare("SELECT a.* FROM annotations a JOIN runs r ON r.run_id = a.run_id WHERE r.project_id = ? AND a.deleted_at IS NULL ORDER BY a.created_at")
     .all(projectId) as unknown as Annotation[];
   const runs = new Map<string, (Run & { label?: string }) | undefined>();
   return anns.map((a) => {

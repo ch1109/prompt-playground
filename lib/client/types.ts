@@ -39,6 +39,7 @@ export interface AnnotationDTO {
   expected_value: string | null;
   note: string | null;
   created_at: string;
+  updated_at?: string | null;
 }
 
 export interface RunDetail {

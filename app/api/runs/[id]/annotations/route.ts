@@ -1,8 +1,6 @@
 import type { NextRequest } from "next/server";
 import { body, fail, handle, ok } from "@/lib/api/respond";
-import { addAnnotation, getRun, listAnnotations } from "@/lib/repositories/runs";
-
-const TYPES = ["MODEL_WRONG", "CORRECT_VALUE", "ERROR_REASON", "CORRECT_CANDIDATE", "WRONG_RELATION", "NOTE"];
+import { addAnnotation, ANNOTATION_TYPES as TYPES, getRun, listAnnotations } from "@/lib/repositories/runs";
 
 export const GET = (_req: NextRequest, ctx: RouteContext<"/api/runs/[id]/annotations">) => handle(async () => ok(listAnnotations((await ctx.params).id)));
 

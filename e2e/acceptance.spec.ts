@@ -439,6 +439,39 @@ test("标注独立保存，不改原始输出", async ({ page }) => {
   expect(hash).toBe(crypto.createHash("sha256").update(raw.data.raw).digest("hex"));
 });
 
+test("标注可修改、可删除：删除后角标消失、导出中不再出现", async ({ page }) => {
+  await renderFixture(page, "jiuli-p4", "constructed/p4-v3-conflict.json");
+  const row = page.locator('[data-change-id="OR_001:net_weight"]');
+  await row.click();
+  const marker = `标注-${Date.now()}`;
+  await page.getByLabel("正确值").fill("错写的值");
+  await page.getByLabel("标注备注").fill(marker);
+  await page.getByRole("button", { name: "保存标注" }).click();
+  const form = page.getByTestId("annotation-form");
+  await expect(form).toContainText("正确值：错写的值");
+  await expect(row).toHaveAttribute("data-annotated", "");
+  // 修改
+  await form.getByRole("button", { name: /^修改标注/ }).last().click();
+  await expect(page.getByLabel("正确值")).toHaveValue("错写的值");
+  await page.getByLabel("正确值").fill("1.8");
+  await page.getByRole("button", { name: "保存修改" }).click();
+  await expect(form).toContainText("正确值：1.8");
+  await expect(form).not.toContainText("错写的值");
+  let csv = await page.request.get("/api/annotations/export?project=jiuli&format=csv").then((r) => r.text());
+  expect(csv).toContain(marker);
+  expect(csv).not.toContain("错写的值");
+  // 删除（先取消一次，确认没有误删）
+  page.once("dialog", (d) => d.dismiss());
+  await form.getByRole("button", { name: /^删除标注/ }).last().click();
+  await expect(form).toContainText("正确值：1.8");
+  page.once("dialog", (d) => d.accept());
+  await form.getByRole("button", { name: /^删除标注/ }).last().click();
+  await expect(form).not.toContainText(marker);
+  await expect(row).not.toHaveAttribute("data-annotated", "");
+  csv = await page.request.get("/api/annotations/export?project=jiuli&format=csv").then((r) => r.text());
+  expect(csv).not.toContain(marker);
+});
+
 test("P2 按入仓号分组：未确定入仓号单独展示", async ({ page }) => {
   await renderFixture(page, "jiuli-p2", "constructed/p2-v3-no-warehouse.json");
   await page.locator('[data-group="__UNRESOLVED__"]').click();

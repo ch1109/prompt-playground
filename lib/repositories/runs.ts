@@ -92,6 +92,8 @@ export function listRuns(projectId: string, promptId?: string, limit = 100): Run
   });
 }
 
+export const ANNOTATION_TYPES = ["MODEL_WRONG", "CORRECT_VALUE", "ERROR_REASON", "CORRECT_CANDIDATE", "WRONG_RELATION", "NOTE"];
+
 export interface Annotation {
   annotation_id: string;
   run_id: string;
@@ -101,17 +103,37 @@ export interface Annotation {
   expected_value: string | null;
   note: string | null;
   created_at: string;
+  updated_at?: string | null;
 }
 
 /** 标注独立保存：不修改 Run、原始响应或任何九立数据 */
 export function addAnnotation(a: Omit<Annotation, "annotation_id" | "created_at">): Annotation {
   const full: Annotation = { ...a, annotation_id: newId("ann"), created_at: new Date().toISOString() };
   db()
-    .prepare("INSERT INTO annotations VALUES (?,?,?,?,?,?,?,?)")
+    .prepare("INSERT INTO annotations (annotation_id, run_id, target_json_pointer, target, issue_type, expected_value, note, created_at) VALUES (?,?,?,?,?,?,?,?)")
     .run(full.annotation_id, full.run_id, full.target_json_pointer, full.target, full.issue_type, full.expected_value, full.note, full.created_at);
   return full;
 }
 
+const ANN_COLS = "annotation_id, run_id, target_json_pointer, target, issue_type, expected_value, note, created_at, updated_at";
+
 export function listAnnotations(runId: string): Annotation[] {
-  return db().prepare("SELECT * FROM annotations WHERE run_id = ? ORDER BY created_at").all(runId) as unknown as Annotation[];
+  return db().prepare(`SELECT ${ANN_COLS} FROM annotations WHERE run_id = ? AND deleted_at IS NULL ORDER BY created_at`).all(runId) as unknown as Annotation[];
+}
+
+export function getAnnotation(annotationId: string): Annotation | undefined {
+  return db().prepare(`SELECT ${ANN_COLS} FROM annotations WHERE annotation_id = ? AND deleted_at IS NULL`).get(annotationId) as unknown as Annotation | undefined;
+}
+
+/** 修改标注内容（不涉及模型输出）；已删除的返回 undefined */
+export function updateAnnotation(annotationId: string, patch: Pick<Annotation, "issue_type" | "expected_value" | "note">): Annotation | undefined {
+  const r = db()
+    .prepare("UPDATE annotations SET issue_type = ?, expected_value = ?, note = ?, updated_at = ? WHERE annotation_id = ? AND deleted_at IS NULL")
+    .run(patch.issue_type, patch.expected_value, patch.note, new Date().toISOString(), annotationId);
+  return r.changes ? getAnnotation(annotationId) : undefined;
+}
+
+/** 删除标注：只做删除标记（留痕），不再列出、不进入导出 */
+export function deleteAnnotation(annotationId: string): boolean {
+  return db().prepare("UPDATE annotations SET deleted_at = ? WHERE annotation_id = ? AND deleted_at IS NULL").run(new Date().toISOString(), annotationId).changes === 1;
 }

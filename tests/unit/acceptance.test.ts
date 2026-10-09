@@ -430,6 +430,28 @@ describe("AT24 同快照回放 / 标注不污染原文", () => {
   });
 });
 
+describe("标注修改与删除", () => {
+  it("可修改正确值/备注（记录修改时间）；删除后不再列出、不进入导出，但留痕；原始输出不变", async () => {
+    const { updateAnnotation, deleteAnnotation, listAnnotations } = await import("@/lib/repositories/runs");
+    const { exportAnnotations } = await import("@/lib/repositories/annotations-export");
+    const f = fx("v3/SC-08/P1");
+    const run = renderOnly({ projectId: "jiuli", promptId: "jiuli-p1", raw: f.raw });
+    const a = addAnnotation({ run_id: run.run_id, target_json_pointer: "/output/rows/0/values/model", target: "row-1/model", issue_type: "MODEL_WRONG", expected_value: "错的", note: null });
+    const u = updateAnnotation(a.annotation_id, { issue_type: "MODEL_WRONG", expected_value: "对的", note: "改过" })!;
+    expect(u.expected_value).toBe("对的");
+    expect(u.updated_at).toBeTruthy();
+    expect(listAnnotations(run.run_id)[0].expected_value).toBe("对的");
+    expect(exportAnnotations("jiuli").find((x) => x.annotation_id === a.annotation_id)?.expected_value).toBe("对的");
+    expect(deleteAnnotation(a.annotation_id)).toBe(true);
+    expect(listAnnotations(run.run_id)).toHaveLength(0);
+    expect(exportAnnotations("jiuli").some((x) => x.annotation_id === a.annotation_id)).toBe(false);
+    expect(db().prepare("SELECT deleted_at FROM annotations WHERE annotation_id = ?").get(a.annotation_id)).toMatchObject({ deleted_at: expect.any(String) });
+    expect(updateAnnotation(a.annotation_id, { issue_type: "NOTE", expected_value: null, note: null })).toBeUndefined();
+    expect(deleteAnnotation(a.annotation_id)).toBe(false);
+    expect(getRun(run.run_id)!.raw_response).toBe(f.raw);
+  });
+});
+
 describe("AT25 只读安全", () => {
   const WRITE = /^(post|put|patch|delete|remove|create|update|write|save|insert|upsert|set|apply|commit|occupy|verify)/i;
   it("Connector 接口与实现上不存在任何写方法", () => {

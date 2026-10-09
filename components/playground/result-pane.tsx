@@ -363,15 +363,48 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
   const [expected, setExpected] = useState("");
   const [note, setNote] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  /** 正在修改的标注；为空时表单用于新增 */
+  const [editing, setEditing] = useState<AnnotationDTO | null>(null);
   const target = [sel.tableId, sel.rowId, sel.fieldKey].filter(Boolean).join(" / ") || sel.relationId || null;
+
+  function reset() {
+    setEditing(null);
+    setType("MODEL_WRONG");
+    setExpected("");
+    setNote("");
+  }
 
   async function save() {
     setErr(null);
     try {
-      const a = await api<AnnotationDTO>(`/api/runs/${detail.run.run_id}/annotations`, { json: { issue_type: type, expected_value: expected || undefined, note: note || undefined, target_json_pointer: sel.jsonPointer, target } });
-      putRun({ ...detail, annotations: [...detail.annotations, a] });
-      setExpected("");
-      setNote("");
+      if (editing) {
+        const a = await api<AnnotationDTO>(`/api/annotations/${editing.annotation_id}`, { method: "PATCH", json: { issue_type: type, expected_value: expected, note } });
+        putRun({ ...detail, annotations: detail.annotations.map((x) => (x.annotation_id === a.annotation_id ? a : x)) });
+      } else {
+        const a = await api<AnnotationDTO>(`/api/runs/${detail.run.run_id}/annotations`, { json: { issue_type: type, expected_value: expected || undefined, note: note || undefined, target_json_pointer: sel.jsonPointer, target } });
+        putRun({ ...detail, annotations: [...detail.annotations, a] });
+      }
+      reset();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  function startEdit(a: AnnotationDTO) {
+    setErr(null);
+    setEditing(a);
+    setType(a.issue_type);
+    setExpected(a.expected_value ?? "");
+    setNote(a.note ?? "");
+  }
+
+  async function remove(a: AnnotationDTO) {
+    if (!window.confirm("删除这条标注？删除后不再显示、不进入导出（系统保留删除记录）。")) return;
+    setErr(null);
+    try {
+      await api(`/api/annotations/${a.annotation_id}`, { method: "DELETE" });
+      putRun({ ...detail, annotations: detail.annotations.filter((x) => x.annotation_id !== a.annotation_id) });
+      if (editing?.annotation_id === a.annotation_id) reset();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }
@@ -393,7 +426,7 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
         </span>
       </h4>
       <div className="space-y-1.5">
-        <div className="text-[11px] text-ink-400">目标：{target ?? "（未选择，标注整个 Run）"}</div>
+        <div className="text-[11px] text-ink-400">{editing ? `正在修改：${editing.target ?? editing.target_json_pointer ?? "整个 Run"}` : `目标：${target ?? "（未选择，标注整个 Run）"}`}</div>
         <select value={type} onChange={(e) => setType(e.target.value)} aria-label="标注类型" className="w-full rounded border border-ink-700 bg-ink-950 px-1 py-0.5 text-[12px]">
           {ANN_TYPES.map(([v, l]) => (
             <option key={v} value={v}>
@@ -403,16 +436,27 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
         </select>
         <input value={expected} onChange={(e) => setExpected(e.target.value)} placeholder="正确值（可选）" aria-label="正确值" className="w-full rounded border border-ink-700 bg-ink-950 px-2 py-0.5 text-[12px]" />
         <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="错误原因 / 备注" aria-label="标注备注" rows={2} className="w-full rounded border border-ink-700 bg-ink-950 px-2 py-0.5 text-[12px]" />
-        <Btn tone="outline" onClick={save}>
-          保存标注
-        </Btn>
+        <div className="flex gap-1">
+          <Btn tone="outline" onClick={save}>
+            {editing ? "保存修改" : "保存标注"}
+          </Btn>
+          {editing && <Btn onClick={reset}>取消修改</Btn>}
+        </div>
         {err && <p className="text-[11px] text-stamp">{err}</p>}
       </div>
       {detail.annotations.length > 0 && (
         <ul className="mt-2 space-y-1">
           {detail.annotations.map((a) => (
-            <li key={a.annotation_id} className="rounded bg-ink-800 px-2 py-1 text-[11px]">
-              <Badge tone="info">{ANN_TYPES.find(([v]) => v === a.issue_type)?.[1] ?? a.issue_type}</Badge> <span className="text-ink-400">{a.target ?? a.target_json_pointer}</span>
+            <li key={a.annotation_id} className={cx("rounded bg-ink-800 px-2 py-1 text-[11px]", editing?.annotation_id === a.annotation_id && "ring-1 ring-info")}>
+              <div className="flex items-center gap-1">
+                <Badge tone="info">{ANN_TYPES.find(([v]) => v === a.issue_type)?.[1] ?? a.issue_type}</Badge> <span className="min-w-0 flex-1 truncate text-ink-400">{a.target ?? a.target_json_pointer}</span>
+                <button onClick={() => startEdit(a)} className="text-info hover:underline" aria-label={`修改标注 ${a.annotation_id}`}>
+                  修改
+                </button>
+                <button onClick={() => remove(a)} className="text-stamp hover:underline" aria-label={`删除标注 ${a.annotation_id}`}>
+                  删除
+                </button>
+              </div>
               {a.expected_value && <div>正确值：{a.expected_value}</div>}
               {a.note && <div className="text-ink-300">{a.note}</div>}
             </li>
