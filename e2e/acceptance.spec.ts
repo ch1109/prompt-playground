@@ -504,6 +504,9 @@ test("运行对比：显示关键指标、提示词差异区与输出差异", as
   await expect(dialog.getByTestId("compare-metrics")).toContainText("原始响应 Hash");
   await expect(dialog.getByText("至少一方没有记录实际发送的提示词").first()).toBeVisible();
   await expect(dialog.getByText("输出 JSON 差异")).toBeVisible();
+  // 委托行按 order_row_id 对齐：两次输出的委托行互不相同，显示为整行增删而不是逐位置"变化"
+  await expect(dialog.getByText("/output/row_relations/[order_row_id=OR_009]/match_status")).toBeVisible();
+  await expect(dialog.getByText("/output/row_relations/[order_row_id=OR_001]/match_status")).toBeVisible();
 });
 
 test("重渲染 / 回放 / 保存版本失败时显示错误，不静默", async ({ page }) => {

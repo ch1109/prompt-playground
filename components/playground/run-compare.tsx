@@ -20,15 +20,97 @@ export function flatten(v: unknown, p = "", out = new Map<string, string>()): Ma
   return out;
 }
 
-export function diffJson(a: unknown, b: unknown) {
-  const fa = flatten(a);
-  const fb = flatten(b);
-  const rows: { pointer: string; kind: "ADDED" | "REMOVED" | "CHANGED"; a?: string; b?: string }[] = [];
-  for (const [k, v] of fa) {
-    if (!fb.has(k)) rows.push({ pointer: k, kind: "REMOVED", a: v });
-    else if (fb.get(k) !== v) rows.push({ pointer: k, kind: "CHANGED", a: v, b: fb.get(k) });
+type Obj = Record<string, unknown>;
+type DiffRow = { pointer: string; kind: "ADDED" | "REMOVED" | "CHANGED"; a?: string; b?: string };
+
+const str = (v: unknown) => (v === null || v === undefined || v === "" ? null : String(v));
+
+/**
+ * 对象数组的业务键（按优先级）：委托行 ID、v2 行引用、字段名、文件 ID、原文位置，最后才是模型自编的序号。
+ * 原文位置 = 来源文件 + Sheet + 页 + 行，比模型序号可靠：少一行时后续行不会错位。
+ */
+const ROW_KEYS: [string, (o: Obj) => string | null][] = [
+  ["order_row_id", (o) => str(o.order_row_id)],
+  ["local_row_ref", (o) => str(o.local_row_ref)],
+  ["local_raw_row_ref", (o) => str(o.local_raw_row_ref)],
+  ["raw_row_id", (o) => str(o.raw_row_id)],
+  ["field", (o) => str(o.field)],
+  ["file_id", (o) => str(o.file_id)],
+  [
+    "原文位置",
+    (o) => {
+      const s = o.source as Obj | undefined;
+      if (!s || typeof s !== "object" || (s.row == null && s.page == null)) return null;
+      return [s.file_id, s.sheet, s.page, s.row].map((x) => (x == null || x === "" ? "-" : String(x))).join(":");
+    },
+  ],
+  ["record_no", (o) => str(o.record_no)],
+  ["row_no", (o) => str(o.row_no)],
+];
+
+const isObj = (v: unknown): v is Obj => !!v && typeof v === "object" && !Array.isArray(v);
+
+/** 两边都能为每个元素给出非空且不重复的键，才用它对齐 */
+function pickKey(a: unknown[], b: unknown[]) {
+  if (!a.length || !b.length || !a.every(isObj) || !b.every(isObj)) return null;
+  for (const [name, fn] of ROW_KEYS) {
+    const ka = (a as Obj[]).map(fn);
+    const kb = (b as Obj[]).map(fn);
+    const ok = (ks: (string | null)[]) => ks.every((k) => k !== null) && new Set(ks).size === ks.length;
+    if (ok(ka) && ok(kb)) return { name, ka: ka as string[], kb: kb as string[] };
   }
-  for (const [k, v] of fb) if (!fa.has(k)) rows.push({ pointer: k, kind: "ADDED", b: v });
+  return null;
+}
+
+function diffValue(a: unknown, b: unknown, p: string, rows: DiffRow[]) {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    const key = pickKey(a, b);
+    if (key) {
+      const seg = (k: string) => `${p}/[${key.name}=${k}]`;
+      const ib = new Map(key.kb.map((k, i) => [k, i]));
+      key.ka.forEach((k, i) => (ib.has(k) ? diffValue(a[i], b[ib.get(k)!], seg(k), rows) : leaves(a[i], seg(k), "REMOVED", rows)));
+      const ia = new Set(key.ka);
+      key.kb.forEach((k, i) => !ia.has(k) && leaves(b[i], seg(k), "ADDED", rows));
+      return;
+    }
+    if (!a.length || !b.length) {
+      if (a.length !== b.length) rows.push({ pointer: p, kind: "CHANGED", a: a.length ? `[${a.length} 项]` : "[]", b: b.length ? `[${b.length} 项]` : "[]" });
+      return;
+    }
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      if (i >= b.length) leaves(a[i], `${p}/${i}`, "REMOVED", rows);
+      else if (i >= a.length) leaves(b[i], `${p}/${i}`, "ADDED", rows);
+      else diffValue(a[i], b[i], `${p}/${i}`, rows);
+    }
+    return;
+  }
+  if (isObj(a) && isObj(b)) {
+    for (const k of Object.keys(a)) {
+      if (k in b) diffValue(a[k], b[k], `${p}/${escapeToken(k)}`, rows);
+      else leaves(a[k], `${p}/${escapeToken(k)}`, "REMOVED", rows);
+    }
+    for (const k of Object.keys(b)) if (!(k in a)) leaves(b[k], `${p}/${escapeToken(k)}`, "ADDED", rows);
+    return;
+  }
+  // 标量或类型不同：作为整体比较（容器按展平后的文本比较）
+  const fa = JSON.stringify(a);
+  const fb = JSON.stringify(b);
+  if (fa !== fb) {
+    if (isObj(a) || Array.isArray(a) || isObj(b) || Array.isArray(b)) {
+      leaves(a, p, "REMOVED", rows);
+      leaves(b, p, "ADDED", rows);
+    } else rows.push({ pointer: p, kind: "CHANGED", a: fa, b: fb });
+  }
+}
+
+function leaves(v: unknown, p: string, kind: "ADDED" | "REMOVED", rows: DiffRow[]) {
+  for (const [k, val] of flatten(v, p)) rows.push(kind === "ADDED" ? { pointer: k, kind, b: val } : { pointer: k, kind, a: val });
+}
+
+/** 两次输出的差异：对象数组按业务键对齐（见 ROW_KEYS），找不到可靠键时按位置；路径中的 [键=值] 表示按业务键定位 */
+export function diffJson(a: unknown, b: unknown): DiffRow[] {
+  const rows: DiffRow[] = [];
+  diffValue(a, b, "", rows);
   return rows.sort((x, y) => x.pointer.localeCompare(y.pointer));
 }
 
@@ -144,6 +226,7 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
               <Hunks title="System 提示词差异" hunks={cmp.system} />
               <Hunks title="User 消息差异（含构造输入）" hunks={cmp.user} />
               <h4 className="mb-1 text-[12px] font-semibold text-ink-300">输出 JSON 差异</h4>
+              <p className="mb-1 text-[11px] text-ink-400">行按业务键对齐（委托行 ID、字段名、原文位置等，路径中显示为 [键=值]），找不到可靠的键时才按位置比较。</p>
             </>
           )}
           {!a || !b ? (

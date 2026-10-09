@@ -685,6 +685,36 @@ describe("运行中状态与截断诊断", () => {
   });
 });
 
+describe("运行对比：输出差异按业务行对齐", () => {
+  const src = (row: number) => ({ file_id: "F1", page: null, sheet: "S1", row, column: "B", raw_text: "" });
+  const p1 = (rows: { row: number; model: string }[]) => ({ output: { rows: rows.map((r, i) => ({ row_no: i + 1, source: src(r.row), values: { model: r.model } })) } });
+  it("P1 少一行：只报这一行被删，其余行不因错位误报（按原文位置对齐）", async () => {
+    const { diffJson } = await import("@/components/playground/run-compare");
+    const a = p1([{ row: 5, model: "A" }, { row: 6, model: "B" }, { row: 7, model: "C" }]);
+    const b = p1([{ row: 6, model: "B" }, { row: 7, model: "C2" }]);
+    const d = diffJson(a, b);
+    expect(d.filter((x) => x.kind === "CHANGED").map((x) => x.pointer)).toEqual(expect.arrayContaining(["/output/rows/[原文位置=F1:S1:-:7]/values/model"]));
+    expect(d.some((x) => x.kind === "REMOVED" && x.pointer.startsWith("/output/rows/[原文位置=F1:S1:-:5]/"))).toBe(true);
+    // row_no 是模型自编序号，会变，但不应让 B 行被报"内容不同"
+    expect(d.some((x) => x.pointer.includes("F1:S1:-:6") && x.pointer.endsWith("/values/model"))).toBe(false);
+  });
+  it("P4 按委托行 ID 与字段名对齐：顺序不同不算差异", async () => {
+    const { diffJson } = await import("@/components/playground/run-compare");
+    const doc = (order: string[]) => ({ output: { row_patches: order.map((id) => ({ order_row_id: id, field_decisions: [{ field: "brand", decision: "KEEP" }, { field: "origin", decision: id === "R2" ? "UPDATE" : "KEEP" }] })) } });
+    expect(diffJson(doc(["R1", "R2"]), doc(["R2", "R1"]))).toEqual([]);
+    const b = doc(["R2", "R1"]);
+    (b.output.row_patches[0].field_decisions as { field: string; decision: string }[]).reverse();
+    b.output.row_patches[0].field_decisions[0].decision = "CONFLICT";
+    expect(diffJson(doc(["R1", "R2"]), b)).toEqual([{ pointer: "/output/row_patches/[order_row_id=R2]/field_decisions/[field=origin]/decision", kind: "CHANGED", a: '"UPDATE"', b: '"CONFLICT"' }]);
+  });
+  it("没有可靠业务键时按位置比较；非 JSON 原文整体比较", async () => {
+    const { diffJson } = await import("@/components/playground/run-compare");
+    expect(diffJson({ xs: [1, 2] }, { xs: [1, 3] })).toEqual([{ pointer: "/xs/1", kind: "CHANGED", a: "2", b: "3" }]);
+    expect(diffJson({ xs: [{ v: 1 }, { v: 1 }] }, { xs: [{ v: 1 }, { v: 2 }] })).toEqual([{ pointer: "/xs/1/v", kind: "CHANGED", a: "1", b: "2" }]);
+    expect(diffJson("abc", "abd")).toEqual([{ pointer: "", kind: "CHANGED", a: '"abc"', b: '"abd"' }]);
+  });
+});
+
 describe("运行对比：提示词差异与关键指标", () => {
   it("找出改动的提示词行，并列出状态/Token/Schema 错误数", async () => {
     const { compareRuns } = await import("@/components/playground/run-compare");
