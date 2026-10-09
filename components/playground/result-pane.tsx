@@ -216,11 +216,11 @@ function JsonTab({ detail }: { detail: RunDetail }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <div className="flex overflow-hidden rounded-lg border border-ink-600 text-[11px]">
-          <button onClick={() => setDoc("response")} className={cx("px-2 py-0.5", doc === "response" ? "bg-ink-700" : "text-ink-400")}>
+        <div className="flex gap-0.5 rounded-lg bg-ink-800 p-0.5 text-[11.5px]">
+          <button onClick={() => setDoc("response")} className={cx("px-2.5 py-0.5", doc === "response" ? "rounded-md bg-ink-900 text-ink-100 shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-ink-400 hover:text-ink-100")}>
             模型原始响应
           </button>
-          <button onClick={() => setDoc("request")} disabled={!detail.request} className={cx("px-2 py-0.5 disabled:opacity-40", doc === "request" ? "bg-ink-700" : "text-ink-400")}>
+          <button onClick={() => setDoc("request")} disabled={!detail.request} className={cx("px-2.5 py-0.5 disabled:opacity-40", doc === "request" ? "rounded-md bg-ink-900 text-ink-100 shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-ink-400 hover:text-ink-100")}>
             请求上下文（快照）
           </button>
         </div>
@@ -312,8 +312,8 @@ function SchemaTab({ detail }: { detail: RunDetail }) {
 function Row({ k, v }: { k: string; v: React.ReactNode }) {
   return (
     <>
-      <dt className="text-ink-400">{k}</dt>
-      <dd className="font-mono break-all">{v ?? <span className="text-ink-600">unknown</span>}</dd>
+      <dt className="border-b border-ink-800 px-3.5 py-1.5 text-ink-400">{k}</dt>
+      <dd className="border-b border-ink-800 px-3.5 py-1.5 font-mono break-all">{v ?? <span className="text-ink-600">unknown</span>}</dd>
     </>
   );
 }
@@ -323,7 +323,7 @@ function MetaTab({ detail }: { detail: RunDetail }) {
   const [showPrompt, setShow] = useState(false);
   return (
     <div className="space-y-3 text-[12px]">
-      <dl className="grid grid-cols-[180px_1fr] gap-x-3 gap-y-1">
+      <dl className="grid grid-cols-[180px_1fr] overflow-hidden rounded-xl border border-ink-700 bg-ink-900 [&>*:nth-last-child(-n+2)]:border-b-0">
         <Row k="run_id" v={r.run_id} />
         <Row k="模式 / 状态" v={`${r.mode} / ${r.status}`} />
         <Row k="标签" v={r.label} />
@@ -481,15 +481,15 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
       </h4>
       <div className="space-y-1.5">
         <div className="text-[11px] text-ink-400">{editing ? `正在修改：${editing.target ?? editing.target_json_pointer ?? "整个 Run"}` : `目标：${target ?? "（未选择，标注整个 Run）"}`}</div>
-        <select value={type} onChange={(e) => setType(e.target.value)} aria-label="标注类型" className="w-full rounded-lg border border-ink-700 bg-ink-950 px-1 py-0.5 text-[12px]">
+        <select value={type} onChange={(e) => setType(e.target.value)} aria-label="标注类型" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-1 py-0.5 text-[12px]">
           {choices.map((v) => (
             <option key={v} value={v}>
               {ANN_LABEL[v] ?? v}
             </option>
           ))}
         </select>
-        <input value={expected} onChange={(e) => setExpected(e.target.value)} placeholder="正确值（可选）" aria-label="正确值" className="w-full rounded-lg border border-ink-700 bg-ink-950 px-2 py-0.5 text-[12px]" />
-        <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="错误原因 / 备注（可选）" aria-label="标注备注" rows={2} className="w-full rounded-lg border border-ink-700 bg-ink-950 px-2 py-0.5 text-[12px]" />
+        <input value={expected} onChange={(e) => setExpected(e.target.value)} placeholder="正确值（可选）" aria-label="正确值" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5 text-[12px]" />
+        <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="错误原因 / 备注（可选）" aria-label="标注备注" rows={2} className="w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5 text-[12px]" />
         <div className="flex gap-1">
           <Btn tone="outline" onClick={save}>
             {editing ? "保存修改" : "保存标注"}

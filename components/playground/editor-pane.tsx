@@ -87,7 +87,7 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
             if (v) patch({ versionId: v.version_id, versionHash: v.content_hash, system: v.system_prompt, userTemplate: v.user_prompt_template });
           }}
           aria-label="Prompt 版本"
-          className="flex-1 rounded-lg border border-ink-700 bg-ink-950 px-2 py-1 text-[12px]"
+          className="flex-1 rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-[12px]"
         >
           {versions.map((v) => (
             <option key={v.version_id} value={v.version_id}>
@@ -103,7 +103,7 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
         onChange={(e) => patch({ system: e.target.value })}
         aria-label="System 提示词"
         spellCheck={false}
-        className="h-[38vh] w-full resize-y rounded-lg border border-ink-700 bg-ink-950 p-2 font-mono text-[12px] leading-5 outline-none focus:border-ink-400"
+        className="h-[38vh] w-full resize-y rounded-lg border border-ink-700 bg-ink-900 p-2 font-mono text-[12px] leading-5 outline-none focus:border-ink-400"
       />
       <label className="block text-[11px] text-ink-400">
         User 模板（变量 <code className="text-info">{"{{input_json}}"}</code> = 由快照显式构造的请求 JSON）
@@ -113,10 +113,10 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
         onChange={(e) => patch({ userTemplate: e.target.value })}
         aria-label="User 模板"
         spellCheck={false}
-        className="h-24 w-full resize-y rounded-lg border border-ink-700 bg-ink-950 p-2 font-mono text-[12px] outline-none focus:border-ink-400"
+        className="h-24 w-full resize-y rounded-lg border border-ink-700 bg-ink-900 p-2 font-mono text-[12px] outline-none focus:border-ink-400"
       />
       <div className="flex items-center gap-2">
-        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="新版本名称" aria-label="新版本名称" className="flex-1 rounded-lg border border-ink-700 bg-ink-950 px-2 py-1 text-[12px]" />
+        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="新版本名称" aria-label="新版本名称" className="flex-1 rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-[12px]" />
         <Btn
           tone="outline"
           disabled={!isDraft}
@@ -218,10 +218,10 @@ function PasteInput({ projectId, kind, onSnapshotsChanged }: { projectId: string
   return (
     <div className="space-y-2">
       <label className="block text-[11px] text-ink-400">模型原始输出（原样保存，不做任何修改）</label>
-      <textarea value={ws.pasteRaw} onChange={(e) => patch({ pasteRaw: e.target.value })} aria-label="原始输出" spellCheck={false} placeholder='{"schema_version":"jiuli-ai-v3", ...}' className="h-56 w-full rounded-lg border border-ink-700 bg-ink-950 p-2 font-mono text-[12px] outline-none focus:border-ink-400" />
+      <textarea value={ws.pasteRaw} onChange={(e) => patch({ pasteRaw: e.target.value })} aria-label="原始输出" spellCheck={false} placeholder='{"schema_version":"jiuli-ai-v3", ...}' className="h-56 w-full rounded-lg border border-ink-700 bg-ink-900 p-2 font-mono text-[12px] outline-none focus:border-ink-400" />
       <input type="file" accept=".json,.txt" aria-label="上传原始输出文件" onChange={(e) => e.target.files?.[0] && readFile(e.target.files[0], "pasteRaw")} className="text-[11px] text-ink-400" />
       <label className="block text-[11px] text-ink-400">请求上下文 JSON（可选，v3 P3/P4 用于解析 evidence_key、当前值）</label>
-      <textarea value={ws.pasteRequest} onChange={(e) => patch({ pasteRequest: e.target.value })} aria-label="请求上下文" spellCheck={false} className="h-28 w-full rounded-lg border border-ink-700 bg-ink-950 p-2 font-mono text-[12px] outline-none focus:border-ink-400" />
+      <textarea value={ws.pasteRequest} onChange={(e) => patch({ pasteRequest: e.target.value })} aria-label="请求上下文" spellCheck={false} className="h-28 w-full rounded-lg border border-ink-700 bg-ink-900 p-2 font-mono text-[12px] outline-none focus:border-ink-400" />
       <input type="file" accept=".json" aria-label="上传请求上下文文件" onChange={(e) => e.target.files?.[0] && readFile(e.target.files[0], "pasteRequest")} className="text-[11px] text-ink-400" />
       <div className="flex items-center gap-2">
         <Btn tone="outline" disabled={busy || !ws.pasteRequest.trim()} onClick={saveRequest}>
@@ -334,7 +334,7 @@ function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged, onMore }
                 onChange={(e) => e.target.value && setRetention(s.snapshot_id, e.target.value === "never" ? null : Number(e.target.value))}
                 aria-label={`保留期限 ${s.snapshot_id}`}
                 title={s.expires_at ? `到期：${s.expires_at.slice(0, 16).replace("T", " ")}` : "永不到期"}
-                className="w-[72px] shrink-0 rounded-lg border border-ink-700 bg-ink-950 px-1 py-0.5 text-[11px] text-ink-300"
+                className="w-[72px] shrink-0 rounded-lg border border-ink-700 bg-ink-900 px-1 py-0.5 text-[11px] text-ink-300"
               >
                 <option value="">{s.expires_at ? `至 ${s.expires_at.slice(5, 10)}` : "永久"}</option>
                 <option value="never">永久保留</option>
@@ -433,7 +433,7 @@ function UploadInput({ projectId, kind, onCreated }: { projectId: string; kind: 
                 value={f.type}
                 onChange={(e) => setFiles(files.map((x, j) => (j === i ? { ...x, type: e.target.value } : x)))}
                 aria-label={`材料类型 ${f.file.name}`}
-                className="rounded-lg border border-ink-700 bg-ink-950 px-1 py-0.5"
+                className="rounded-lg border border-ink-700 bg-ink-900 px-1 py-0.5"
               >
                 {UPLOAD_TYPES.map(([v, l]) => (
                   <option key={v} value={v}>
@@ -448,8 +448,8 @@ function UploadInput({ projectId, kind, onCreated }: { projectId: string; kind: 
           ))}
         </ul>
       )}
-      <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="客户名称（可选，用于 P1 客户目录 / P2 客户）" aria-label="客户名称" className="w-full rounded-lg border border-ink-700 bg-ink-950 px-2 py-1" />
-      <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="快照名称（可选）" aria-label="快照名称" className="w-full rounded-lg border border-ink-700 bg-ink-950 px-2 py-1" />
+      <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="客户名称（可选，用于 P1 客户目录 / P2 客户）" aria-label="客户名称" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-1" />
+      <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="快照名称（可选）" aria-label="快照名称" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-1" />
       <Btn tone="primary" disabled={busy || !files.length} onClick={upload}>
         {busy ? "上传并预处理中…" : "上传并创建隔离快照"}
       </Btn>
@@ -575,11 +575,11 @@ function JiuliImport({ projectId, capability, onCreated }: { projectId: string; 
       </div>
       {connected && (
         <>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索客户（仅显示已授权客户）" aria-label="搜索客户" className="w-full rounded-lg border border-ink-700 bg-ink-950 px-2 py-1 text-[12px]" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索客户（仅显示已授权客户）" aria-label="搜索客户" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-[12px]" />
           <ul className="max-h-36 overflow-auto rounded-lg border border-ink-800">
             {customers.map((c) => (
               <li key={c.customer_id}>
-                <button onClick={() => setCustomer(c.customer_id)} className={cx("w-full px-2 py-1 text-left text-[12px] hover:bg-ink-800", customer === c.customer_id && "bg-accent/[0.07] text-accent")}>
+                <button onClick={() => setCustomer(c.customer_id)} className={cx("w-full rounded-md px-2 py-1 text-left text-[12px] hover:bg-ink-800", customer === c.customer_id && "bg-accent/[0.07] text-accent")}>
                   {c.name} <span className="font-mono text-[10.5px] text-ink-400">{c.customer_id}</span>
                 </button>
               </li>
@@ -588,7 +588,7 @@ function JiuliImport({ projectId, capability, onCreated }: { projectId: string; 
           {customer && (
             <>
               <label className="block text-[11px] text-ink-400">委托任务</label>
-              <select value={task} onChange={(e) => setTask(e.target.value)} aria-label="委托任务" className="w-full rounded-lg border border-ink-700 bg-ink-950 px-2 py-1 text-[12px]">
+              <select value={task} onChange={(e) => setTask(e.target.value)} aria-label="委托任务" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-[12px]">
                 <option value="">（不选任务）</option>
                 {tasks.map((t) => (
                   <option key={t.task_id} value={t.task_id}>
@@ -678,11 +678,11 @@ function ModelTab({ provider }: { provider: ProviderInfoDTO | null }) {
       </label>
       <label className="flex items-center gap-2">
         <span className="w-28 text-ink-400">temperature</span>
-        <input type="number" step="0.1" min={0} max={2} value={ws.params.temperature} onChange={(e) => patch({ params: { ...ws.params, temperature: Number(e.target.value) } })} aria-label="temperature" className="w-24 rounded-lg border border-ink-700 bg-ink-950 px-2 py-0.5" />
+        <input type="number" step="0.1" min={0} max={2} value={ws.params.temperature} onChange={(e) => patch({ params: { ...ws.params, temperature: Number(e.target.value) } })} aria-label="temperature" className="w-24 rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5" />
       </label>
       <label className="flex items-center gap-2">
         <span className="w-28 text-ink-400">max_tokens</span>
-        <input type="number" step="1000" min={1} value={ws.params.max_tokens} onChange={(e) => patch({ params: { ...ws.params, max_tokens: Number(e.target.value) } })} aria-label="max_tokens" className="w-24 rounded-lg border border-ink-700 bg-ink-950 px-2 py-0.5" />
+        <input type="number" step="1000" min={1} value={ws.params.max_tokens} onChange={(e) => patch({ params: { ...ws.params, max_tokens: Number(e.target.value) } })} aria-label="max_tokens" className="w-24 rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5" />
       </label>
     </div>
   );

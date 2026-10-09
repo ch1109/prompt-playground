@@ -28,7 +28,7 @@ export function IssueList({ issues }: { issues: IssueView[] }) {
         <Badge>{issues.length}</Badge>
         {origins.length > 1 &&
           ["ALL", ...origins].map((o) => (
-            <button key={o} onClick={() => setOrigin(o)} className={cx("rounded-lg px-1.5 text-[11px]", origin === o ? "bg-ink-700 text-ink-100" : "text-ink-400 hover:text-ink-100")}>
+            <button key={o} onClick={() => setOrigin(o)} className={cx("rounded-md px-2 py-0.5 text-[11.5px]", origin === o ? "bg-ink-800 text-ink-100" : "text-ink-400 hover:text-ink-100")}>
               {o === "ALL" ? "全部" : ORIGIN_LABEL[o as IssueView["origin"]]}
             </button>
           ))}

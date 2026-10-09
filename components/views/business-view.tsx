@@ -132,7 +132,7 @@ function HierarchyLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
       {regions.get("summary") && <Region region={regions.get("summary")!} vm={vm} />}
       <div className="grid grid-cols-[200px_1fr] gap-3">
         <Section title="入仓号">
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="查找入仓号…" aria-label="查找入仓号" className="m-2 w-[calc(100%-16px)] rounded-lg border border-ink-700 bg-ink-950 px-2 py-0.5 text-[12px] outline-none" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="查找入仓号…" aria-label="查找入仓号" className="m-2 w-[calc(100%-16px)] rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5 text-[12px] outline-none" />
           <ul className="max-h-[520px] overflow-auto pb-1">
             {groups
               .filter((g) => !q || g.label.includes(q))
@@ -221,9 +221,9 @@ function CandidateLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
                 <label className="flex items-center gap-1 text-[11px] text-ink-400">
                   <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} aria-label="显示全部委托行" /> 全部
                 </label>
-                <div className="flex overflow-hidden rounded-lg border border-ink-600 text-[11px]">
+                <div className="flex gap-0.5 rounded-lg bg-ink-800 p-0.5 text-[11.5px]">
                   {(["table", "graph"] as const).map((m) => (
-                    <button key={m} onClick={() => setMode(m)} className={cx("px-2 py-0.5", mode === m ? "bg-ink-700 text-ink-100" : "text-ink-400")}>
+                    <button key={m} onClick={() => setMode(m)} className={cx("px-2.5 py-0.5", mode === m ? "rounded-md bg-ink-900 text-ink-100 shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-ink-400 hover:text-ink-100")}>
                       {m === "table" ? "候选表" : "关系图"}
                     </button>
                   ))}
@@ -262,9 +262,9 @@ function DecisionLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
     return row ? rowFilter(row) : true;
   };
   const toolbar = (
-    <div className="flex overflow-hidden rounded-lg border border-ink-600 text-[11px]">
+    <div className="flex gap-0.5 rounded-lg bg-ink-800 p-0.5 text-[11.5px]">
       {presets.map((p) => (
-        <button key={p} data-preset={p} onClick={() => setPreset(p)} className={cx("px-2 py-0.5", preset === p ? "bg-ink-700 text-ink-100" : "text-ink-400")}>
+        <button key={p} data-preset={p} onClick={() => setPreset(p)} className={cx("px-2.5 py-0.5", preset === p ? "rounded-md bg-ink-900 text-ink-100 shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-ink-400 hover:text-ink-100")}>
           {LABEL[p]}
         </button>
       ))}

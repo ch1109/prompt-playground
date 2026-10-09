@@ -62,13 +62,13 @@ export function DataTable({ table, options = {} }: { table: TableView; options?:
 
   return (
     <div data-table-id={table.id} className="flex min-h-0 flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b border-ink-700 px-3 py-1.5">
+      <div className="flex flex-wrap items-center gap-2 border-b border-ink-700 px-3.5 py-2">
         {!options.hideTitle && <span className="text-[12px] font-semibold text-ink-100">{table.title}</span>}
         <Badge>{rows.length === table.rows.length ? `${rows.length} 行` : `${rows.length}/${table.rows.length} 行`}</Badge>
         {hasCore && (
-          <div className="flex overflow-hidden rounded-lg border border-ink-600 text-[11px]">
+          <div className="flex gap-0.5 rounded-lg bg-ink-800 p-0.5 text-[11.5px]">
             {(["core", "all"] as const).map((p) => (
-              <button key={p} onClick={() => setPreset(p)} className={cx("px-2 py-0.5", preset === p ? "bg-ink-700 text-ink-100" : "text-ink-400 hover:text-ink-100")}>
+              <button key={p} onClick={() => setPreset(p)} className={cx("px-2.5 py-0.5", preset === p ? "rounded-md bg-ink-900 text-ink-100 shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-ink-400 hover:text-ink-100")}>
                 {p === "core" ? "核心字段" : `全部 ${table.columns.length - 1} 字段`}
               </button>
             ))}
@@ -80,7 +80,7 @@ export function DataTable({ table, options = {} }: { table: TableView; options?:
           onChange={(e) => setQ(e.target.value)}
           placeholder="筛选…"
           aria-label={`筛选 ${table.title}`}
-          className="ml-auto w-36 rounded-lg border border-ink-700 bg-ink-950 px-2 py-0.5 text-[12px] outline-none focus:border-ink-400"
+          className="ml-auto w-40 rounded-lg border border-ink-700 bg-ink-900 px-2.5 py-1 text-[12px] outline-none focus:border-ink-400"
         />
       </div>
       {rows.length === 0 ? (
@@ -94,7 +94,7 @@ export function DataTable({ table, options = {} }: { table: TableView; options?:
                   <th
                     key={c.key}
                     className={cx(
-                      "sticky top-0 z-10 border-b border-r border-ink-700 bg-ink-850 px-2.5 py-1.5 text-left text-[11.5px] font-medium whitespace-nowrap text-ink-400",
+                      "sticky top-0 z-10 border-b border-ink-700 bg-ink-850 px-3 py-2 text-left text-[11.5px] font-medium whitespace-nowrap text-ink-400",
                       frozen.has(c.key) && "z-20",
                     )}
                     style={frozen.has(c.key) ? { left: frozenLeft(c.key), minWidth: FIXED_W, maxWidth: FIXED_W } : { minWidth: 96 }}
@@ -128,9 +128,9 @@ export function DataTable({ table, options = {} }: { table: TableView; options?:
                             setStore("evidenceOpen", true);
                           }}
                           className={cx(
-                            "cursor-pointer border-b border-r border-ink-800 px-2 py-1 align-top group-hover:bg-ink-800/60",
+                            "cursor-pointer border-b border-ink-800 px-3 py-1.5 align-top transition-colors group-hover:bg-ink-850",
                             options.dense ? "max-w-[220px]" : "max-w-[320px]",
-                            frozen.has(c.key) && "sticky z-[5] bg-ink-900",
+                            frozen.has(c.key) && cx("sticky z-[5]", rowSelected ? "bg-[color-mix(in_srgb,var(--color-accent)_6%,white)]" : "bg-ink-900 group-hover:bg-ink-850"),
                             cellSelected && "outline outline-2 -outline-offset-2 outline-accent flash",
                           )}
                           style={frozen.has(c.key) ? { left: frozenLeft(c.key), minWidth: FIXED_W, maxWidth: FIXED_W } : undefined}
@@ -140,7 +140,7 @@ export function DataTable({ table, options = {} }: { table: TableView; options?:
                             {cell ? <CellValue value={cell.value} state={cell.state} kind={c.kind} /> : <span className="text-ink-700">—</span>}
                             {cell && cell.sourceRefIds.length > 0 && <span className="mt-[3px] h-1.5 w-1.5 shrink-0 rounded-full bg-verify/70" aria-label="有来源" />}
                             {cell && annotated.has(cell.jsonPointer) && (
-                              <span className="shrink-0 rounded-lg bg-info/20 px-1 text-[10px] leading-4 text-info" title="已有标注（见右侧「来源与标注」）">
+                              <span className="shrink-0 rounded-md bg-info/15 px-1 text-[10px] leading-4 text-info" title="已有标注（见右侧「来源与标注」）">
                                 标
                               </span>
                             )}

@@ -158,7 +158,7 @@ export function compareRuns(a: Run, b: Run, versionLabels: [string | null | unde
 function Hunks({ title, hunks }: { title: string; hunks: StructuredPatchHunk[] | null }) {
   return (
     <div className="mb-3">
-      <h4 className="mb-1 text-[12px] font-semibold text-ink-300">{title}</h4>
+      <h4 className="mb-1.5 text-[12.5px] font-semibold text-ink-100">{title}</h4>
       {hunks === null ? (
         <p className="text-[12px] text-ink-400">至少一方没有记录实际发送的提示词（例如「仅渲染」的 Run），无法对比。</p>
       ) : hunks.length === 0 ? (
@@ -202,30 +202,30 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
             关闭
           </Btn>
         </div>
-        <div className="overflow-auto p-2">
+        <div className="overflow-auto px-5 py-4">
           {cmp && (
             <>
-              <table className="mb-3 w-full text-[12px]" data-testid="compare-metrics">
+              <table className="mb-5 w-full text-[12px]" data-testid="compare-metrics">
                 <thead className="text-ink-400">
                   <tr>
-                    <th className="w-36 py-0.5 text-left font-medium">指标</th>
-                    <th className="py-0.5 text-left font-medium">A</th>
-                    <th className="py-0.5 text-left font-medium">B</th>
+                    <th className="w-36 px-2 py-1 text-left font-medium">指标</th>
+                    <th className="px-2 py-1 text-left font-medium">A</th>
+                    <th className="px-2 py-1 text-left font-medium">B</th>
                   </tr>
                 </thead>
                 <tbody>
                   {cmp.metrics.map((m) => (
                     <tr key={m.key} className={cx("border-b border-ink-800", m.differs && "bg-risk/[0.07]")}>
-                      <td className="py-0.5 text-ink-400">{m.key}</td>
-                      <td className="py-0.5 font-mono break-all">{m.a}</td>
-                      <td className="py-0.5 font-mono break-all">{m.b}</td>
+                      <td className="px-2 py-1 text-ink-400">{m.key}</td>
+                      <td className="px-2 py-1 font-mono break-all">{m.a}</td>
+                      <td className="px-2 py-1 font-mono break-all">{m.b}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
               <Hunks title="System 提示词差异" hunks={cmp.system} />
               <Hunks title="User 消息差异（含构造输入）" hunks={cmp.user} />
-              <h4 className="mb-1 text-[12px] font-semibold text-ink-300">输出 JSON 差异</h4>
+              <h4 className="mb-1.5 text-[12.5px] font-semibold text-ink-100">输出 JSON 差异</h4>
               <p className="mb-1 text-[11px] text-ink-400">行按业务键对齐（委托行 ID、字段名、原文位置等，路径中显示为 [键=值]），找不到可靠的键时才按位置比较。</p>
             </>
           )}
@@ -238,12 +238,12 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.pointer + r.kind} className="border-b border-ink-800">
-                    <td className="w-20 py-0.5">
+                    <td className="w-20 py-1">
                       <Badge tone={r.kind === "ADDED" ? "ok" : r.kind === "REMOVED" ? "bad" : "warn"}>{r.kind}</Badge>
                     </td>
-                    <td className="w-[38%] py-0.5 pr-2 break-all text-ink-300">{r.pointer}</td>
-                    <td className={cx("py-0.5 pr-2 break-all", r.a !== undefined && "text-stamp")}>{r.a ?? ""}</td>
-                    <td className={cx("py-0.5 break-all", r.b !== undefined && "text-verify")}>{r.b ?? ""}</td>
+                    <td className="w-[38%] py-1 pr-3 break-all text-ink-300">{r.pointer}</td>
+                    <td className={cx("py-1 pr-3 break-all", r.a !== undefined && "text-stamp")}>{r.a ?? ""}</td>
+                    <td className={cx("py-1 break-all", r.b !== undefined && "text-verify")}>{r.b ?? ""}</td>
                   </tr>
                 ))}
               </tbody>

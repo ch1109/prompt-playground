@@ -56,7 +56,7 @@ export function FieldDiff({ changes, filter }: { changes: ChangeView[]; filter?:
                   <td className="px-2 py-1 whitespace-nowrap">
                     <span className="font-mono text-ink-400">{c.rowId}</span> · {FIELD_LABELS[c.field] ?? c.field}
                     {annotated.has(c.jsonPointer) && (
-                      <span className="ml-1 rounded-lg bg-info/20 px-1 text-[10px] text-info" title="已有标注（见右侧「来源与标注」）">
+                      <span className="ml-1 rounded-md bg-info/15 px-1 text-[10px] text-info" title="已有标注（见右侧「来源与标注」）">
                         标
                       </span>
                     )}
