@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/client/api";
 import type { AnnotationDTO, RunDetail } from "@/lib/client/types";
 import type { ViewModel } from "@/lib/contracts/view-model";
+import { explainModelError } from "@/lib/models/error-hints";
 import { getByPointer } from "@/lib/pipeline/json-pointer";
 import { useStudio, type ResultTab } from "@/lib/state/studio-store";
 import { EvidenceViewer } from "@/components/renderers/evidence-viewer";
@@ -110,7 +111,17 @@ export function ResultPane({ detail, dirty, canPreview, loading, onCancel }: { d
       {run?.status === "ADAPTER_ERROR" && <Banner tone="bad">适配器异常（ADAPTER_ERROR）：已保留原始 JSON 与校验结果，详见「结构校验」。</Banner>}
       {run?.status === "MODEL_ERROR" && (
         <Banner tone="bad">
-          模型调用失败：{run.error?.code} — {run.error?.message}（已保存失败 Run，未回退为 Mock 结果）
+          <div data-testid="model-error">
+            <div>
+              模型调用失败：{explainModelError(run.error?.code).title}。{explainModelError(run.error?.code).advice}
+            </div>
+            <details className="mt-0.5 text-[11px] opacity-80">
+              <summary className="cursor-pointer">详情（已保存失败 Run，未回退为 Mock 结果）</summary>
+              <div className="font-mono break-all">
+                {run.error?.code} — {run.error?.message}
+              </div>
+            </details>
+          </div>
         </Banner>
       )}
       {run?.status === "CANCELLED" && <Banner tone="warn">这次运行已取消，没有取得模型结果（服务商可能已开始处理并计费）。</Banner>}

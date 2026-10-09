@@ -430,6 +430,23 @@ describe("AT24 同快照回放 / 标注不污染原文", () => {
   });
 });
 
+describe("模型错误的中文解释", () => {
+  it("常见错误码给出原因与处理建议；未知错误码有兜底说明", async () => {
+    const { explainModelError } = await import("@/lib/models/error-hints");
+    expect(explainModelError("MODEL_HTTP_401").title).toContain("密钥");
+    expect(explainModelError("MODEL_HTTP_403").title).toContain("密钥");
+    expect(explainModelError("MODEL_HTTP_404").advice).toContain("MODEL_NAME");
+    expect(explainModelError("MODEL_HTTP_429").title).toContain("频率");
+    expect(explainModelError("MODEL_HTTP_503").title).toContain("服务商");
+    expect(explainModelError("MODEL_TIMEOUT").advice).toContain("MODEL_TIMEOUT_MS");
+    expect(explainModelError("MODEL_NETWORK_ERROR").title).toContain("网络");
+    expect(explainModelError("INTERRUPTED").title).toContain("中断");
+    const unknown = explainModelError("SOMETHING_NEW");
+    expect(unknown.title).toBeTruthy();
+    expect(unknown.advice).toBeTruthy();
+  });
+});
+
 describe("标注修改与删除", () => {
   it("可修改正确值/备注（记录修改时间）；删除后不再列出、不进入导出，但留痕；原始输出不变", async () => {
     const { updateAnnotation, deleteAnnotation, listAnnotations } = await import("@/lib/repositories/runs");

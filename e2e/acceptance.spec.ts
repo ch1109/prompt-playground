@@ -191,6 +191,26 @@ test("模型运行中显示已等待秒数；刷新页面后仍接着等待并�
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
+test("模型调用失败时先给中文原因与建议，服务商原文收在详情里", async ({ page }) => {
+  await renderFixture(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
+  const runs = await page.request.get("/api/runs?project=jiuli&promptId=jiuli-p1").then((r) => r.json());
+  const runId: string = runs.data[0].run_id;
+  await page.route(`**/api/runs/${runId}`, async (r) => {
+    const res = await r.fetch();
+    const body = await res.json();
+    body.data.run = { ...body.data.run, mode: "MODEL_RUN", status: "MODEL_ERROR", view_model: null, error: { code: "MODEL_HTTP_404", message: '{"error":"model Qwen-X not found"}' } };
+    await r.fulfill({ response: res, json: body });
+  });
+  await page.reload();
+  const banner = page.getByTestId("model-error");
+  await expect(banner).toContainText("找不到模型或接口地址");
+  await expect(banner).toContainText("MODEL_NAME");
+  await expect(banner.getByText("model Qwen-X not found")).toBeHidden();
+  await banner.getByText(/^详情/).click();
+  await expect(banner.getByText(/MODEL_HTTP_404 — .*model Qwen-X not found/)).toBeVisible();
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
 test("模型运行开始前的错误直接显示在顶栏，不出现运行中提示", async ({ page }) => {
   await page.route("**/api/models", (r) =>
     r.fulfill({ json: { ok: true, data: { provider: "openai-compatible@fake", model: "fake", configured: true, supportsFileInput: false, adapterVersion: "1.0.0" }, request_id: "x" } }),
