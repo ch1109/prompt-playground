@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { api, ApiError } from "@/lib/client/api";
 import type { CapabilityDTO, FixtureSummary, PromptDef, PromptVersionDTO, ProviderInfoDTO, RunDetail, RunListItem, SnapshotListItem } from "@/lib/client/types";
 import { emptyWorkspace, inputSignature, runSnapshotId, useStudio } from "@/lib/state/studio-store";
@@ -9,6 +9,20 @@ import { ResultPane } from "./result-pane";
 import { RunCompare } from "./run-compare";
 
 const SHORT: Record<string, string> = { JIULI_P1: "P1", JIULI_P2: "P2", JIULI_P3: "P3", JIULI_P4: "P4", GENERIC_JSON: "{ }" };
+
+/** 桌面宽度 <1280px 时编辑区/结果区改为页签切换（PRD §5.4） */
+const NARROW_QUERY = "(max-width: 1279px)";
+function useNarrow(): boolean {
+  return useSyncExternalStore(
+    (cb) => {
+      const m = window.matchMedia(NARROW_QUERY);
+      m.addEventListener("change", cb);
+      return () => m.removeEventListener("change", cb);
+    },
+    () => window.matchMedia(NARROW_QUERY).matches,
+    () => false,
+  );
+}
 
 export function Playground({ projectId }: { projectId: string }) {
   const s = useStudio();
@@ -25,6 +39,8 @@ export function Playground({ projectId }: { projectId: string }) {
   const [showCompare, setShowCompare] = useState(false);
   /** 本窗口发起的模型调用开始时间（显示已等待秒数） */
   const [runningSince, setRunningSince] = useState<number | null>(null);
+  const narrow = useNarrow();
+  const [narrowPane, setNarrowPane] = useState<"editor" | "result">("editor");
 
   const promptId = s.activePromptId;
   const prompt = prompts.find((p) => p.prompt_id === promptId);
@@ -97,6 +113,7 @@ export function Playground({ projectId }: { projectId: string }) {
       s.patchWorkspace(target, { runId, runInputSig: opts?.sig ?? null });
       if (opts?.mode) s.set("lastMode", { ...useStudio.getState().lastMode, [target]: opts.mode });
       s.set("selection", { runId });
+      setNarrowPane("result");
     },
     [s],
   );
@@ -164,6 +181,7 @@ export function Playground({ projectId }: { projectId: string }) {
     setError(null);
     setBusy(true);
     setRunningSince(Date.now());
+    setNarrowPane("result");
     // 调用期间定时刷新历史，让 RUNNING 记录可见
     const poll = setInterval(loadRuns, 3000);
     try {
@@ -324,10 +342,24 @@ export function Playground({ projectId }: { projectId: string }) {
 
         {/* 编辑区 | 结果区 */}
         <div ref={container} className="flex min-w-0 flex-1 flex-col">
+          {narrow && (
+            <div className="flex border-b border-ink-700 bg-ink-900 text-[12.5px]" data-testid="narrow-tabs">
+              {(
+                [
+                  ["editor", "编辑"],
+                  ["result", "结果"],
+                ] as const
+              ).map(([id, label]) => (
+                <button key={id} onClick={() => setNarrowPane(id)} aria-pressed={narrowPane === id} className={cx("flex-1 py-1.5", narrowPane === id ? "bg-ink-800 text-ink-100" : "text-ink-400 hover:text-ink-100")}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex min-h-0 flex-1">
-            {!s.maximized && (
+            {(narrow ? narrowPane === "editor" : !s.maximized) && (
               <>
-                <div className="min-w-0 border-r border-ink-700 bg-ink-900/40" style={{ width: `${s.editorPct}%` }}>
+                <div className="min-w-0 border-r border-ink-700 bg-ink-900/40" style={{ width: narrow ? "100%" : `${s.editorPct}%` }}>
                   {prompt && (
                     <EditorPane
                       kind={prompt.prompt_kind}
@@ -342,12 +374,14 @@ export function Playground({ projectId }: { projectId: string }) {
                     />
                   )}
                 </div>
-                <div onMouseDown={() => (dragging.current = true)} className="w-1 shrink-0 cursor-col-resize bg-ink-800 hover:bg-stamp/60" role="separator" aria-label="拖动调整宽度" />
+                {!narrow && <div onMouseDown={() => (dragging.current = true)} className="w-1 shrink-0 cursor-col-resize bg-ink-800 hover:bg-stamp/60" role="separator" aria-label="拖动调整宽度" />}
               </>
             )}
-            <div className="min-w-0 flex-1">
-              <ResultPane detail={detail} dirty={dirty} canPreview={capability?.status === "CONNECTED_DEMO_FILES"} loading={busy} runningSince={runningSince} />
-            </div>
+            {(!narrow || narrowPane === "result") && (
+              <div className="min-w-0 flex-1">
+                <ResultPane detail={detail} dirty={dirty} canPreview={capability?.status === "CONNECTED_DEMO_FILES"} loading={busy} runningSince={runningSince} />
+              </div>
+            )}
           </div>
 
           {/* 底部运行历史 */}

@@ -223,6 +223,29 @@ test("AT26 快照刷新生成新快照（记录来源），快照列表按 Promp
   await expect(list.locator(`[data-snapshot-id="${oldId}"]`)).toBeDisabled();
 });
 
+test("窄屏（<1280px）编辑区与结果区改为可切换页签，运行后自动切到结果", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 800 });
+  await page.goto("/projects/jiuli/playground");
+  const tabs = page.getByTestId("narrow-tabs");
+  await expect(tabs).toBeVisible();
+  await expect(page.getByTestId("editor-pane")).toBeVisible();
+  await expect(page.getByTestId("result-pane")).toHaveCount(0);
+  await page.click('[data-prompt="jiuli-p1"]');
+  await page.click('[data-fixture-id="constructed/p1-v3-conflict.json"]');
+  await page.click('[data-testid="btn-render"]');
+  await expect(page.getByTestId("result-pane")).toBeVisible();
+  await expect(page.getByTestId("editor-pane")).toHaveCount(0);
+  await expect(page.locator('[data-table-id="orderRows"]')).toBeVisible();
+  await tabs.getByRole("button", { name: "编辑" }).click();
+  await expect(page.getByTestId("editor-pane")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
+  // 宽屏恢复三栏
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(tabs).toHaveCount(0);
+  await expect(page.getByTestId("editor-pane")).toBeVisible();
+  await expect(page.getByTestId("result-pane")).toBeVisible();
+});
+
 test("运行对比：显示关键指标、提示词差异区与输出差异", async ({ page }) => {
   await renderFixture(page, "jiuli-p3", "constructed/p3-v3-multi-candidate.json");
   await page.click('[data-fixture-id="constructed/p3-v3-unknown-enum.json"]');
