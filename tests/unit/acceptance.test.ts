@@ -679,3 +679,11 @@ describe.skipIf(!hasDemo)("九立导入 P1 带辅助材料", () => {
     expect(INPUT_BUILDER_VERSION).toBe("1.1.0");
   });
 });
+
+describe("证据按页跳转", () => {
+  it("有页码时预览链接带 #page=N，无页码时不带", async () => {
+    const { previewHref } = await import("@/components/renderers/evidence-viewer");
+    expect(previewHref({ fileId: "F-80d89610605b", page: 3 })).toBe("/api/materials/F-80d89610605b/preview#page=3");
+    expect(previewHref({ fileId: "F-80d89610605b", page: null })).toBe("/api/materials/F-80d89610605b/preview");
+  });
+});

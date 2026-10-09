@@ -10,6 +10,11 @@ const AVAIL = {
   FORBIDDEN: { tone: "bad", text: "无权访问" },
 } as const;
 
+/** 授权预览链接；有页码时加 #page=N，浏览器 PDF 查看器会直接跳到该页 */
+export function previewHref(e: Pick<EvidenceView, "fileId" | "page">): string {
+  return `/api/materials/${encodeURIComponent(e.fileId)}/preview${e.page != null ? `#page=${e.page}` : ""}`;
+}
+
 /** 当前选择对象关联的来源引用 */
 export function selectedRefIds(vm: ViewModel, sel: ReturnType<typeof useStudio.getState>["selection"]): string[] | null {
   if (sel.issueId) return vm.issues.find((i) => i.id === sel.issueId)?.sourceRefIds ?? [];
@@ -59,8 +64,8 @@ export function EvidenceCard({ e, active, canPreview }: { e: EvidenceView; activ
           </button>
         )}
         {e.availability === "AVAILABLE" && canPreview && e.fileId && (
-          <a href={`/api/materials/${encodeURIComponent(e.fileId)}/preview`} target="_blank" rel="noopener noreferrer" className="text-[11px] text-verify hover:underline">
-            打开原文件（授权预览）
+          <a href={previewHref(e)} target="_blank" rel="noopener noreferrer" className="text-[11px] text-verify hover:underline">
+            {e.page != null ? `打开原文件第 ${e.page} 页（授权预览）` : "打开原文件（授权预览）"}
           </a>
         )}
       </div>
