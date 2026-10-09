@@ -56,6 +56,11 @@ export function ResultPane({ detail, dirty, canPreview, loading, onCancel }: { d
   const evidenceOpen = useStudio((s) => s.evidenceOpen);
   const run = detail?.run;
   const vm = run?.view_model ?? undefined;
+  // 成功但没有业务视图（未登记 Schema，如通用 JSON）：打开时直接显示 JSON 树；只在换到另一条 Run 时切一次
+  const noViewRunId = run && run.status === "SUCCEEDED" && !vm ? run.run_id : null;
+  useEffect(() => {
+    if (noViewRunId && useStudio.getState().resultTab === "visual") setStore("resultTab", "json");
+  }, [noViewRunId, setStore]);
 
   return (
     <div className="relative flex h-full min-h-0 flex-col" data-testid="result-pane">

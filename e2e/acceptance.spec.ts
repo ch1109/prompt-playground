@@ -6,7 +6,7 @@ async function renderFixture(page: Page, prompt: string, fixtureId: string) {
   await page.click(`[data-prompt="${prompt}"]`);
   await page.click(`[data-fixture-id="${fixtureId}"]`);
   await page.click('[data-testid="btn-render"]');
-  await expect(page.locator('[data-testid="result-pane"] [role="tab"][aria-selected="true"]')).toHaveText("可视化");
+  await expect(page.locator('[data-testid="result-pane"] [role="tab"][aria-selected="true"]')).toHaveText(/可视化|原始 JSON/);
 }
 
 test("AT16 JSON 解析失败：显示原文与错误位置，没有虚构表格", async ({ page }) => {
@@ -64,6 +64,26 @@ test("证据卡点「在 JSON 中定位」自动切到原始 JSON 并高亮来�
   await page.getByTestId("evidence-drawer").getByRole("button", { name: "在 JSON 中定位" }).first().click();
   await expect(page.locator('[data-testid="result-pane"] [role="tab"][aria-selected="true"]')).toHaveText("原始 JSON");
   await expect(page.locator("[data-pointer].ring-stamp")).toHaveCount(1);
+});
+
+test("没有业务视图（未登记 Schema）时自动显示原始 JSON；之后仍可手动切回可视化", async ({ page }) => {
+  await page.goto("/projects/jiuli/playground");
+  await page.locator('[data-prompt="generic-json"]').click();
+  await page.getByRole("button", { name: "粘贴 / 文件 JSON" }).click();
+  await page.getByLabel("原始输出", { exact: true }).fill('{"summary":"ok","items":[1,2]}');
+  await page.click('[data-testid="btn-render"]');
+  const selectedTab = page.locator('[data-testid="result-pane"] [role="tab"][aria-selected="true"]');
+  await expect(selectedTab).toHaveText("原始 JSON");
+  await expect(page.locator('[data-pointer="/summary"]')).toBeVisible();
+  await page.getByRole("tab", { name: "可视化" }).click();
+  await expect(selectedTab).toHaveText("可视化");
+  // 有业务视图的结果仍默认停在可视化
+  await page.click('[data-prompt="jiuli-p1"]');
+  await page.getByRole("button", { name: "样本库" }).click();
+  await page.click('[data-fixture-id="constructed/p1-v3-conflict.json"]');
+  await page.click('[data-testid="btn-render"]');
+  await expect(page.locator('[data-table-id="orderRows"]')).toBeVisible();
+  await expect(selectedTab).toHaveText("可视化");
 });
 
 test("AT19 来源无原文：显示 METADATA_ONLY / MISSING，不提供越权下载", async ({ page }) => {
