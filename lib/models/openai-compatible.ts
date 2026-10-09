@@ -5,11 +5,12 @@ import type { ModelRequest, ModelResult, ProviderAdapter, ProviderInfo } from ".
 
 export const OPENAI_COMPATIBLE_VERSION = "1.0.0";
 
-export function redactSecrets(text: string): string {
-  const key = process.env.MODEL_API_KEY;
+export function redactSecrets(text: string, extraSecrets: (string | undefined)[] = []): string {
   let out = text;
-  if (key && key.length > 4) out = out.split(key).join("***");
-  return out.replace(/(Bearer\s+)[A-Za-z0-9._-]+/g, "$1***").replace(/sk-[A-Za-z0-9]{8,}/g, "sk-***");
+  for (const key of [process.env.MODEL_API_KEY, process.env.JIULI_API_TOKEN, ...extraSecrets]) {
+    if (key && key.length > 4) out = out.split(key).join("***");
+  }
+  return out.replace(/(Bearer\s+)[A-Za-z0-9._-]+/g, "$1***").replace(/sk-[A-Za-z0-9_-]{8,}/g, "sk-***");
 }
 
 export class OpenAICompatibleProvider implements ProviderAdapter {
@@ -22,6 +23,10 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
     },
     private fetchImpl: typeof fetch = fetch,
   ) {}
+
+  private redact(text: string) {
+    return redactSecrets(text, [this.env.apiKey]);
+  }
 
   info(): ProviderInfo {
     let host: string | undefined;
@@ -68,21 +73,21 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
       try {
         text = await res.text();
       } catch (e) {
-        return { ok: false, code: "MODEL_STREAM_BROKEN", message: `读取响应失败（可能断流）：${redactSecrets(String(e))}`, latencyMs: Date.now() - started };
+        return { ok: false, code: "MODEL_STREAM_BROKEN", message: `读取响应失败（可能断流）：${this.redact(String(e))}`, latencyMs: Date.now() - started };
       }
       if (!res.ok) {
-        return { ok: false, code: `MODEL_HTTP_${res.status}`, message: redactSecrets(text.slice(0, 2000)), latencyMs: Date.now() - started, partialRaw: redactSecrets(text) };
+        return { ok: false, code: `MODEL_HTTP_${res.status}`, message: this.redact(text.slice(0, 2000)), latencyMs: Date.now() - started, partialRaw: this.redact(text) };
       }
       let body: Record<string, unknown>;
       try {
         body = JSON.parse(text);
       } catch {
-        return { ok: false, code: "MODEL_BAD_ENVELOPE", message: "服务商返回的不是 JSON 包装（可能被截断）", latencyMs: Date.now() - started, partialRaw: redactSecrets(text) };
+        return { ok: false, code: "MODEL_BAD_ENVELOPE", message: "服务商返回的不是 JSON 包装（可能被截断）", latencyMs: Date.now() - started, partialRaw: this.redact(text) };
       }
       const choice = (body.choices as { message?: { content?: unknown }; finish_reason?: string }[] | undefined)?.[0];
       const content = choice?.message?.content;
       if (typeof content !== "string") {
-        return { ok: false, code: "MODEL_EMPTY_CONTENT", message: "响应中没有 choices[0].message.content", latencyMs: Date.now() - started, partialRaw: redactSecrets(text) };
+        return { ok: false, code: "MODEL_EMPTY_CONTENT", message: "响应中没有 choices[0].message.content", latencyMs: Date.now() - started, partialRaw: this.redact(text) };
       }
       const u = body.usage as Record<string, number> | undefined;
       return {
@@ -97,7 +102,7 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
       return {
         ok: false,
         code: aborted ? "MODEL_TIMEOUT" : "MODEL_NETWORK_ERROR",
-        message: aborted ? `超过 ${this.env.timeoutMs}ms 未返回` : redactSecrets(e instanceof Error ? e.message : String(e)),
+        message: aborted ? `超过 ${this.env.timeoutMs}ms 未返回` : this.redact(e instanceof Error ? e.message : String(e)),
         latencyMs: Date.now() - started,
       };
     } finally {

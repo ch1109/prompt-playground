@@ -232,7 +232,13 @@ function CandidateLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
             }
             className="min-w-0 overflow-hidden"
           >
-            {mode === "table" && cands && <DataTable table={cands} options={{ hideTitle: true, rowFilter: all ? undefined : (r) => r.meta?.orderRowId === current, maxHeight: 520 }} />}
+            {mode === "table" && cands && !all && !cands.rows.some((r) => r.meta?.orderRowId === current) ? (
+              <p className="px-3 py-4 text-[12px] text-ink-400">
+                模型没有为 {current} 给出选中组或候选（{String(orders?.rows.find((r) => r.id === current)?.cells.match_status?.value ?? "")}）。原样展示，不推断原因。
+              </p>
+            ) : (
+              mode === "table" && cands && <DataTable table={cands} options={{ hideTitle: true, rowFilter: all ? undefined : (r) => r.meta?.orderRowId === current, maxHeight: 520 }} />
+            )}
             {mode === "graph" && <RelationCanvas relations={vm.relations} onlyFrom={all ? undefined : current} />}
           </Section>
         </div>

@@ -43,10 +43,10 @@ export function contentHash(system: string, user: string) {
   return sha256(`${system}\n\u0000\n${user}`);
 }
 
-let seeded = false;
+const seeded = new WeakSet<object>();
 export function ensureSeed() {
-  if (seeded) return;
   const d = db();
+  if (seeded.has(d)) return;
   const now = new Date().toISOString();
   d.prepare("INSERT OR IGNORE INTO projects VALUES (?,?,?,?)").run(DEFAULT_PROJECT_ID, "九立 AI 核对", "P1~P4 结构化提示词调试", now);
   for (const s of SEED) {
@@ -75,7 +75,7 @@ export function ensureSeed() {
       );
     }
   }
-  seeded = true;
+  seeded.add(d);
 }
 
 export function listProjects() {

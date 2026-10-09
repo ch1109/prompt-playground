@@ -1,0 +1,179 @@
+// 界面层验收：AT16 / AT18 / AT19 / AT23 / 9.1 性能 / 9.4 XSS / 九立只读导入 / 标注
+import { expect, type Page, test } from "@playwright/test";
+
+async function renderFixture(page: Page, prompt: string, fixtureId: string) {
+  await page.goto("/projects/jiuli/playground");
+  await page.click(`[data-prompt="${prompt}"]`);
+  await page.click(`[data-fixture-id="${fixtureId}"]`);
+  await page.click('[data-testid="btn-render"]');
+  await expect(page.locator('[data-testid="result-pane"] [role="tab"][aria-selected="true"]')).toHaveText("可视化");
+}
+
+test("AT16 JSON 解析失败：显示原文与错误位置，没有虚构表格", async ({ page }) => {
+  await renderFixture(page, "jiuli-p1", "constructed/invalid-json-truncated.txt");
+  await expect(page.getByText("原始回复不是合法 JSON")).toBeVisible();
+  await expect(page.locator("[data-table-id]")).toHaveCount(0);
+  await page.getByRole("tab", { name: "原始 JSON" }).click();
+  await expect(page.getByText(/INVALID_JSON/)).toBeVisible();
+  await expect(page.locator("[data-error-line]")).toHaveCount(1);
+});
+
+test("AT17 Schema 不合法：标明并可从诊断跳到 JSON 路径", async ({ page }) => {
+  await renderFixture(page, "jiuli-p1", "constructed/p1-v3-schema-type-error.json");
+  await expect(page.getByText("SCHEMA_INVALID").first()).toBeVisible();
+  await expect(page.locator('[data-table-id="orderRows"]')).toBeVisible();
+  await page.getByRole("tab", { name: "结构校验" }).click();
+  await page.locator('[data-testid="diag-pointer"]', { hasText: "/output/rows/0/values/quantity" }).click();
+  await expect(page.locator('[data-pointer="/output/rows/0/values/quantity"]')).toHaveClass(/ring-stamp/);
+});
+
+test("AT18 单元格 / 问题 / 关系边 共享同一选择状态并跨标签保持", async ({ page }) => {
+  await renderFixture(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
+  // 单元格 → JSON 高亮 + 来源
+  await page.locator('[data-table-id="orderRows"] [data-row-id="row-1"] [data-field="model"]').click();
+  await expect(page.locator('[data-testid="evidence-drawer"]')).toContainText("ABC-01");
+  await page.getByRole("tab", { name: "原始 JSON" }).click();
+  await expect(page.locator('[data-pointer="/output/rows/0/values/model"]')).toHaveClass(/ring-stamp/);
+  // JSON 节点 → 反查到单元格
+  await page.locator('[data-pointer="/output/rows/1"]').click();
+  await page.locator('[data-pointer="/output/rows/1/values"]').click();
+  await page.locator('[data-pointer="/output/rows/1/values/brand"]').click();
+  await page.getByRole("tab", { name: "可视化" }).click();
+  await expect(page.locator('[data-table-id="orderRows"] [data-row-id="row-2"] [data-field="brand"]')).toHaveClass(/outline-stamp/);
+  // 问题 → 定位行/字段 + 证据
+  await page.locator("[data-issue-id]", { hasText: "报关单价" }).click();
+  await expect(page.locator('[data-table-id="orderRows"] [data-row-id="row-1"] [data-field="customs_unit_price"]')).toHaveClass(/outline-stamp/);
+  await expect(page.locator('[data-testid="evidence-drawer"]')).toContainText("USD 11.00");
+  await expect(page.locator('[data-testid="selection-pointer"]')).toHaveText("/output/rows/0/conflicts/0");
+
+  // 关系边
+  await renderFixture(page, "jiuli-p3", "constructed/p3-v3-multi-candidate.json");
+  await page.getByRole("button", { name: "关系图" }).click();
+  await page.getByLabel("显示全部委托行").check();
+  const edge = page.locator('[data-testid="rf__edge-OR_001|SELECTED|1::IR_B1"], .react-flow__edge[data-id="OR_001|SELECTED|1::IR_B1"]').first();
+  await expect(edge).toBeVisible();
+  await edge.click({ force: true });
+  await expect(page.locator('[data-testid="evidence-drawer"]')).toContainText("E-I-B1-MODEL");
+  await page.getByRole("tab", { name: "原始 JSON" }).click();
+  await expect(page.locator('[data-pointer="/output/row_relations/0/selected_raw_row_ids"]')).toHaveClass(/ring-stamp/);
+});
+
+test("AT19 来源无原文：显示 METADATA_ONLY / MISSING，不提供越权下载", async ({ page }) => {
+  await renderFixture(page, "jiuli-p3", "constructed/p3-v3-multi-candidate.json");
+  await page.locator('[data-table-id="orderRows"] [data-row-id="OR_001"] [data-field="match_status"]').click();
+  await expect(page.locator('[data-testid="evidence-drawer"]').getByText("METADATA_ONLY").first()).toBeVisible();
+  await expect(page.locator('[data-testid="evidence-drawer"]').getByText("打开原文件")).toHaveCount(0);
+  const res = await page.request.get("/api/materials/F-000000000000/preview");
+  expect(res.status()).toBe(403);
+  const traversal = await page.request.get(`/api/materials/${encodeURIComponent("../../package.json")}/preview`);
+  expect(traversal.status()).toBe(400);
+});
+
+test("AT23 运行后修改 Prompt 未再运行：结果标识来自之前运行", async ({ page }) => {
+  await renderFixture(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
+  await expect(page.getByText("当前结果来自上次运行")).toHaveCount(0);
+  await page.getByRole("button", { name: /^提示词/ }).click();
+  await page.getByLabel("System 提示词").fill("修改后的提示词");
+  await expect(page.getByText("当前结果来自上次运行")).toBeVisible();
+});
+
+test("9.4 恶意 HTML 片段按文本显示，不执行", async ({ page }) => {
+  await renderFixture(page, "jiuli-p1", "constructed/p1-v3-xss.json");
+  await page.getByRole("button", { name: /全部 25 字段/ }).click();
+  await expect(page.getByText('<img src=x onerror="window.__xss=1">').first()).toBeVisible();
+  await expect(page.getByText("<script>window.__xss=1</script>").first()).toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as { __xss?: number }).__xss)).toBeUndefined();
+  expect(await page.locator("[data-table-id] img, [data-table-id] script, [data-table-id] svg[onload]").count()).toBe(0);
+});
+
+test("未配置模型时不能真实运行，也不会回退为 Mock", async ({ page }) => {
+  await page.goto("/projects/jiuli/playground");
+  await expect(page.getByTestId("btn-run")).toBeDisabled();
+  const res = await page.request.post("/api/runs", { data: { mode: "MODEL_RUN", promptId: "jiuli-p1", snapshotId: "snap_x", system: "", userTemplate: "" } });
+  expect(res.status()).toBeGreaterThanOrEqual(400);
+});
+
+test("九立只读导入：选客户/任务/批次 → 隔离快照 → 请求预览", async ({ page }) => {
+  await page.goto("/projects/jiuli/playground");
+  await page.click('[data-prompt="jiuli-p3"]');
+  await page.getByRole("button", { name: "从九立导入" }).click();
+  await expect(page.getByTestId("jiuli-import")).toContainText("CONNECTED_DEMO_FILES");
+  await expect(page.getByTestId("jiuli-import")).toContainText("真实九立 API 未接通");
+  await page.getByLabel("搜索客户").fill("英堡");
+  await page.getByRole("button", { name: /英堡科技/ }).click();
+  await page.getByLabel("委托任务").selectOption({ index: 1 });
+  await page.getByLabel(/选择批次/).first().check();
+  await page.getByRole("button", { name: "只读读取并创建隔离快照" }).click();
+  await expect(page.getByTestId("snapshot-list")).toContainText("JIULI_READONLY");
+  await page.getByRole("button", { name: "请求预览" }).click();
+  await expect(page.getByTestId("request-preview")).toContainText("jiuli-demo-p3");
+  await expect(page.getByTestId("request-preview")).toContainText("retrieval_complete=false");
+});
+
+test("标注独立保存，不改原始输出", async ({ page }) => {
+  await renderFixture(page, "jiuli-p4", "constructed/p4-v3-conflict.json");
+  await page.locator('[data-change-id="OR_001:gross_weight"]').click();
+  await page.getByLabel("正确值").fill("2.4");
+  await page.getByLabel("标注备注").fill("模型应选箱单 GW");
+  await page.getByRole("button", { name: "保存标注" }).click();
+  await expect(page.getByTestId("annotation-form")).toContainText("正确值：2.4");
+  await page.getByRole("tab", { name: "运行信息" }).click();
+  const hash = await page.locator("dd", { hasText: /^[0-9a-f]{64}$/ }).last().textContent();
+  const raw = await page.request.get("/api/fixtures/item?id=constructed/p4-v3-conflict.json").then((r) => r.json());
+  const crypto = await import("node:crypto");
+  expect(hash).toBe(crypto.createHash("sha256").update(raw.data.raw).digest("hex"));
+});
+
+test("P2 按入仓号分组：未确定入仓号单独展示", async ({ page }) => {
+  await renderFixture(page, "jiuli-p2", "constructed/p2-v3-no-warehouse.json");
+  await page.locator('[data-group="__UNRESOLVED__"]').click();
+  await expect(page.getByText("以下原始行没有可靠入仓号")).toBeVisible();
+  await expect(page.locator('[data-table-id="inspectionRawRows"] tbody tr')).toHaveCount(1);
+  await page.locator('[data-group="26091801"]').click();
+  await expect(page.locator('[data-table-id="inspectionRawRows"] tbody tr')).toHaveCount(2);
+});
+
+test("P4 只看变化 / 仅风险 过滤", async ({ page }) => {
+  await renderFixture(page, "jiuli-p4", "constructed/p4-v3-conflict.json");
+  const rows = page.locator('[data-table-id="fieldDecisions"] tbody tr');
+  await expect(rows).toHaveCount(7);
+  await page.locator('[data-preset="changes"]').click();
+  await expect(rows).toHaveCount(4);
+  await page.locator('[data-preset="risks"]').click();
+  await expect(rows).toHaveCount(3);
+  await expect(page.getByText("SIMULATION_ONLY").first()).toBeVisible();
+});
+
+test("9.1 性能：100 行 × 25 字段（记录实测，不预设达标）", async ({ page }) => {
+  const KEYS = ["customer_name", "brand", "model", "description", "product_name", "origin", "unit", "quantity", "customs_unit_price", "total_price", "currency", "packages", "net_weight", "gross_weight", "sku", "buyer", "supplier_code", "supplier", "payment_term_days", "purchase_order_no", "material_no", "pallet_count", "warehouse_no", "production_line", "remark"];
+  const rows = Array.from({ length: 100 }, (_, i) => ({
+    row_no: i + 1,
+    source: { file_id: "F1", page: null, sheet: "S", row: i + 5, column: "B", raw_text: `M-${i}` },
+    values: Object.fromEntries(KEYS.map((k) => [k, `${k}-${i}`])),
+    evidence: KEYS.map((k) => ({ field: k, value: `${k}-${i}`, unit: "", source: { file_id: "F1", page: null, sheet: "S", row: i + 5, column: "C", raw_text: `${k}-${i}` } })),
+    conflicts: [],
+  }));
+  const doc = { schema_version: "jiuli-ai-v3", prompt: "P1", request_id: "PERF", output: { processing_status: "SUCCESS", customer_resolution: { status: "UNRESOLVED", customer_id: null, recognized_name: "", candidate_customer_ids: [], sources: [] }, read_status: [], rows, scope_records: [], unlinked_records: [], issues: [] } };
+  await page.goto("/projects/jiuli/playground");
+  await page.getByRole("button", { name: "粘贴 / 文件 JSON" }).click();
+  await page.getByLabel("原始输出", { exact: true }).fill(JSON.stringify(doc));
+  const t0 = Date.now();
+  await page.click('[data-testid="btn-render"]');
+  await expect(page.locator('[data-table-id="orderRows"] tbody tr')).toHaveCount(100);
+  const renderMs = Date.now() - t0;
+  await page.getByRole("button", { name: /全部 25 字段/ }).click();
+  const t1 = Date.now();
+  await page.getByLabel("筛选 委托商品行（25 字段）").fill("model-77");
+  await expect(page.locator('[data-table-id="orderRows"] tbody tr')).toHaveCount(1);
+  const filterMs = Date.now() - t1;
+  await page.getByLabel("筛选 委托商品行（25 字段）").fill("");
+  const t2 = Date.now();
+  await page.locator('[data-table-id="orderRows"] > div.overflow-auto').evaluate((el) => {
+    el.scrollLeft = el.scrollWidth;
+    el.scrollTop = el.scrollHeight;
+  });
+  await page.locator('[data-row-id="row-100"] [data-field="remark"]').click();
+  const scrollClickMs = Date.now() - t2;
+  console.log(`PERF 100x25: 渲染(含服务端流水线)=${renderMs}ms 筛选=${filterMs}ms 滚动到末尾并点击=${scrollClickMs}ms`);
+  test.info().annotations.push({ type: "perf", description: `render=${renderMs}ms filter=${filterMs}ms scroll+click=${scrollClickMs}ms` });
+});

@@ -69,7 +69,7 @@ export class JiuliDemoFilesConnector implements JiuliReadonlyConnector {
 
   private read(name: keyof typeof MOCK_FILES): Rec[] {
     const p = this.safePath(this.mockDir(), MOCK_FILES[name]);
-    if (!existsSync(p)) throw new ConnectorError("CONNECTOR_UNAVAILABLE", `九立 Demo 数据文件不存在：${MOCK_FILES[name]}`);
+    if (!existsSync(/*turbopackIgnore: true*/ p)) throw new ConnectorError("CONNECTOR_UNAVAILABLE", `九立 Demo 数据文件不存在：${MOCK_FILES[name]}`);
     const data = JSON.parse(readFileSync(p, "utf8"));
     return Array.isArray(data) ? data : [];
   }
@@ -83,7 +83,7 @@ export class JiuliDemoFilesConnector implements JiuliReadonlyConnector {
   }
 
   async capabilities(): Promise<ReadCapability> {
-    const ok = existsSync(this.mockDir()) && existsSync(resolve(this.mockDir(), MOCK_FILES.customers));
+    const ok = existsSync(/*turbopackIgnore: true*/ this.mockDir()) && existsSync(/*turbopackIgnore: true*/ resolve(this.mockDir(), MOCK_FILES.customers));
     return ok
       ? {
           status: "CONNECTED_DEMO_FILES",
@@ -203,8 +203,8 @@ export class JiuliDemoFilesConnector implements JiuliReadonlyConnector {
         sha256: f?.sha256 as string | undefined,
         role: f?.role as string | undefined,
         authorized: okId && authorized.has(id),
-        exists: !!abs && existsSync(abs),
-        has_text_content: okId && existsSync(this.safePath(resolve(this.root, "demo-generated", "extracted"), `${id}.json`)),
+        exists: !!abs && existsSync(/*turbopackIgnore: true*/ abs),
+        has_text_content: okId && existsSync(/*turbopackIgnore: true*/ this.safePath(resolve(this.root, "demo-generated", "extracted"), `${id}.json`)),
       };
     });
   }
@@ -215,7 +215,7 @@ export class JiuliDemoFilesConnector implements JiuliReadonlyConnector {
     if (!meta.authorized) throw new ConnectorError("FORBIDDEN", "无权访问该文件");
     const f = this.read("sourceFiles").find((x) => x.id === fileId)!;
     const abs = this.safePath(this.root, String(f.path));
-    if (!existsSync(abs) || !statSync(abs).isFile()) throw new ConnectorError("NOT_FOUND", "原文件不存在或已失效");
+    if (!existsSync(/*turbopackIgnore: true*/ abs) || !statSync(/*turbopackIgnore: true*/ abs).isFile()) throw new ConnectorError("NOT_FOUND", "原文件不存在或已失效");
     const ext = extname(abs).toLowerCase();
     if (!PREVIEW_TYPES[ext]) throw new ConnectorError("FORBIDDEN", "不允许预览的文件类型");
     return { absolutePath: abs, mediaType: PREVIEW_TYPES[ext], fileName: meta.file_name };
@@ -224,6 +224,6 @@ export class JiuliDemoFilesConnector implements JiuliReadonlyConnector {
   async getExtractedContent(fileId: string) {
     if (!FILE_ID.test(fileId)) return undefined;
     const p = this.safePath(resolve(this.root, "demo-generated", "extracted"), `${fileId}.json`);
-    return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : undefined;
+    return existsSync(/*turbopackIgnore: true*/ p) ? JSON.parse(readFileSync(p, "utf8")) : undefined;
   }
 }

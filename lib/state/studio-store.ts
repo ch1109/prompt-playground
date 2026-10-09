@@ -38,12 +38,13 @@ export const emptyWorkspace = (): Workspace => ({
   runInputSig: null,
 });
 
+/** 任何影响结果的编辑（提示词、参数、输入）都会改变签名；与产生当前 Run 时的签名不同即 DIRTY */
 export function inputSignature(w: Workspace, mode: "RENDER_ONLY" | "MODEL_RUN"): string {
-  return JSON.stringify(
+  const input =
     mode === "RENDER_ONLY"
-      ? { mode, inputMode: w.inputMode, raw: w.inputMode === "paste" ? w.pasteRaw : null, req: w.inputMode === "paste" ? w.pasteRequest : null, fixture: w.inputMode === "fixture" ? w.fixtureId : null }
-      : { mode, system: w.system, user: w.userTemplate, snapshot: w.snapshotId, params: w.params },
-  );
+      ? { inputMode: w.inputMode, raw: w.inputMode === "paste" ? w.pasteRaw : null, req: w.inputMode === "paste" ? w.pasteRequest : null, fixture: w.inputMode === "fixture" ? w.fixtureId : null }
+      : { snapshot: w.snapshotId };
+  return JSON.stringify({ mode, input, system: w.system, user: w.userTemplate, params: w.params });
 }
 
 interface StudioState {
