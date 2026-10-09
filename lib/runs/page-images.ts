@@ -3,11 +3,11 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { getJiuliConnector } from "@/lib/connectors/registry";
+import { resolveMaterialFile } from "@/lib/materials/store";
 import { sha256 } from "@/lib/hash";
 
 // 把构造输入引用的原件（PDF / 图片）转成页面图片，随请求发给视觉模型。
-// 原件经只读连接器按授权读取；PDF 转图写到系统临时目录，用完即删，不改原件。
+// 原件按授权读取（九立只读连接器或 Studio 上传原件）；PDF 转图写到系统临时目录，用完即删，不改原件。
 
 export const MAX_PAGES = 20;
 const exec = promisify(execFile);
@@ -48,8 +48,6 @@ export async function buildPageImages(fileIds: string[]): Promise<{ images: Page
   const warnings: string[] = [];
   const images: PageImage[] = [];
   if (!fileIds.length) return { images, warnings: ["构造输入没有引用原件文件，未附带图片"] };
-  const connector = getJiuliConnector();
-  if (!connector.getPreview) return { images, warnings: ["当前连接不支持读取原件，未附带图片"] };
   for (const id of fileIds) {
     const left = MAX_PAGES - images.length;
     if (left <= 0) {
@@ -57,7 +55,7 @@ export async function buildPageImages(fileIds: string[]): Promise<{ images: Page
       continue;
     }
     try {
-      const p = await connector.getPreview(id);
+      const p = await resolveMaterialFile(id);
       let pages: { page: number | null; buf: Buffer; type: string }[];
       if (p.mediaType === "application/pdf") {
         // 多转一页，用来判断是否被截断

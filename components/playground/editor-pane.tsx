@@ -55,7 +55,7 @@ export function EditorPane(props: {
         {tab === "preview" && <PreviewTab fixtures={props.fixtures} />}
       </div>
       <div className="border-t border-ink-700 px-3 py-1 text-[11px] text-ink-400">
-        输入：{ws.inputMode === "fixture" ? `样本 ${ws.fixtureId ?? "未选"}` : ws.inputMode === "paste" ? "粘贴 JSON（仅渲染）" : ws.inputMode === "jiuli" ? "九立导入（创建快照后使用）" : `快照 ${ws.snapshotId ?? "未选"}`}
+        输入：{ws.inputMode === "fixture" ? `样本 ${ws.fixtureId ?? "未选"}` : ws.inputMode === "paste" ? "粘贴 JSON（仅渲染）" : ws.inputMode === "jiuli" ? "九立导入（创建快照后使用）" : ws.inputMode === "upload" ? `上传文件 ${ws.uploadSnapshotId ?? "（未上传）"}` : `快照 ${ws.snapshotId ?? "未选"}`}
         {runSnapshotId(ws) && ws.inputMode === "fixture" && ` · 快照 ${runSnapshotId(ws)}`}
       </div>
     </div>
@@ -128,6 +128,7 @@ function InputTab({ projectId, kind, fixtures, snapshots, capability, onPickFixt
     ["paste", "粘贴 / 文件 JSON"],
     ["snapshot", "已有快照"],
     ["jiuli", "从九立导入"],
+    ["upload", "上传文件"],
   ];
   return (
     <div className="space-y-3">
@@ -141,6 +142,7 @@ function InputTab({ projectId, kind, fixtures, snapshots, capability, onPickFixt
       {ws.inputMode === "fixture" && <FixtureList kind={kind} fixtures={fixtures} onPick={onPickFixture} />}
       {ws.inputMode === "paste" && <PasteInput />}
       {ws.inputMode === "snapshot" && <SnapshotList projectId={projectId} kind={kind} snapshots={snapshots} onSnapshotsChanged={onSnapshotsChanged} />}
+      {ws.inputMode === "upload" && <UploadInput projectId={projectId} kind={kind} onCreated={onSnapshotsChanged} />}
       {ws.inputMode === "jiuli" && <JiuliImport projectId={projectId} capability={capability} onCreated={onSnapshotsChanged} />}
     </div>
   );
@@ -245,6 +247,7 @@ function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged }: { proj
       for (const [pid, w] of Object.entries(st.workspaces)) {
         if (w.snapshotId === s.snapshot_id) st.patchWorkspace(pid, { snapshotId: null });
         if (w.fixtureSnapshotId === s.snapshot_id) st.patchWorkspace(pid, { fixtureSnapshotId: null });
+        if (w.uploadSnapshotId === s.snapshot_id) st.patchWorkspace(pid, { uploadSnapshotId: null });
       }
       onSnapshotsChanged();
     } catch (e) {
@@ -316,6 +319,108 @@ function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged }: { proj
         })}
       </ul>
       {err && <p className="text-[12px] text-stamp">{err}</p>}
+    </div>
+  );
+}
+
+const UPLOAD_TYPES: [string, string][] = [
+  ["ORDER", "委托单（P1）"],
+  ["INVOICE", "发票（P1）"],
+  ["PACKING_LIST", "箱单（P1）"],
+  ["INSPECTION", "查货文件（P2）"],
+];
+
+/** 上传原件（PDF / Excel / 图片）：每个文件指定材料类型，服务端预处理后创建隔离快照 */
+function UploadInput({ projectId, kind, onCreated }: { projectId: string; kind: PromptKind; onCreated: () => void }) {
+  const [ws, patch] = useWorkspace();
+  const [files, setFiles] = useState<{ file: File; type: string }[]>([]);
+  const [customerName, setCustomerName] = useState("");
+  const [label, setLabel] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [result, setResult] = useState<{ snapshot_id: string; label: string; warnings: string[] } | null>(null);
+  const defaultType = kind === "JIULI_P2" ? "INSPECTION" : "ORDER";
+
+  async function upload() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const fd = new FormData();
+      fd.set("projectId", projectId);
+      fd.set("label", label);
+      fd.set("customerName", customerName);
+      for (const f of files) {
+        fd.append("files", f.file);
+        fd.append("types", f.type);
+      }
+      const s = await api<{ snapshot_id: string; label: string; warnings: string[] }>("/api/snapshots/files", { method: "POST", body: fd });
+      setResult(s);
+      patch({ uploadSnapshotId: s.snapshot_id });
+      setFiles([]);
+      onCreated();
+    } catch (e) {
+      setErr(e instanceof ApiError ? `${e.code}: ${e.message}` : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2 text-[12px]" data-testid="upload-input">
+      <p className="text-[11px] text-ink-400">
+        支持 PDF、Excel（xlsx/xls）、PNG、JPG，单个最大 30MB。文字型 PDF 与 Excel 会抽取文本；扫描件和图片没有文本，需在「模型」页勾选「附带原件图片」。原件只保存在 Studio 私有目录，不写回九立。
+      </p>
+      <input
+        type="file"
+        multiple
+        accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg"
+        aria-label="选择原件文件"
+        onChange={(e) => setFiles([...files, ...[...(e.target.files ?? [])].map((file) => ({ file, type: defaultType }))])}
+        className="text-[11px] text-ink-400"
+      />
+      {files.length > 0 && (
+        <ul className="space-y-1">
+          {files.map((f, i) => (
+            <li key={`${f.file.name}-${i}`} className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate">{f.file.name}</span>
+              <select
+                value={f.type}
+                onChange={(e) => setFiles(files.map((x, j) => (j === i ? { ...x, type: e.target.value } : x)))}
+                aria-label={`材料类型 ${f.file.name}`}
+                className="rounded border border-ink-700 bg-ink-950 px-1 py-0.5"
+              >
+                {UPLOAD_TYPES.map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+              <button onClick={() => setFiles(files.filter((_, j) => j !== i))} className="text-ink-400 hover:text-stamp" aria-label={`移除 ${f.file.name}`}>
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="客户名称（可选，用于 P1 客户目录 / P2 客户）" aria-label="客户名称" className="w-full rounded border border-ink-700 bg-ink-950 px-2 py-1" />
+      <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="快照名称（可选）" aria-label="快照名称" className="w-full rounded border border-ink-700 bg-ink-950 px-2 py-1" />
+      <Btn tone="primary" disabled={busy || !files.length} onClick={upload}>
+        {busy ? "上传并预处理中…" : "上传并创建隔离快照"}
+      </Btn>
+      {err && <p className="text-stamp">{err}</p>}
+      {result && ws.uploadSnapshotId === result.snapshot_id && (
+        <div className="rounded border border-verify/40 bg-verify/5 p-2" data-testid="upload-result">
+          <div>
+            已创建快照 <span className="font-mono">{result.snapshot_id}</span> · {result.label}
+          </div>
+          {result.warnings.map((w) => (
+            <div key={w} className="text-risk">
+              ⚠ {w}
+            </div>
+          ))}
+          <div className="text-ink-400">可到「请求预览」确认实际发送内容。</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -520,6 +625,8 @@ function PreviewTab({ fixtures }: { fixtures: FixtureSummary[] }) {
             : "正在准备样本快照…"
         : ws.inputMode === "paste"
           ? "粘贴的 JSON 只用于「仅渲染」。真实运行请选择带 ctx 的样本、已有快照，或从九立只读导入。"
+          : ws.inputMode === "upload"
+            ? "请先在「输入 → 上传文件」上传原件并创建快照。"
           : ws.inputMode === "jiuli"
             ? "请先在「输入 → 从九立导入」创建快照。"
             : "请先在「输入 → 已有快照」选择快照。";
@@ -536,7 +643,7 @@ function PreviewTab({ fixtures }: { fixtures: FixtureSummary[] }) {
         <Badge>input hash {p.builtInputHash?.slice(0, 10)}</Badge>
         <Badge tone={p.provider.configured ? "info" : "warn"}>将发送至 {p.provider.provider}</Badge>
       </div>
-      {p.requiresFiles?.length ? <p className="rounded border border-stamp/40 bg-stamp/10 p-2 text-stamp">材料 {p.requiresFiles.join(", ")} 没有预处理文本：当前文本模型会阻断运行。</p> : null}
+      {p.requiresFiles?.length ? <p className="rounded border border-stamp/40 bg-stamp/10 p-2 text-stamp">材料 {p.requiresFiles.join(", ")} 没有预处理文本：当前文本模型会阻断运行（PDF / 图片可勾选「附带原件图片」）。</p> : null}
       {p.attachFiles && (
         <div className="rounded border border-ink-700 p-2" data-testid="attach-files">
           <div className="text-ink-400">将附带原件图片（运行时转换；不是 PDF / 图片或无权读取的会跳过并记入警告）：</div>

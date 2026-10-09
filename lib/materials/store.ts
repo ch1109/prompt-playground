@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { getJiuliConnector } from "@/lib/connectors/registry";
+import { ConnectorError } from "@/lib/connectors/types";
 import type { InputSnapshot, SnapshotMaterial } from "@/lib/contracts/snapshot";
 import { newId } from "@/lib/hash";
 import { db } from "@/lib/repositories/db";
@@ -83,4 +85,32 @@ export function resolveUploadedFile(fileId: string): { absolutePath: string; med
   if (!row || !abs || !existsSync(abs)) return undefined;
   const name = (JSON.parse(row.body) as InputSnapshot).materials.find((m) => m.file_id === fileId)?.file_name ?? fileId;
   return { absolutePath: abs, mediaType: row.media_type ?? "application/octet-stream", fileName: name };
+}
+
+/**
+ * 统一解析原件（预览、附带原件图片都用这里）：上传原件 U-* 按快照引用授权；其余走九立只读连接器。
+ */
+export async function resolveMaterialFile(fileId: string): Promise<{ absolutePath: string; mediaType: string; fileName: string }> {
+  if (fileId.startsWith("U-")) {
+    const f = resolveUploadedFile(fileId);
+    if (!f) throw new ConnectorError("NOT_FOUND", "上传的原件不存在，或引用它的快照已删除");
+    return f;
+  }
+  const connector = getJiuliConnector();
+  if (!connector.getPreview) throw new ConnectorError("CONNECTOR_UNAVAILABLE", "当前连接不支持读取原件");
+  return connector.getPreview(fileId);
+}
+
+/** 请求预览中列出将附带的原件 */
+export async function materialInfo(fileIds: string[]) {
+  const uploaded = fileIds.filter((id) => id.startsWith("U-"));
+  const others = fileIds.filter((id) => !id.startsWith("U-"));
+  const fromConnector = others.length ? await getJiuliConnector().getMaterialMetadata(others).catch(() => []) : [];
+  return [
+    ...uploaded.map((id) => {
+      const f = resolveUploadedFile(id);
+      return { file_id: id, file_name: f?.fileName ?? id, media_type: f?.mediaType ?? "", authorized: !!f, exists: !!f };
+    }),
+    ...fromConnector.map((m) => ({ file_id: m.file_id, file_name: m.file_name, media_type: m.media_type, authorized: m.authorized, exists: m.exists })),
+  ];
 }

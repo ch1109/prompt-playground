@@ -6,7 +6,7 @@ import type { SelectionState } from "@/lib/contracts/renderer-config";
 import type { RunDetail } from "@/lib/client/types";
 
 export type ResultTab = "visual" | "json" | "schema" | "meta";
-export type InputMode = "fixture" | "paste" | "snapshot" | "jiuli";
+export type InputMode = "fixture" | "paste" | "snapshot" | "jiuli" | "upload";
 
 /** 每个 Prompt 独立的工作草稿与上次 Run（PRD §5.2） */
 export interface Workspace {
@@ -22,6 +22,8 @@ export interface Workspace {
   fixtureSnapshotId: string | null;
   /** 「已有快照」/九立导入选中的快照 */
   snapshotId: string | null;
+  /** 「上传文件」创建的快照 */
+  uploadSnapshotId: string | null;
   params: { temperature: number; max_tokens: number };
   /** 是否随请求附带原件页面图片（视觉模型） */
   attachImages: boolean;
@@ -41,6 +43,7 @@ export const emptyWorkspace = (): Workspace => ({
   fixtureId: null,
   fixtureSnapshotId: null,
   snapshotId: null,
+  uploadSnapshotId: null,
   params: { temperature: 0, max_tokens: 16000 },
   attachImages: false,
   runId: null,
@@ -54,6 +57,7 @@ export const emptyWorkspace = (): Workspace => ({
 export function runSnapshotId(w: Workspace): string | null {
   if (w.inputMode === "fixture") return w.fixtureSnapshotId;
   if (w.inputMode === "snapshot") return w.snapshotId;
+  if (w.inputMode === "upload") return w.uploadSnapshotId;
   return null;
 }
 

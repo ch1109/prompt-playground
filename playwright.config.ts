@@ -13,6 +13,6 @@ export default defineConfig({
     url: "http://localhost:3100/api/projects",
     timeout: 240_000,
     reuseExistingServer: false,
-    env: { STUDIO_DB_PATH: "data/e2e.db", JIULI_DEMO_ROOT: "/Users/chch/Desktop/九立demo", JIULI_ALLOWED_CUSTOMERS: "*", MODEL_API_KEY: "" },
+    env: { STUDIO_DB_PATH: "data/e2e.db", STUDIO_MATERIALS_DIR: "data/e2e-materials", JIULI_DEMO_ROOT: "/Users/chch/Desktop/九立demo", JIULI_ALLOWED_CUSTOMERS: "*", MODEL_API_KEY: "" },
   },
 });

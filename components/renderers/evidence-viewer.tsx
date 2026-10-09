@@ -63,7 +63,7 @@ export function EvidenceCard({ e, active, canPreview }: { e: EvidenceView; activ
             在 JSON 中定位
           </button>
         )}
-        {e.availability === "AVAILABLE" && canPreview && e.fileId && (
+        {e.availability === "AVAILABLE" && e.fileId && (canPreview || e.fileId.startsWith("U-")) && (
           <a href={previewHref(e)} target="_blank" rel="noopener noreferrer" className="text-[11px] text-verify hover:underline">
             {e.page != null ? `打开原文件第 ${e.page} 页（授权预览）` : "打开原文件（授权预览）"}
           </a>

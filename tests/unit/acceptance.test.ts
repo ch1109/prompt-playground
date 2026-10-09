@@ -1,6 +1,7 @@
 // AT01~AT28 中可在服务端/纯函数层验证的部分。界面联动类用例见 e2e/acceptance.spec.ts。
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { JiuliDemoFilesConnector } from "@/lib/connectors/jiuli-demo-files";
@@ -538,12 +539,14 @@ describe("渲染配置白名单", () => {
 describe("预览与运行使用同一份输入", () => {
   it("按当前输入模式决定快照，不沿用其他模式留下的快照", async () => {
     const { emptyWorkspace, runSnapshotId } = await import("@/lib/state/studio-store");
-    const ws = { ...emptyWorkspace(), snapshotId: "snap_jiuli", fixtureId: "v3/x/P1", fixtureSnapshotId: "snap_fixture" };
+    const ws = { ...emptyWorkspace(), snapshotId: "snap_jiuli", fixtureId: "v3/x/P1", fixtureSnapshotId: "snap_fixture", uploadSnapshotId: "snap_upload" };
     expect(runSnapshotId({ ...ws, inputMode: "fixture" })).toBe("snap_fixture");
     expect(runSnapshotId({ ...ws, inputMode: "fixture", fixtureSnapshotId: null })).toBeNull();
     expect(runSnapshotId({ ...ws, inputMode: "snapshot" })).toBe("snap_jiuli");
     expect(runSnapshotId({ ...ws, inputMode: "paste" })).toBeNull();
     expect(runSnapshotId({ ...ws, inputMode: "jiuli" })).toBeNull();
+    expect(runSnapshotId({ ...ws, inputMode: "upload" })).toBe("snap_upload");
+    expect(runSnapshotId({ ...ws, inputMode: "upload", uploadSnapshotId: null })).toBeNull();
   });
 });
 
@@ -797,7 +800,7 @@ describe("文件导入（PDF / Excel / 图片）", () => {
     const { buildInput, usableKinds } = await import("@/lib/input-builders");
     const { deleteSnapshot } = await import("@/lib/repositories/snapshots");
     const { existsSync } = await import("node:fs");
-    process.env.STUDIO_MATERIALS_DIR = join(process.cwd(), "data", "test-materials");
+    process.env.STUDIO_MATERIALS_DIR = mkdtempSync(join(tmpdir(), "studio-test-mat-"));
     const buf = await xlsxBuf();
     const snap = await createFileSnapshot({
       projectId: "jiuli",
@@ -824,5 +827,33 @@ describe("文件导入（PDF / Excel / 图片）", () => {
     deleteSnapshot(snap.snapshot_id);
     expect(resolveUploadedFile(m[0].file_id)).toBeUndefined();
     expect(existsSync(path)).toBe(false);
+  });
+});
+
+describe.skipIf(!hasDemo)("扫描件上传后用视觉模型运行", () => {
+  it("没有文字层的 PDF：不附带图片时阻断；附带原件图片时允许运行并发送页面图片", async () => {
+    const { createFileSnapshot } = await import("@/lib/materials/store");
+    process.env.STUDIO_MATERIALS_DIR = mkdtempSync(join(tmpdir(), "studio-test-mat-"));
+    const files = JSON.parse(readFileSync(join(DEMO_ROOT, "demo-generated/mock/source-files.json"), "utf8")) as { id: string; path: string }[];
+    const scanned = readFileSync(join(DEMO_ROOT, files.find((f) => f.id === "F-1f89bab4fe64")!.path));
+    const snap = await createFileSnapshot({ projectId: "jiuli", files: [{ name: "扫描委托书.pdf", buffer: scanned, materialType: "ORDER" }] });
+    let sentImages = 0;
+    setProviderForTests(
+      new OpenAICompatibleProvider(
+        cfg,
+        fakeFetch(async (init) => {
+          const content = JSON.parse(String(init?.body)).messages[1].content;
+          sentImages = Array.isArray(content) ? content.filter((p: { type: string }) => p.type === "image_url").length : 0;
+          return Response.json({ choices: [{ message: { content: "{}" }, finish_reason: "stop" }] });
+        }),
+      ),
+    );
+    const base = { projectId: "jiuli", promptId: "jiuli-p1", snapshotId: snap.snapshot_id, system: "S", userTemplate: "{{input_json}}", params: {} };
+    await expect(modelRun({ ...base, attachImages: false })).rejects.toMatchObject({ code: "FILE_INPUT_UNSUPPORTED" });
+    const run = await modelRun({ ...base, attachImages: true });
+    setProviderForTests(undefined);
+    expect(run.status).not.toBe("MODEL_ERROR");
+    expect(sentImages).toBe(1);
+    expect(run.attached_images).toHaveLength(1);
   });
 });

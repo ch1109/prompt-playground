@@ -285,6 +285,30 @@ test("多项目：新建项目、切换项目，运行按项目隔离；不存�
   await expect(page.getByTestId("project-missing")).toBeVisible();
 });
 
+test("上传原件：伪装文件被拒绝；Excel 委托单建快照后可预览 P1 输入", async ({ page }) => {
+  const XLSX = await import("xlsx");
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["型号", "数量"], ["UPLOAD-01", 5]]), "委托");
+  const xlsx = Buffer.from(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }));
+  await page.goto("/projects/jiuli/playground");
+  await page.click('[data-prompt="jiuli-p1"]');
+  await page.getByRole("button", { name: "上传文件" }).click();
+  // 伪装成 PDF 的文本文件
+  await page.getByLabel("选择原件文件").setInputFiles({ name: "fake.pdf", mimeType: "application/pdf", buffer: Buffer.from("not a pdf") });
+  await page.getByRole("button", { name: "上传并创建隔离快照" }).click();
+  await expect(page.getByTestId("upload-input")).toContainText("内容与扩展名不符");
+  await page.getByRole("button", { name: "移除 fake.pdf" }).click();
+  await page.getByLabel("选择原件文件").setInputFiles({ name: "委托.xlsx", mimeType: "application/octet-stream", buffer: xlsx });
+  await expect(page.getByLabel("材料类型 委托.xlsx")).toHaveValue("ORDER");
+  await page.getByLabel("客户名称").fill("上传测试客户");
+  await page.getByRole("button", { name: "上传并创建隔离快照" }).click();
+  await expect(page.getByTestId("upload-result")).toContainText("已创建快照");
+  await page.getByRole("button", { name: "请求预览" }).click();
+  await expect(page.getByTestId("request-preview")).toContainText("file-import-p1");
+  await expect(page.getByTestId("request-preview")).toContainText("UPLOAD-01");
+  await expect(page.getByTestId("request-preview")).toContainText("上传测试客户");
+});
+
 test("运行对比：显示关键指标、提示词差异区与输出差异", async ({ page }) => {
   await renderFixture(page, "jiuli-p3", "constructed/p3-v3-multi-candidate.json");
   await page.click('[data-fixture-id="constructed/p3-v3-unknown-enum.json"]');

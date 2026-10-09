@@ -11,7 +11,7 @@ import { findRendererConfig } from "@/lib/renderer-config/registry";
 import { contentHash, getPrompt, getVersion } from "@/lib/repositories/prompts";
 import { finishRun, getRun, saveRun, startRun } from "@/lib/repositories/runs";
 import { getSnapshot, snapshotDeletedAt } from "@/lib/repositories/snapshots";
-import { getJiuliConnector } from "@/lib/connectors/registry";
+import { materialInfo } from "@/lib/materials/store";
 import { buildPageImages, referencedFileIds } from "./page-images";
 
 export class RunServiceError extends Error {
@@ -127,6 +127,16 @@ export function renderOnly(input: Base & { raw: string }): Run {
   return saveRun(run);
 }
 
+/**
+ * 没有预处理文本、且无法以其他方式交给模型的材料（运行时会被阻断）。
+ * 开启「附带原件图片」时，PDF / 图片会作为页面图片发送，不再阻断；Excel 等无法转图的仍阻断。
+ */
+function blockedFiles(requiresFiles: string[], snapshot: InputSnapshot, attachImages?: boolean): string[] {
+  if (!attachImages) return requiresFiles;
+  const media = new Map(snapshot.materials.map((m) => [m.file_id, m.media_type ?? ""]));
+  return requiresFiles.filter((id) => !(media.get(id) === "application/pdf" || media.get(id)?.startsWith("image/")));
+}
+
 /** 运行前预览：实际发送的系统提示词、用户消息与构造输入 */
 export async function previewModelRun(input: { promptId: string; snapshotId: string; system: string; userTemplate: string; attachImages?: boolean }) {
   const prompt = loadPrompt(input.promptId);
@@ -137,14 +147,14 @@ export async function previewModelRun(input: { promptId: string; snapshotId: str
   const user = renderUserTemplate(input.userTemplate, built.request);
   // 只列出将附带的原件，不在预览时转换 PDF
   const ids = input.attachImages ? referencedFileIds(built.request) : [];
-  const attachFiles = ids.length ? await getJiuliConnector().getMaterialMetadata(ids).catch(() => []) : [];
+  const attachFiles = ids.length ? await materialInfo(ids) : [];
   return {
     ok: true as const,
-    attachFiles: input.attachImages ? attachFiles.map((m) => ({ file_id: m.file_id, file_name: m.file_name, media_type: m.media_type, authorized: m.authorized, exists: m.exists })) : null,
+    attachFiles: input.attachImages ? attachFiles : null,
     provider: info,
     builderId: built.builderId,
     warnings: built.warnings,
-    requiresFiles: built.requiresFiles,
+    requiresFiles: blockedFiles(built.requiresFiles, snapshot, input.attachImages),
     request: built.request,
     system: input.system,
     user,
@@ -166,10 +176,11 @@ export async function modelRun(
   const built = buildInput(prompt.prompt_kind, snapshot);
   if (!built.ok) throw new RunServiceError(built.code, built.message, 400);
   // AT27：模型不支持文件且材料没有预处理文本 → 明确阻断，不会只发文件名
-  if (built.requiresFiles.length && !info.supportsFileInput) {
+  const blocked = blockedFiles(built.requiresFiles, snapshot, input.attachImages);
+  if (blocked.length && !info.supportsFileInput) {
     throw new RunServiceError(
       "FILE_INPUT_UNSUPPORTED",
-      `当前模型（${info.provider}）只接收文本，材料 ${built.requiresFiles.join(", ")} 没有预处理文本。请先生成预处理文本（例如九立 Demo extracted），或配置支持文件输入的模型。`,
+      `当前模型（${info.provider}）只接收文本，材料 ${blocked.join(", ")} 没有预处理文本。PDF / 图片可在「模型」页勾选「附带原件图片」后用视觉模型运行；其他格式请先生成预处理文本，或配置支持文件输入的模型。`,
       400,
     );
   }
