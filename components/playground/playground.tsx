@@ -246,7 +246,7 @@ export function Playground({ projectId }: { projectId: string }) {
         if (!w.fixtureSnapshotId) throw new Error("该样本没有请求上下文，不能真实运行，只能「仅渲染」");
       }
       const snapshotId = runSnapshotId(w);
-      if (!snapshotId) throw new Error("真实运行必须选择输入快照（带 ctx 的样本、已有快照，或从九立只读导入）；粘贴的 JSON 只能「仅渲染」");
+      if (!snapshotId) throw new Error("真实运行必须选择输入快照（带 ctx 的样本、已有快照，或从九立只读导入）；粘贴的请求可先点「请求存为快照」");
       const run = await api<{ run_id: string }>("/api/runs", {
         json: { mode: "MODEL_RUN", projectId, promptId, snapshotId, system: w.system, userTemplate: w.userTemplate, promptVersionId: w.versionId, params: w.params, attachImages: w.attachImages },
       });
@@ -294,6 +294,21 @@ export function Playground({ projectId }: { projectId: string }) {
       // 轮询会在 Run 落到 CANCELLED 后自动刷新结果区与历史
     } catch (e) {
       report(e);
+    }
+  }
+
+  /**
+   * 切换 Prompt：目标 Prompt 还没选输入时，若当前使用的快照（已有快照 / 上传）也适用于它，就一并带过去；
+   * 已有选择的不覆盖。
+   */
+  function switchPrompt(id: string) {
+    const snap = ws.inputMode === "snapshot" || ws.inputMode === "upload" ? runSnapshotId(ws) : null;
+    const target = useStudio.getState().workspaces[id];
+    const untouched = !target || (target.inputMode === "fixture" && !target.fixtureId);
+    const kind = prompts.find((p) => p.prompt_id === id)?.prompt_kind;
+    s.setActivePrompt(id);
+    if (snap && untouched && kind && snapshots.find((x) => x.snapshot_id === snap)?.usable_kinds.includes(kind)) {
+      s.patchWorkspace(id, { inputMode: "snapshot", snapshotId: snap });
     }
   }
 
@@ -423,7 +438,7 @@ export function Playground({ projectId }: { projectId: string }) {
               {prompts.map((p, i) => (
                 <li key={p.prompt_id} className="rise" style={{ animationDelay: `${i * 50}ms` }}>
                   <button
-                    onClick={() => s.setActivePrompt(p.prompt_id)}
+                    onClick={() => switchPrompt(p.prompt_id)}
                     data-prompt={p.prompt_id}
                     className={cx("flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] hover:bg-ink-800", promptId === p.prompt_id && "bg-ink-800 text-ink-100")}
                   >

@@ -153,7 +153,7 @@ function InputTab({ projectId, kind, fixtures, snapshots, capability, onPickFixt
         ))}
       </div>
       {ws.inputMode === "fixture" && <FixtureList kind={kind} fixtures={fixtures} onPick={onPickFixture} />}
-      {ws.inputMode === "paste" && <PasteInput />}
+      {ws.inputMode === "paste" && <PasteInput projectId={projectId} kind={kind} onSnapshotsChanged={onSnapshotsChanged} />}
       {ws.inputMode === "snapshot" && <SnapshotList projectId={projectId} kind={kind} snapshots={snapshots} onSnapshotsChanged={onSnapshotsChanged} onMore={onMoreSnapshots} />}
       {ws.inputMode === "upload" && <UploadInput projectId={projectId} kind={kind} onCreated={onSnapshotsChanged} />}
       {ws.inputMode === "jiuli" && <JiuliImport projectId={projectId} capability={capability} onCreated={onSnapshotsChanged} />}
@@ -196,9 +196,26 @@ function FixtureList({ kind, fixtures, onPick }: { kind: PromptKind; fixtures: F
   );
 }
 
-function PasteInput() {
+function PasteInput({ projectId, kind, onSnapshotsChanged }: { projectId: string; kind: PromptKind; onSnapshotsChanged: () => void }) {
   const [ws, patch] = useWorkspace();
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const readFile = (f: File, key: "pasteRaw" | "pasteRequest") => f.text().then((t) => patch({ [key]: t }));
+
+  /** 把粘贴的请求上下文存为快照并选中，之后可直接真实运行 */
+  async function saveRequest() {
+    setErr(null);
+    setBusy(true);
+    try {
+      const snap = await api<{ snapshot_id: string }>("/api/snapshots/import", { json: { projectId, label: "粘贴的请求", promptKind: kind, requestText: ws.pasteRequest } });
+      patch({ inputMode: "snapshot", snapshotId: snap.snapshot_id });
+      onSnapshotsChanged();
+    } catch (e) {
+      setErr(e instanceof ApiError ? `${e.code}: ${e.message}` : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <div className="space-y-2">
       <label className="block text-[11px] text-ink-400">模型原始输出（原样保存，不做任何修改）</label>
@@ -207,6 +224,13 @@ function PasteInput() {
       <label className="block text-[11px] text-ink-400">请求上下文 JSON（可选，v3 P3/P4 用于解析 evidence_key、当前值）</label>
       <textarea value={ws.pasteRequest} onChange={(e) => patch({ pasteRequest: e.target.value })} aria-label="请求上下文" spellCheck={false} className="h-28 w-full rounded border border-ink-700 bg-ink-950 p-2 font-mono text-[12px] outline-none focus:border-ink-400" />
       <input type="file" accept=".json" aria-label="上传请求上下文文件" onChange={(e) => e.target.files?.[0] && readFile(e.target.files[0], "pasteRequest")} className="text-[11px] text-ink-400" />
+      <div className="flex items-center gap-2">
+        <Btn tone="outline" disabled={busy || !ws.pasteRequest.trim()} onClick={saveRequest}>
+          {busy ? "保存中…" : "请求存为快照（用于真实运行）"}
+        </Btn>
+        <span className="text-[11px] text-ink-400">存好后自动切到「已有快照」并选中，可直接「运行模型」。</span>
+      </div>
+      {err && <p className="text-[12px] text-stamp">{err}</p>}
     </div>
   );
 }
@@ -642,7 +666,7 @@ function PreviewTab({ fixtures }: { fixtures: FixtureSummary[] }) {
             ? "该样本没有请求上下文（无 ctx 标记），不能真实运行，只能「仅渲染」。"
             : "正在准备样本快照…"
         : ws.inputMode === "paste"
-          ? "粘贴的 JSON 只用于「仅渲染」。真实运行请选择带 ctx 的样本、已有快照，或从九立只读导入。"
+          ? "粘贴的模型输出只用于「仅渲染」。要真实运行，请在「输入」页把请求上下文「存为快照」，或选择带 ctx 的样本、已有快照、从九立只读导入。"
           : ws.inputMode === "upload"
             ? "请先在「输入 → 上传文件」上传原件并创建快照。"
           : ws.inputMode === "jiuli"

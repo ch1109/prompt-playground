@@ -357,6 +357,56 @@ test("重渲染 / 回放 / 保存版本失败时显示错误，不静默", async
   await expect(page.getByLabel("新版本名称")).toHaveValue("会失败的版本");
 });
 
+test("切换 Prompt 时带上可用的快照；不适用或已有选择时不带", async ({ page }) => {
+  const project = await page.request.post("/api/projects", { data: { name: `快照带入 ${Date.now()}`, template: "JIULI" } }).then((r) => r.json());
+  const pid: string = project.data.project_id;
+  await page.goto(`/projects/${pid}/playground`);
+  await page.getByRole("button", { name: "从九立导入" }).click();
+  await page.getByRole("button", { name: /上海浦壹/ }).click();
+  await page.getByLabel("委托任务").selectOption({ index: 1 });
+  await page.getByLabel(/选择批次/).first().check();
+  await page.getByRole("button", { name: "只读读取并创建隔离快照" }).click();
+  const selected = page.getByTestId("snapshot-list").locator("[data-snapshot-id].ring-1");
+  await expect(selected).toContainText("JIULI_READONLY");
+  const snapId = await selected.getAttribute("data-snapshot-id");
+  const sidebar = page.getByTestId("sidebar").locator("[data-prompt]");
+  // P3 可用：自动带上，预览直接是九立 P3 构造
+  await sidebar.filter({ hasText: "商品对应关系" }).click();
+  await expect(page.getByTestId("editor-pane")).toContainText(`快照 ${snapId}`);
+  await page.getByRole("button", { name: "请求预览" }).click();
+  await expect(page.getByTestId("request-preview")).toContainText("jiuli-demo-p3");
+  // P4 不适用：不带
+  await sidebar.filter({ hasText: "字段核验" }).click();
+  await expect(page.getByTestId("editor-pane")).not.toContainText(`快照 ${snapId}`);
+  // P2 先选了样本：不覆盖
+  await sidebar.filter({ hasText: "查货材料识别" }).click();
+  await page.getByRole("button", { name: "输入" }).click();
+  await page.click('[data-fixture-id="constructed/p2-v3-no-warehouse.json"]');
+  await sidebar.filter({ hasText: "商品对应关系" }).click();
+  await sidebar.filter({ hasText: "查货材料识别" }).click();
+  await expect(page.getByTestId("editor-pane")).toContainText("样本 constructed/p2-v3-no-warehouse.json");
+});
+
+test("粘贴的请求可一键存为快照并选中，直接用于真实运行的预览", async ({ page }) => {
+  await page.goto("/projects/jiuli/playground");
+  await page.locator('[data-prompt="generic-json"]').click();
+  await page.getByRole("button", { name: "粘贴 / 文件 JSON" }).click();
+  const btn = page.getByRole("button", { name: "请求存为快照（用于真实运行）" });
+  await expect(btn).toBeDisabled();
+  const marker = `请总结-${Date.now()}`;
+  await page.getByLabel("请求上下文", { exact: true }).fill(JSON.stringify({ text: marker }));
+  await btn.click();
+  await expect(page.getByTestId("snapshot-list").locator("[data-snapshot-id].ring-1")).toContainText("粘贴的请求");
+  await page.getByRole("button", { name: "请求预览" }).click();
+  await expect(page.getByTestId("request-preview")).toContainText(marker);
+  // 不合法的 JSON 明确报错
+  await page.getByRole("button", { name: "输入" }).click();
+  await page.getByRole("button", { name: "粘贴 / 文件 JSON" }).click();
+  await page.getByLabel("请求上下文", { exact: true }).fill("{不是 JSON");
+  await page.getByRole("button", { name: "请求存为快照（用于真实运行）" }).click();
+  await expect(page.getByTestId("editor-pane")).toContainText("INVALID_JSON");
+});
+
 test("运行历史只列当前 Prompt，超过 100 条可加载更多；没有记录时显示空状态", async ({ page }) => {
   const project = await page.request.post("/api/projects", { data: { name: `历史分页 ${Date.now()}`, template: "JIULI" } }).then((r) => r.json());
   const pid: string = project.data.project_id;
