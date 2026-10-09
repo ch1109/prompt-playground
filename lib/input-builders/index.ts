@@ -1,4 +1,4 @@
-import type { PromptKind } from "@/lib/contracts/run";
+import { PROMPT_KINDS, type PromptKind } from "@/lib/contracts/run";
 import type { InputSnapshot } from "@/lib/contracts/snapshot";
 import { FIELD_LABELS } from "@/lib/schemas/common";
 
@@ -143,6 +143,11 @@ export function buildInput(kind: PromptKind, snapshot: InputSnapshot): BuildResu
     }
   }
   return { ok: false, code: "UNKNOWN_KIND", message: `未知 Prompt 种类 ${kind}` };
+}
+
+/** 该快照能构造出输入的 Prompt 种类（用于快照列表按当前 Prompt 过滤） */
+export function usableKinds(snapshot: InputSnapshot): PromptKind[] {
+  return PROMPT_KINDS.filter((k) => buildInput(k, snapshot).ok);
 }
 
 /** 展开用户模板：只替换登记的变量 */

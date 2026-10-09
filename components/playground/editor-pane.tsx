@@ -137,7 +137,7 @@ function InputTab({ kind, fixtures, snapshots, capability, onPickFixture, onSnap
       </div>
       {ws.inputMode === "fixture" && <FixtureList kind={kind} fixtures={fixtures} onPick={onPickFixture} />}
       {ws.inputMode === "paste" && <PasteInput />}
-      {ws.inputMode === "snapshot" && <SnapshotList snapshots={snapshots} />}
+      {ws.inputMode === "snapshot" && <SnapshotList kind={kind} snapshots={snapshots} onSnapshotsChanged={onSnapshotsChanged} />}
       {ws.inputMode === "jiuli" && <JiuliImport capability={capability} onCreated={onSnapshotsChanged} />}
     </div>
   );
@@ -193,26 +193,84 @@ function PasteInput() {
   );
 }
 
-function SnapshotList({ snapshots }: { snapshots: SnapshotListItem[] }) {
+const KIND_SHORT: Record<string, string> = { JIULI_P1: "P1", JIULI_P2: "P2", JIULI_P3: "P3", JIULI_P4: "P4", GENERIC_JSON: "通用" };
+
+function SnapshotList({ kind, snapshots, onSnapshotsChanged }: { kind: PromptKind; snapshots: SnapshotListItem[]; onSnapshotsChanged: () => void }) {
   const [ws, patch] = useWorkspace();
+  const [showAll, setShowAll] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   if (!snapshots.length) return <Empty>还没有快照。可从样本、JSON 或九立只读导入创建。</Empty>;
+  const usable = snapshots.filter((s) => s.usable_kinds.includes(kind));
+  const hidden = snapshots.length - usable.length;
+  const list = showAll ? snapshots : usable;
+
+  /** 重新只读读取同一来源，生成新快照（记录 parent），旧快照与旧 Run 不变 */
+  async function refresh(s: SnapshotListItem) {
+    setBusy(s.snapshot_id);
+    setErr(null);
+    try {
+      const n = await api<{ snapshot_id: string }>("/api/connectors/jiuli/snapshots", {
+        json: { customerId: s.source_ids.customer_id, taskId: s.source_ids.task_id, batchIds: s.source_ids.batch_ids ?? [], parentSnapshotId: s.snapshot_id },
+      });
+      patch({ snapshotId: n.snapshot_id });
+      onSnapshotsChanged();
+    } catch (e) {
+      setErr(e instanceof ApiError ? `${e.code}: ${e.message}` : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
-    <ul className="space-y-px" data-testid="snapshot-list">
-      {snapshots.map((s) => (
-        <li key={s.snapshot_id}>
-          <button onClick={() => patch({ snapshotId: s.snapshot_id })} className={cx("w-full rounded px-2 py-1 text-left text-[12px] hover:bg-ink-800", ws.snapshotId === s.snapshot_id && "bg-stamp/10 ring-1 ring-stamp/50")}>
-            <div className="flex items-center gap-2">
-              <Badge tone={s.source_type === "JIULI_READONLY" ? "info" : "mute"}>{s.source_type}</Badge>
-              <span className="truncate">{s.label}</span>
-            </div>
-            <div className="font-mono text-[10.5px] text-ink-400">
-              {s.snapshot_id} · {s.imported_at.slice(0, 19).replace("T", " ")} · hash {s.content_hash.slice(0, 10)}
-              {s.parent_snapshot_id && ` · 刷新自 ${s.parent_snapshot_id}`}
-            </div>
-          </button>
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-1" data-testid="snapshot-list">
+      <div className="flex items-center gap-2 text-[11px] text-ink-400">
+        <span>
+          显示可用于 {KIND_SHORT[kind]} 的快照 {usable.length} 个
+          {hidden > 0 && `，另有 ${hidden} 个不适用`}
+        </span>
+        {hidden > 0 && (
+          <label className="ml-auto flex items-center gap-1">
+            <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} aria-label="显示全部快照" />
+            显示全部
+          </label>
+        )}
+      </div>
+      {!list.length && <Empty>没有可用于 {KIND_SHORT[kind]} 的快照。</Empty>}
+      <ul className="space-y-px">
+        {list.map((s) => {
+          const ok = s.usable_kinds.includes(kind);
+          return (
+            <li key={s.snapshot_id} className="flex items-start gap-1">
+              <button
+                disabled={!ok}
+                onClick={() => patch({ snapshotId: s.snapshot_id })}
+                data-snapshot-id={s.snapshot_id}
+                className={cx("min-w-0 flex-1 rounded px-2 py-1 text-left text-[12px] hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-50", ws.snapshotId === s.snapshot_id && "bg-stamp/10 ring-1 ring-stamp/50")}
+              >
+                <div className="flex items-center gap-2">
+                  <Badge tone={s.source_type === "JIULI_READONLY" ? "info" : "mute"}>{s.source_type}</Badge>
+                  <span className="truncate">{s.label}</span>
+                  {!ok && <Badge tone="warn">不适用于 {KIND_SHORT[kind]}</Badge>}
+                </div>
+                <div className="font-mono text-[10.5px] text-ink-400">
+                  {s.snapshot_id} · {s.imported_at.slice(0, 19).replace("T", " ")} · hash {s.content_hash.slice(0, 10)}
+                  {s.parent_snapshot_id && ` · 刷新自 ${s.parent_snapshot_id}`}
+                  {" · 可用于 "}
+                  {s.usable_kinds.filter((k) => k !== "GENERIC_JSON").map((k) => KIND_SHORT[k]).join("/") || "—"}
+                </div>
+              </button>
+              {s.source_type === "JIULI_READONLY" && (
+                <Btn onClick={() => refresh(s)} disabled={busy !== null} title="重新只读读取同一客户/任务/批次，生成新快照；旧快照不变" aria-label={`刷新快照 ${s.snapshot_id}`}>
+                  {busy === s.snapshot_id ? "读取中…" : "刷新"}
+                </Btn>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {err && <p className="text-[12px] text-stamp">{err}</p>}
+    </div>
   );
 }
 

@@ -626,3 +626,16 @@ describe("标注导出", () => {
     expect(csv).toContain('"第一行\n第二行"');
   });
 });
+
+describe("快照适用的 Prompt 种类", () => {
+  it("样本快照只适用于自身阶段；九立快照按可构造的阶段判断（P4 不适用）", async () => {
+    const { usableKinds } = await import("@/lib/input-builders");
+    expect(usableKinds(snapshotForFixture("jiuli", fx("v3/SC-08/P1"))!)).toEqual(["JIULI_P1", "GENERIC_JSON"]);
+    if (!hasDemo) return;
+    const c = new JiuliDemoFilesConnector({ root: DEMO_ROOT, allowedCustomers: "*" });
+    const task = (await c.listOrderTasks("C-132ffbd28c07", 1)).items[0];
+    const batches = (await c.listInspectionBatches("C-132ffbd28c07", 1)).items.map((b) => b.batch_id);
+    const snap = await buildJiuliSnapshot(c, { projectId: "jiuli", customerId: "C-132ffbd28c07", taskId: task.task_id, batchIds: batches });
+    expect(usableKinds(snap)).toEqual(["JIULI_P1", "JIULI_P2", "JIULI_P3", "GENERIC_JSON"]);
+  });
+});

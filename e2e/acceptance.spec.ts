@@ -198,11 +198,40 @@ test("模型运行中显示已等待秒数；RUNNING 的 Run 结束后自动显�
   await expect(page.getByText("达到 max_tokens 被截断")).toBeVisible();
 });
 
+test("AT26 快照刷新生成新快照（记录来源），快照列表按 Prompt 过滤", async ({ page }) => {
+  await page.goto("/projects/jiuli/playground");
+  await page.click('[data-prompt="jiuli-p1"]');
+  await page.getByRole("button", { name: "从九立导入" }).click();
+  await page.getByRole("button", { name: /上海浦壹/ }).click();
+  await page.getByLabel("委托任务").selectOption({ index: 1 });
+  await page.getByRole("button", { name: "只读读取并创建隔离快照" }).click();
+  const list = page.getByTestId("snapshot-list");
+  const first = list.locator("[data-snapshot-id]").first();
+  const oldId = await first.getAttribute("data-snapshot-id");
+  await expect(first).toHaveClass(/ring-stamp/);
+  await page.getByRole("button", { name: `刷新快照 ${oldId}` }).click();
+  await expect(list).toContainText(`刷新自 ${oldId}`);
+  const selected = list.locator("[data-snapshot-id].ring-1");
+  await expect(selected).not.toHaveAttribute("data-snapshot-id", oldId!);
+  await expect(selected).toContainText(`刷新自 ${oldId}`);
+  // P4 无法从九立快照构造输入：默认隐藏，显示全部时标为不适用且不可选
+  await page.click('[data-prompt="jiuli-p4"]');
+  await page.getByRole("button", { name: "已有快照" }).click();
+  await expect(list).toContainText("不适用");
+  await expect(list.locator(`[data-snapshot-id="${oldId}"]`)).toHaveCount(0);
+  await page.getByLabel("显示全部快照").check();
+  await expect(list.locator(`[data-snapshot-id="${oldId}"]`)).toBeDisabled();
+});
+
 test("运行对比：显示关键指标、提示词差异区与输出差异", async ({ page }) => {
   await renderFixture(page, "jiuli-p3", "constructed/p3-v3-multi-candidate.json");
   await page.click('[data-fixture-id="constructed/p3-v3-unknown-enum.json"]');
   await page.click('[data-testid="btn-render"]');
   await page.getByRole("button", { name: /运行历史/ }).click();
+  // 等第二次渲染出现在历史顶部再勾选，避免列表刷新导致勾到同一行
+  const rows = page.getByTestId("history").locator("tbody tr");
+  await expect(rows.nth(0)).toContainText("P3 未知枚举");
+  await expect(rows.nth(1)).toContainText("P3 一对多");
   const boxes = page.getByTestId("history").getByRole("checkbox");
   await boxes.nth(0).check();
   await boxes.nth(1).check();

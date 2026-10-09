@@ -70,6 +70,9 @@ export interface SnapshotListItem {
   content_hash: string;
   imported_at: string;
   parent_snapshot_id: string | null;
+  /** 能构造出输入的 Prompt 种类 */
+  usable_kinds: string[];
+  source_ids: { customer_id?: string; task_id?: string; batch_ids?: string[]; fixture_id?: string };
 }
 
 export interface ProviderInfoDTO {
