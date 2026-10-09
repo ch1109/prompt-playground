@@ -291,7 +291,16 @@ function MetaTab({ detail }: { detail: RunDetail }) {
         <Row k="实际提示词 Hash" v={r.actual_prompt_hash} />
         <Row k="构造输入 Hash" v={r.built_input_hash} />
         <Row k="输入构造器" v={r.input_builder_id} />
-        <Row k="输入快照" v={detail.snapshot ? `${detail.snapshot.label}（${detail.snapshot.snapshot_id}，${detail.snapshot.source_type}，hash ${detail.snapshot.content_hash.slice(0, 12)}…）` : "无"} />
+        <Row
+          k="输入快照"
+          v={
+            detail.snapshot
+              ? `${detail.snapshot.label}（${detail.snapshot.snapshot_id}，${detail.snapshot.source_type}，hash ${detail.snapshot.content_hash.slice(0, 12)}…）`
+              : detail.snapshot_deleted_at
+                ? `${r.input_snapshot_id}（已删除或到期：${detail.snapshot_deleted_at.slice(0, 19).replace("T", " ")}；原始输出不受影响）`
+                : "无"
+          }
+        />
         <Row k="模型" v={r.model_provider ? `${r.model_provider} · ${r.model_name}` : "未调用模型"} />
         <Row k="Provider 适配器版本" v={r.provider_adapter_version} />
         <Row k="模型参数" v={r.model_params ? JSON.stringify(r.model_params) : null} />

@@ -62,6 +62,10 @@ export function db(): DatabaseSync {
     const d = new DatabaseSync(p);
     d.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
     d.exec(SCHEMA);
+    // 迁移：快照到期与删除时间（旧数据库补列）
+    const cols = (d.prepare("PRAGMA table_info(input_snapshots)").all() as { name: string }[]).map((c) => c.name);
+    if (!cols.includes("expires_at")) d.exec("ALTER TABLE input_snapshots ADD COLUMN expires_at TEXT");
+    if (!cols.includes("deleted_at")) d.exec("ALTER TABLE input_snapshots ADD COLUMN deleted_at TEXT");
     globalForDb.__studioDb = d;
     // 进程刚启动时不可能有正在进行的调用：遗留的 RUNNING 都是上次被中断的
     markInterruptedRuns(d);

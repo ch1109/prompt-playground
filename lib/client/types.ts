@@ -47,6 +47,8 @@ export interface RunDetail {
   annotations: AnnotationDTO[];
   snapshot: { snapshot_id: string; label: string; source_type: string; content_hash: string; imported_at: string; warnings: string[]; source_ids: Record<string, unknown> } | null;
   request: unknown;
+  /** 引用的快照已删除/到期的时间 */
+  snapshot_deleted_at?: string | null;
 }
 
 export interface RunListItem {
@@ -72,6 +74,8 @@ export interface SnapshotListItem {
   parent_snapshot_id: string | null;
   /** 能构造出输入的 Prompt 种类 */
   usable_kinds: string[];
+  /** 到期时间；null = 永不到期 */
+  expires_at: string | null;
   source_ids: { customer_id?: string; task_id?: string; batch_ids?: string[]; fixture_id?: string };
 }
 

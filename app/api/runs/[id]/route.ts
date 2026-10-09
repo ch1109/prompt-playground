@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { fail, handle, ok } from "@/lib/api/respond";
 import { listAnnotations, getRun } from "@/lib/repositories/runs";
-import { getSnapshot } from "@/lib/repositories/snapshots";
+import { getSnapshot, snapshotDeletedAt } from "@/lib/repositories/snapshots";
 import { rendererFor } from "@/lib/runs/service";
 
 export const GET = (_req: NextRequest, ctx: RouteContext<"/api/runs/[id]">) =>
@@ -14,6 +14,7 @@ export const GET = (_req: NextRequest, ctx: RouteContext<"/api/runs/[id]">) =>
       run,
       renderer: rendererFor(run) ?? null,
       annotations: listAnnotations(run.run_id),
+      snapshot_deleted_at: run.input_snapshot_id && !snapshot ? snapshotDeletedAt(run.input_snapshot_id) : null,
       snapshot: snapshot ? { snapshot_id: snapshot.snapshot_id, label: snapshot.label, source_type: snapshot.source_type, content_hash: snapshot.content_hash, imported_at: snapshot.imported_at, warnings: snapshot.warnings, source_ids: snapshot.source_ids } : null,
       // 请求上下文仅用于 JSON 视图中的 req: 定位
       request: (payload.requests as Record<string, unknown> | undefined)?.[run.prompt_kind] ?? (payload.request_kind === run.prompt_kind ? payload.request : null),

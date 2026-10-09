@@ -246,6 +246,22 @@ test("窄屏（<1280px）编辑区与结果区改为可切换页签，运行后�
   await expect(page.getByTestId("result-pane")).toBeVisible();
 });
 
+test("快照可设置保留期限、可删除；历史 Run 保留并标明快照已删除", async ({ page }) => {
+  await renderFixture(page, "jiuli-p1", "v3/SC-08-audit/P1");
+  await page.getByRole("button", { name: "已有快照" }).click();
+  const item = page.getByTestId("snapshot-list").locator("li", { hasText: "样本 · SC-08-audit · P1" }).first();
+  const id = await item.locator("[data-snapshot-id]").getAttribute("data-snapshot-id");
+  await page.getByLabel(`保留期限 ${id}`).selectOption("30");
+  await expect(page.getByLabel(`保留期限 ${id}`)).toContainText("至 ");
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: `删除快照 ${id}` }).click();
+  await expect(page.locator(`[data-snapshot-id="${id}"]`)).toHaveCount(0);
+  await page.getByRole("button", { name: /运行历史/ }).click();
+  await page.getByTestId("history").getByRole("button", { name: "回放" }).first().click();
+  await page.getByRole("tab", { name: "运行信息" }).click();
+  await expect(page.getByTestId("tab-meta")).toContainText("已删除或到期");
+});
+
 test("运行对比：显示关键指标、提示词差异区与输出差异", async ({ page }) => {
   await renderFixture(page, "jiuli-p3", "constructed/p3-v3-multi-candidate.json");
   await page.click('[data-fixture-id="constructed/p3-v3-unknown-enum.json"]');

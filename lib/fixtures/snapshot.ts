@@ -9,8 +9,10 @@ export function snapshotForFixture(projectId: string, f: FixtureDetail): InputSn
   if (!f.request && !f.gold && !f.baseDraft) return undefined;
   const payload: Record<string, unknown> = { request_kind: f.promptKind, request: f.request, gold: f.gold, baseDraft: f.baseDraft, fixture_id: f.id, fixture_origin: f.origin };
   const hash = sha256(stableStringify({ payload, materials: [] }));
-  const existing = db().prepare("SELECT snapshot_id FROM input_snapshots WHERE content_hash = ? AND source_type = 'FIXTURE' LIMIT 1").get(hash) as { snapshot_id: string } | undefined;
-  if (existing) return getSnapshot(existing.snapshot_id);
+  const existing = db().prepare("SELECT snapshot_id FROM input_snapshots WHERE content_hash = ? AND source_type = 'FIXTURE' AND deleted_at IS NULL ORDER BY imported_at DESC LIMIT 1").get(hash) as { snapshot_id: string } | undefined;
+  // 已到期的同内容快照不复用
+  const reused = existing && getSnapshot(existing.snapshot_id);
+  if (reused) return reused;
   return createSnapshot({
     project_id: projectId,
     source_type: "FIXTURE",

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "@/lib/client/api";
 import type { CapabilityDTO, FixtureSummary, PromptVersionDTO, ProviderInfoDTO, SnapshotListItem } from "@/lib/client/types";
 import type { PromptKind } from "@/lib/contracts/run";
-import { runSnapshotId, useWorkspace, type InputMode } from "@/lib/state/studio-store";
+import { runSnapshotId, useStudio, useWorkspace, type InputMode } from "@/lib/state/studio-store";
 import { Badge, Btn, cx, Empty } from "@/components/ui";
 
 type EditorTab = "prompt" | "input" | "model" | "preview";
@@ -222,6 +222,33 @@ function SnapshotList({ kind, snapshots, onSnapshotsChanged }: { kind: PromptKin
     }
   }
 
+  async function setRetention(id: string, days: number | null) {
+    setErr(null);
+    try {
+      await api(`/api/snapshots/${id}/retention`, { json: { days } });
+      onSnapshotsChanged();
+    } catch (e) {
+      setErr(e instanceof ApiError ? `${e.code}: ${e.message}` : String(e));
+    }
+  }
+
+  /** 删除快照内容（Studio 自有数据）；所有工作区对它的引用一并清除 */
+  async function remove(s: SnapshotListItem) {
+    if (!window.confirm(`删除快照「${s.label}」？\n\n快照内容与材料记录会被删除，无法恢复；引用它的历史 Run 和原始输出保留，但不能再用这个快照重跑或重渲染。九立数据不受影响。`)) return;
+    setErr(null);
+    try {
+      await api(`/api/snapshots/${s.snapshot_id}`, { method: "DELETE" });
+      const st = useStudio.getState();
+      for (const [pid, w] of Object.entries(st.workspaces)) {
+        if (w.snapshotId === s.snapshot_id) st.patchWorkspace(pid, { snapshotId: null });
+        if (w.fixtureSnapshotId === s.snapshot_id) st.patchWorkspace(pid, { fixtureSnapshotId: null });
+      }
+      onSnapshotsChanged();
+    } catch (e) {
+      setErr(e instanceof ApiError ? `${e.code}: ${e.message}` : String(e));
+    }
+  }
+
   return (
     <div className="space-y-1" data-testid="snapshot-list">
       <div className="flex items-center gap-2 text-[11px] text-ink-400">
@@ -260,6 +287,22 @@ function SnapshotList({ kind, snapshots, onSnapshotsChanged }: { kind: PromptKin
                   {s.usable_kinds.filter((k) => k !== "GENERIC_JSON").map((k) => KIND_SHORT[k]).join("/") || "—"}
                 </div>
               </button>
+              <select
+                value=""
+                onChange={(e) => e.target.value && setRetention(s.snapshot_id, e.target.value === "never" ? null : Number(e.target.value))}
+                aria-label={`保留期限 ${s.snapshot_id}`}
+                title={s.expires_at ? `到期：${s.expires_at.slice(0, 16).replace("T", " ")}` : "永不到期"}
+                className="w-[72px] shrink-0 rounded border border-ink-700 bg-ink-950 px-1 py-0.5 text-[11px] text-ink-300"
+              >
+                <option value="">{s.expires_at ? `至 ${s.expires_at.slice(5, 10)}` : "永久"}</option>
+                <option value="never">永久保留</option>
+                <option value="7">7 天后删</option>
+                <option value="30">30 天后删</option>
+                <option value="90">90 天后删</option>
+              </select>
+              <Btn onClick={() => remove(s)} aria-label={`删除快照 ${s.snapshot_id}`} title="删除快照内容（无法恢复）">
+                删除
+              </Btn>
               {s.source_type === "JIULI_READONLY" && (
                 <Btn onClick={() => refresh(s)} disabled={busy !== null} title="重新只读读取同一客户/任务/批次，生成新快照；旧快照不变" aria-label={`刷新快照 ${s.snapshot_id}`}>
                   {busy === s.snapshot_id ? "读取中…" : "刷新"}

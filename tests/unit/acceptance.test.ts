@@ -687,3 +687,44 @@ describe("证据按页跳转", () => {
     expect(previewHref({ fileId: "F-80d89610605b", page: null })).toBe("/api/materials/F-80d89610605b/preview");
   });
 });
+
+describe("快照删除与到期", () => {
+  const mk = () =>
+    createSnapshot({ project_id: "jiuli", source_type: "JSON_IMPORT", label: "删除测试", data_contract_version: "x", normalized_payload: { request_kind: "JIULI_P1", request: { a: 1 } },
+      materials: [{ material_id: `mat_${Math.random()}`, file_id: "F-000000000001", file_name: "a.pdf", has_text_content: false, availability: "METADATA_ONLY" }] });
+
+  it("删除只移除快照内容与材料记录；历史 Run 与原始输出不变，可看到删除时间；不能再用于重渲染", async () => {
+    const { deleteSnapshot, listSnapshots, snapshotDeletedAt } = await import("@/lib/repositories/snapshots");
+    const s = mk();
+    const run = renderOnly({ projectId: "jiuli", promptId: "jiuli-p1", raw: fx("v3/SC-08/P1").raw, snapshotId: s.snapshot_id });
+    deleteSnapshot(s.snapshot_id);
+    expect(getSnapshot(s.snapshot_id)).toBeUndefined();
+    expect(listSnapshots("jiuli").some((x) => x.snapshot_id === s.snapshot_id)).toBe(false);
+    expect(db().prepare("SELECT count(*) c FROM input_materials WHERE snapshot_id = ?").get(s.snapshot_id)).toMatchObject({ c: 0 });
+    expect(snapshotDeletedAt(s.snapshot_id)).toMatch(/^\d{4}-/);
+    expect(getRun(run.run_id)!.raw_response_hash).toBe(run.raw_response_hash);
+    expect(() => rerender(run.run_id)).toThrow(/已删除/);
+  });
+
+  it("到期的快照在清理时删除，未到期与未设置到期的保留", async () => {
+    const { purgeExpiredSnapshots, setSnapshotExpiry } = await import("@/lib/repositories/snapshots");
+    const expired = mk();
+    const later = mk();
+    const never = mk();
+    setSnapshotExpiry(expired.snapshot_id, new Date(Date.now() - 1000).toISOString());
+    setSnapshotExpiry(later.snapshot_id, new Date(Date.now() + 86400000).toISOString());
+    expect(purgeExpiredSnapshots()).toContain(expired.snapshot_id);
+    expect(getSnapshot(expired.snapshot_id)).toBeUndefined();
+    expect(getSnapshot(later.snapshot_id)).toBeDefined();
+    expect(getSnapshot(never.snapshot_id)).toBeDefined();
+  });
+
+  it("样本快照被删除后，再次选择样本会新建快照而不是复用已删除的", async () => {
+    const { deleteSnapshot } = await import("@/lib/repositories/snapshots");
+    const a = snapshotForFixture("jiuli", fx("v3/SC-08/P2"))!;
+    deleteSnapshot(a.snapshot_id);
+    const b = snapshotForFixture("jiuli", fx("v3/SC-08/P2"))!;
+    expect(b.snapshot_id).not.toBe(a.snapshot_id);
+    expect(getSnapshot(b.snapshot_id)).toBeDefined();
+  });
+});

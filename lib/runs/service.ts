@@ -10,7 +10,7 @@ import { runPipeline } from "@/lib/pipeline/pipeline";
 import { findRendererConfig } from "@/lib/renderer-config/registry";
 import { contentHash, getPrompt, getVersion } from "@/lib/repositories/prompts";
 import { finishRun, getRun, saveRun, startRun } from "@/lib/repositories/runs";
-import { getSnapshot } from "@/lib/repositories/snapshots";
+import { getSnapshot, snapshotDeletedAt } from "@/lib/repositories/snapshots";
 import { getJiuliConnector } from "@/lib/connectors/registry";
 import { buildPageImages, referencedFileIds } from "./page-images";
 
@@ -78,7 +78,11 @@ function loadPrompt(promptId: string) {
 function loadSnapshot(id?: string | null) {
   if (!id) return undefined;
   const s = getSnapshot(id);
-  if (!s) throw new RunServiceError("SNAPSHOT_NOT_FOUND", "快照不存在", 404);
+  if (!s) {
+    const deletedAt = snapshotDeletedAt(id);
+    if (deletedAt) throw new RunServiceError("SNAPSHOT_DELETED", `快照 ${id} 已删除或到期（${deletedAt.slice(0, 19).replace("T", " ")}），无法再使用当时的输入`, 410);
+    throw new RunServiceError("SNAPSHOT_NOT_FOUND", "快照不存在", 404);
+  }
   return s;
 }
 
