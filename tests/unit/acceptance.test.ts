@@ -321,6 +321,13 @@ describe.skipIf(!hasDemo)("AT21 跨客户选择任务", () => {
     const foreignBatch = orders.find((o) => o.customerId !== "C-89aa660b4b46")!;
     await expect(c.getInspectionFacts("C-89aa660b4b46", [foreignBatch.id])).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
+  it("创建快照时任务与客户不匹配、客户未授权 → FORBIDDEN（API 返回 403，而不是 500）", async () => {
+    const all = JSON.parse(readFileSync(join(DEMO_ROOT, "demo-generated/mock/entrustment-drafts.json"), "utf8")) as { id: string; customerId: string }[];
+    const foreign = all.find((d) => d.customerId !== "C-89aa660b4b46")!;
+    const open = new JiuliDemoFilesConnector({ root: DEMO_ROOT, allowedCustomers: "*" });
+    await expect(buildJiuliSnapshot(open, { projectId: "jiuli", customerId: "C-89aa660b4b46", taskId: foreign.id, batchIds: [] })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(buildJiuliSnapshot(c, { projectId: "jiuli", customerId: foreign.customerId, batchIds: [] })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
 });
 
 function fakeFetch(impl: (init?: RequestInit) => Promise<Response>): typeof fetch {

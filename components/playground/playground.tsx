@@ -146,16 +146,40 @@ export function Playground({ projectId }: { projectId: string }) {
     }
   }
 
-  async function saveVersion(label: string) {
-    const v = await api<PromptVersionDTO>(`/api/prompts/${promptId}/versions`, { json: { label, system_prompt: ws.system, user_prompt_template: ws.userTemplate, parent_version_id: ws.versionId } });
-    setVersions((cur) => ({ ...cur, [promptId]: [v, ...(cur[promptId] ?? [])] }));
-    s.patchWorkspace(promptId, { versionId: v.version_id, versionHash: v.content_hash });
+  const report = (e: unknown) => setError(e instanceof ApiError ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : String(e));
+
+  /** 返回是否保存成功；失败时在顶栏显示错误 */
+  async function saveVersion(label: string): Promise<boolean> {
+    setError(null);
+    try {
+      const v = await api<PromptVersionDTO>(`/api/prompts/${promptId}/versions`, { json: { label, system_prompt: ws.system, user_prompt_template: ws.userTemplate, parent_version_id: ws.versionId } });
+      setVersions((cur) => ({ ...cur, [promptId]: [v, ...(cur[promptId] ?? [])] }));
+      s.patchWorkspace(promptId, { versionId: v.version_id, versionHash: v.content_hash });
+      return true;
+    } catch (e) {
+      report(e);
+      return false;
+    }
   }
 
   async function rerender(runId: string) {
-    const r = await api<{ run_id: string }>(`/api/runs/${runId}/re-render`, { method: "POST" });
-    await openRun(r.run_id);
-    loadRuns();
+    setError(null);
+    try {
+      const r = await api<{ run_id: string }>(`/api/runs/${runId}/re-render`, { method: "POST" });
+      await openRun(r.run_id);
+      loadRuns();
+    } catch (e) {
+      report(e);
+    }
+  }
+
+  async function replay(runId: string) {
+    setError(null);
+    try {
+      await openRun(runId);
+    } catch (e) {
+      report(e);
+    }
   }
 
   // 拖拽分隔线
@@ -314,7 +338,7 @@ export function Playground({ projectId }: { projectId: string }) {
                       <td className="max-w-[320px] truncate px-2">{r.label}</td>
                       <td className="px-2 text-ink-400">{r.model_name ?? "—"}</td>
                       <td className="space-x-1 px-2 whitespace-nowrap">
-                        <Btn onClick={() => openRun(r.run_id)}>回放</Btn>
+                        <Btn onClick={() => replay(r.run_id)}>回放</Btn>
                         <Btn onClick={() => rerender(r.run_id)} title="用当前 Adapter/Renderer 重新渲染（另存为新 Run，不改历史）">
                           重渲染
                         </Btn>

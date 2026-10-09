@@ -18,7 +18,7 @@ export function EditorPane(props: {
   snapshots: SnapshotListItem[];
   provider: ProviderInfoDTO | null;
   capability: CapabilityDTO | null;
-  onSaveVersion: (label: string) => Promise<void>;
+  onSaveVersion: (label: string) => Promise<boolean>;
   onPickFixture: (fixtureId: string) => void;
   onSnapshotsChanged: () => void;
 }) {
@@ -59,7 +59,7 @@ export function EditorPane(props: {
   );
 }
 
-function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]; isDraft: boolean; onSave: (label: string) => Promise<void> }) {
+function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]; isDraft: boolean; onSave: (label: string) => Promise<boolean> }) {
   const [ws, patch] = useWorkspace();
   const [label, setLabel] = useState("");
   return (
@@ -106,8 +106,8 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
           tone="outline"
           disabled={!isDraft}
           onClick={async () => {
-            await onSave(label || `草稿 ${new Date().toLocaleString("zh-CN")}`);
-            setLabel("");
+            // 保存失败时保留名称，错误显示在顶栏
+            if (await onSave(label || `草稿 ${new Date().toLocaleString("zh-CN")}`)) setLabel("");
           }}
         >
           保存为新版本

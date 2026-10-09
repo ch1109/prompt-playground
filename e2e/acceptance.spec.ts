@@ -138,6 +138,26 @@ test("请求预览与真实运行使用同一份输入：切换输入来源后�
   await expect(page.getByTestId("request-preview")).toHaveCount(0);
 });
 
+test("重渲染 / 回放 / 保存版本失败时显示错误，不静默", async ({ page }) => {
+  await renderFixture(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
+  const boom = (code: string) => (route: import("@playwright/test").Route) =>
+    route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ ok: false, error: { code, message: "模拟失败" }, request_id: "x" }) });
+  await page.getByRole("button", { name: /运行历史/ }).click();
+  await page.route("**/api/runs/*/re-render", boom("RERENDER_BOOM"));
+  await page.getByTestId("history").getByRole("button", { name: "重渲染" }).first().click();
+  await expect(page.getByTestId("error-message")).toContainText("RERENDER_BOOM");
+  await page.route(/\/api\/runs\/run_[^/]+$/, boom("REPLAY_BOOM"));
+  await page.getByTestId("history").getByRole("button", { name: "回放" }).first().click();
+  await expect(page.getByTestId("error-message")).toContainText("REPLAY_BOOM");
+  await page.route("**/api/prompts/*/versions", boom("SAVE_BOOM"));
+  await page.getByRole("button", { name: /^提示词/ }).click();
+  await page.getByLabel("System 提示词").fill("改动");
+  await page.getByLabel("新版本名称").fill("会失败的版本");
+  await page.getByRole("button", { name: "保存为新版本" }).click();
+  await expect(page.getByTestId("error-message")).toContainText("SAVE_BOOM");
+  await expect(page.getByLabel("新版本名称")).toHaveValue("会失败的版本");
+});
+
 test("标注独立保存，不改原始输出", async ({ page }) => {
   await renderFixture(page, "jiuli-p4", "constructed/p4-v3-conflict.json");
   await page.locator('[data-change-id="OR_001:gross_weight"]').click();

@@ -2,7 +2,7 @@ import type { SnapshotMaterial } from "@/lib/contracts/snapshot";
 import { newId } from "@/lib/hash";
 import { createSnapshot } from "@/lib/repositories/snapshots";
 import { FIELD_LABELS, P1_VALUE_KEYS } from "@/lib/schemas/common";
-import type { JiuliReadonlyConnector } from "./types";
+import { ConnectorError, type JiuliReadonlyConnector } from "./types";
 
 const CN_TO_KEY: Record<string, string> = Object.fromEntries(Object.entries(FIELD_LABELS).map(([k, v]) => [v, k]));
 
@@ -17,13 +17,13 @@ export async function buildJiuliSnapshot(
   const warnings: string[] = [];
   const customers = await connector.searchCustomers(sel.customerId, 1);
   const customer = customers.items.find((c) => c.customer_id === sel.customerId);
-  if (!customer) throw new Error("客户不存在或无权访问");
+  if (!customer) throw new ConnectorError("FORBIDDEN", "客户不存在或无权访问");
 
   let task: Record<string, unknown> | undefined;
   let lines: Record<string, unknown>[] = [];
   if (sel.taskId) {
     const facts = await connector.getTaskFacts(sel.taskId);
-    if (facts.task.customerId !== sel.customerId) throw new Error("任务不属于所选客户");
+    if (facts.task.customerId !== sel.customerId) throw new ConnectorError("FORBIDDEN", "任务不属于所选客户");
     task = facts.task;
     lines = facts.lines;
   }
