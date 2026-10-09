@@ -1,5 +1,6 @@
 "use client";
 import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
 import type { SelectionState } from "@/lib/contracts/renderer-config";
 import type { RunDetail } from "@/lib/client/types";
 
@@ -85,30 +86,52 @@ interface StudioState {
   set<K extends keyof StudioState>(k: K, v: StudioState[K]): void;
 }
 
-export const useStudio = create<StudioState>((set, get) => ({
-  activePromptId: "jiuli-p1",
-  workspaces: {},
-  runs: {},
-  selection: { runId: null },
-  resultTab: "visual",
-  editorPct: 42,
-  maximized: false,
-  sidebarCollapsed: false,
-  historyOpen: false,
-  evidenceOpen: false,
-  lastMode: {},
-  setActivePrompt: (id) => set({ activePromptId: id, selection: { runId: get().workspaces[id]?.runId ?? null } }),
-  patchWorkspace: (promptId, patch) =>
-    set((s) => ({ workspaces: { ...s.workspaces, [promptId]: { ...(s.workspaces[promptId] ?? emptyWorkspace()), ...patch } } })),
-  putRun: (detail) => set((s) => ({ runs: { ...s.runs, [detail.run.run_id]: detail } })),
-  // 选择状态归属于某次 Run；切换标签页时保持
-  select: (sel) => {
-    const ws = get().workspaces[get().activePromptId];
-    set({ selection: { runId: ws?.runId ?? null, ...sel } });
-  },
-  clearSelection: () => set((s) => ({ selection: { runId: s.selection.runId } })),
-  set: (k, v) => set({ [k]: v } as Partial<StudioState>),
-}));
+/**
+ * 工作区存到浏览器 localStorage，刷新不丢（草稿、输入选择、当前 Run 的 ID、布局）。
+ * Run 详情不存，按 ID 从服务端重新读取。skipHydration：挂载后再恢复，避免与服务端首屏不一致。
+ */
+export const useStudio = create<StudioState>()(
+  persist(
+    (set, get) => ({
+      activePromptId: "jiuli-p1",
+      workspaces: {},
+      runs: {},
+      selection: { runId: null },
+      resultTab: "visual",
+      editorPct: 42,
+      maximized: false,
+      sidebarCollapsed: false,
+      historyOpen: false,
+      evidenceOpen: false,
+      lastMode: {},
+      setActivePrompt: (id) => set({ activePromptId: id, selection: { runId: get().workspaces[id]?.runId ?? null } }),
+      patchWorkspace: (promptId, patch) =>
+        set((s) => ({ workspaces: { ...s.workspaces, [promptId]: { ...(s.workspaces[promptId] ?? emptyWorkspace()), ...patch } } })),
+      putRun: (detail) => set((s) => ({ runs: { ...s.runs, [detail.run.run_id]: detail } })),
+      // 选择状态归属于某次 Run；切换标签页时保持
+      select: (sel) => {
+        const ws = get().workspaces[get().activePromptId];
+        set({ selection: { runId: ws?.runId ?? null, ...sel } });
+      },
+      clearSelection: () => set((s) => ({ selection: { runId: s.selection.runId } })),
+      set: (k, v) => set({ [k]: v } as Partial<StudioState>),
+    }),
+    {
+      name: "prompt-studio:workspace",
+      version: 1,
+      storage: createJSONStorage(() => localStorage),
+      skipHydration: true,
+      partialize: (s) => ({ activePromptId: s.activePromptId, workspaces: s.workspaces, lastMode: s.lastMode, editorPct: s.editorPct, sidebarCollapsed: s.sidebarCollapsed }),
+      // 旧数据缺少新增字段时用默认值补齐
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<StudioState>;
+        const workspaces = Object.fromEntries(Object.entries(p.workspaces ?? {}).map(([id, w]) => [id, { ...emptyWorkspace(), ...w }]));
+        const activePromptId = p.activePromptId ?? current.activePromptId;
+        return { ...current, ...p, workspaces, selection: { runId: workspaces[activePromptId]?.runId ?? null } };
+      },
+    },
+  ),
+);
 
 export function useWorkspace(): [Workspace, (patch: Partial<Workspace>) => void, string] {
   const id = useStudio((s) => s.activePromptId);

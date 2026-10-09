@@ -138,6 +138,26 @@ test("请求预览与真实运行使用同一份输入：切换输入来源后�
   await expect(page.getByTestId("request-preview")).toHaveCount(0);
 });
 
+test("刷新页面不丢工作区：草稿、输入选择、当前结果都恢复", async ({ page }) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (m) => m.type() === "error" && consoleErrors.push(m.text()));
+  await renderFixture(page, "jiuli-p3", "constructed/p3-v3-multi-candidate.json");
+  await expect(page.locator('[data-table-id="orderRows"]')).toBeVisible();
+  await page.getByRole("button", { name: /^提示词/ }).click();
+  await page.getByLabel("System 提示词").fill("刷新前的草稿");
+  await page.reload();
+  // 仍在 P3，结果重新显示，且标明来自上次运行
+  await expect(page.locator('[data-prompt="jiuli-p3"]')).toHaveClass(/bg-ink-800/);
+  await expect(page.locator('[data-table-id="orderRows"]')).toBeVisible();
+  await expect(page.getByText("当前结果来自上次运行")).toBeVisible();
+  await page.getByRole("button", { name: /^提示词/ }).click();
+  await expect(page.getByLabel("System 提示词")).toHaveValue("刷新前的草稿");
+  await expect(page.getByText("未保存草稿")).toBeVisible();
+  await page.getByRole("button", { name: "输入" }).click();
+  await expect(page.locator('[data-fixture-id="constructed/p3-v3-multi-candidate.json"]')).toHaveClass(/ring-stamp/);
+  expect(consoleErrors).toEqual([]);
+});
+
 test("重渲染 / 回放 / 保存版本失败时显示错误，不静默", async ({ page }) => {
   await renderFixture(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
   const boom = (code: string) => (route: import("@playwright/test").Route) =>

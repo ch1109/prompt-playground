@@ -31,6 +31,22 @@ export function Playground({ projectId }: { projectId: string }) {
   const lastMode = s.lastMode[promptId];
   const dirty = !!detail && !!ws.runInputSig && !!lastMode && inputSignature(ws, lastMode) !== ws.runInputSig;
 
+  // 挂载后恢复本地保存的工作区（刷新不丢）
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    Promise.resolve(useStudio.persist.rehydrate()).then(() => setHydrated(true));
+  }, []);
+
+  // 当前 Run 详情不在内存时按 ID 重新读取；Run 已不存在则清掉引用
+  const runId = ws.runId;
+  const cached = !!(runId && s.runs[runId]);
+  useEffect(() => {
+    if (!hydrated || !runId || cached) return;
+    api<RunDetail>(`/api/runs/${runId}`)
+      .then(s.putRun)
+      .catch(() => s.patchWorkspace(promptId, { runId: null, runInputSig: null }));
+  }, [hydrated, runId, cached, promptId, s]);
+
   const loadRuns = useCallback(() => api<RunListItem[]>(`/api/runs?project=${projectId}`).then(setRuns), [projectId]);
   const loadSnapshots = useCallback(() => api<SnapshotListItem[]>(`/api/snapshots?project=${projectId}`).then(setSnapshots), [projectId]);
 
@@ -107,16 +123,24 @@ export function Playground({ projectId }: { projectId: string }) {
   }
 
   /** 选中样本时立即准备快照，让请求预览在运行前就显示实际要发送的内容 */
-  async function pickFixture(fixtureId: string) {
-    s.patchWorkspace(promptId, { fixtureId, fixtureSnapshotId: null });
+  async function pickFixture(fixtureId: string, pid = promptId) {
+    s.patchWorkspace(pid, { fixtureId, fixtureSnapshotId: null });
     try {
       const id = await fixtureSnapshot(fixtureId);
       // 期间用户又换了样本，就不覆盖
-      if (useStudio.getState().workspaces[promptId]?.fixtureId === fixtureId) s.patchWorkspace(promptId, { fixtureSnapshotId: id });
+      if (useStudio.getState().workspaces[pid]?.fixtureId === fixtureId) s.patchWorkspace(pid, { fixtureSnapshotId: id });
     } catch (e) {
       setError(e instanceof ApiError ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : String(e));
     }
   }
+
+  // 恢复后重新确认样本快照（本地记录的快照 ID 可能因清空数据库而失效；同内容会复用）
+  const fixturesRechecked = useRef(false);
+  useEffect(() => {
+    if (!hydrated || !fixtures.length || fixturesRechecked.current) return;
+    fixturesRechecked.current = true;
+    for (const [pid, w] of Object.entries(useStudio.getState().workspaces)) if (w.inputMode === "fixture" && w.fixtureId) pickFixture(w.fixtureId, pid);
+  });
 
   async function modelRun() {
     setError(null);
