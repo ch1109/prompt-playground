@@ -4,7 +4,7 @@ import type { ModelParams, PipelineResult, PromptKind, Run, RunMode } from "@/li
 import type { Diagnostic } from "@/lib/contracts/view-model";
 import type { InputSnapshot } from "@/lib/contracts/snapshot";
 import { newId, sha256, stableStringify } from "@/lib/hash";
-import { buildInput, renderUserTemplate } from "@/lib/input-builders";
+import { buildInput, INPUT_BUILDER_VERSION, renderUserTemplate } from "@/lib/input-builders";
 import { getProvider, redactSecrets } from "@/lib/models/openai-compatible";
 import { runPipeline } from "@/lib/pipeline/pipeline";
 import { findRendererConfig } from "@/lib/renderer-config/registry";
@@ -196,7 +196,7 @@ export async function modelRun(
     started_at: started,
     estimated_cost: null,
     label: input.label ?? `${info.model} 运行`,
-    input_builder_id: built.builderId,
+    input_builder_id: `${built.builderId}@${INPUT_BUILDER_VERSION}`,
     input_builder_warnings: built.warnings,
   };
   const noResult = { schema_id: null, schema_version: null, adapter_id: null, adapter_version: null, renderer_config_version: null, parse_diagnostics: [], schema_diagnostics: [], view_model: null, token_usage: null };

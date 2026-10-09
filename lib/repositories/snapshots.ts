@@ -2,7 +2,8 @@ import type { InputSnapshot, SnapshotMaterial, SnapshotSourceType } from "@/lib/
 import { newId, sha256, stableStringify } from "@/lib/hash";
 import { db } from "./db";
 
-export const INPUT_BUILDER_VERSION = "1.0.0";
+export { INPUT_BUILDER_VERSION } from "@/lib/input-builders";
+import { INPUT_BUILDER_VERSION } from "@/lib/input-builders";
 
 export function createSnapshot(input: {
   project_id: string;

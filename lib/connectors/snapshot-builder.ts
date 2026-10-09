@@ -2,7 +2,7 @@ import type { SnapshotMaterial } from "@/lib/contracts/snapshot";
 import { newId } from "@/lib/hash";
 import { createSnapshot } from "@/lib/repositories/snapshots";
 import { FIELD_LABELS, P1_VALUE_KEYS } from "@/lib/schemas/common";
-import { ConnectorError, type JiuliReadonlyConnector } from "./types";
+import { ConnectorError, type JiuliReadonlyConnector, type MaterialMetadata } from "./types";
 
 const CN_TO_KEY: Record<string, string> = Object.fromEntries(Object.entries(FIELD_LABELS).map(([k, v]) => [v, k]));
 
@@ -38,12 +38,15 @@ export async function buildJiuliSnapshot(
   const uniqueFileIds = [...new Set(fileIds)];
   const meta = uniqueFileIds.length ? await connector.getMaterialMetadata(uniqueFileIds) : [];
   const extracted: Record<string, unknown> = {};
+  // 单证分段与同单证关系：供 P1 输入构造区分发票 / 箱单（来自九立 Demo 文件元数据）
+  const materialSegments: Record<string, { segments: MaterialMetadata["segments"]; same_document_as: MaterialMetadata["same_document_as"] }> = {};
   const materials: SnapshotMaterial[] = [];
   for (const m of meta) {
     if (!m.authorized) warnings.push(`文件 ${m.file_id} 无访问授权，只保存元数据`);
     else if (!m.exists) warnings.push(`文件 ${m.file_id} 原文件不存在或已失效`);
     if (!m.has_text_content) warnings.push(`文件 ${m.file_id} 没有预处理文本，不能发送给仅支持文本的模型`);
     if (m.authorized && m.has_text_content && connector.getExtractedContent) extracted[m.file_id] = await connector.getExtractedContent(m.file_id);
+    materialSegments[m.file_id] = { segments: m.segments, same_document_as: m.same_document_as };
     materials.push({
       material_id: newId("mat"),
       file_id: m.file_id,
@@ -83,7 +86,7 @@ export async function buildJiuliSnapshot(
     source_version: task ? `draft.version=${String(task.version ?? "unknown")}` : null,
     data_contract_version: "jiuli-demo-mock@local",
     materials,
-    normalized_payload: { customer, task, lines, inspections: insp, relations, extracted, baseDraft },
+    normalized_payload: { customer, task, lines, inspections: insp, relations, extracted, materialSegments, baseDraft },
     warnings,
     parent_snapshot_id: sel.parentSnapshotId ?? null,
   });

@@ -5,7 +5,8 @@ import { FIELD_LABELS } from "@/lib/schemas/common";
 // 从快照显式构造 P1~P4 请求（v3 外层：schema_version / prompt / request_id / context / input）。
 // 构造是纯函数，只使用快照中的数据，不隐式拉取业务数据。
 
-export const INPUT_BUILDER_VERSION = "1.0.0";
+// 1.1.0：P1 按单证分段纳入发票 / 箱单辅助材料
+export const INPUT_BUILDER_VERSION = "1.1.0";
 
 export type BuildResult =
   | { ok: true; request: Record<string, unknown>; builderId: string; warnings: string[]; requiresFiles: string[] }
@@ -15,6 +16,8 @@ type Rec = Record<string, unknown>;
 const PCODE: Record<string, string> = { JIULI_P1: "P1", JIULI_P2: "P2", JIULI_P3: "P3", JIULI_P4: "P4" };
 const CN_TO_KEY: Record<string, string> = Object.fromEntries(Object.entries(FIELD_LABELS).map(([k, v]) => [v, k]));
 /** Demo 用 "UNKNOWN" 作缺失占位；按 v3 契约转为空字符串（构造规则，已版本化） */
+/** 九立 Demo 单证分段 kind → P1 material_type；其他种类不属于 P1 材料 */
+const P1_MATERIAL_TYPE: Record<string, string> = { invoice: "INVOICE", "packing-list": "PACKING_LIST" };
 const val = (v: unknown) => (v === undefined || v === null || v === "UNKNOWN" ? "" : String(v));
 
 function envelope(kind: PromptKind, snapshot: InputSnapshot, context: Rec, input: Rec) {
@@ -67,13 +70,41 @@ export function buildInput(kind: PromptKind, snapshot: InputSnapshot): BuildResu
       if (!task) return { ok: false, code: "NO_TASK", message: "快照中没有委托任务，无法构造 P1 输入" };
       const mainId = String(task.fileId);
       const supporting = ((task.supportingFileIds as string[]) ?? []).map(String);
-      if (supporting.length) warnings.push(`辅助材料 ${supporting.join(", ")} 的类型（发票/箱单）在 Demo 数据中未标明，未纳入请求`);
-      const materials = [{ file_id: mainId, material_type: "ORDER", segments: [], content: fileContent(mainId) ?? null }];
+      const segInfo = (payload.materialSegments as Record<string, { segments?: { kind: string; pages: number[] }[]; same_document_as?: string | null }> | undefined) ?? {};
+      const materials: { file_id: string; material_type: string; segments: string[]; content: unknown }[] = [
+        { file_id: mainId, material_type: "ORDER", segments: [], content: fileContent(mainId) ?? null },
+      ];
+      const included = new Set<string>();
+      for (const id of supporting) {
+        const info = segInfo[id];
+        if (info?.same_document_as === mainId) {
+          warnings.push(`辅助材料 ${id} 与主委托文件为同一单证，未重复纳入`);
+          continue;
+        }
+        const usable = (info?.segments ?? []).filter((s) => P1_MATERIAL_TYPE[s.kind] && s.pages.length);
+        const other = (info?.segments ?? []).filter((s) => !P1_MATERIAL_TYPE[s.kind]).map((s) => s.kind);
+        if (other.length) warnings.push(`辅助材料 ${id} 含 ${[...new Set(other)].join("/")}，不属于 P1 材料类型（ORDER/INVOICE/PACKING_LIST），该部分未纳入`);
+        if (!usable.length) {
+          if (!other.length) warnings.push(`辅助材料 ${id} 的单证类型（发票/箱单）在 Demo 数据中未标明，未纳入请求`);
+          continue;
+        }
+        // 同一文件含发票页与箱单页时按页拆成多条材料，内容只保留对应页（预处理文本按页存放时）
+        const content = fileContent(id) as { pages?: { page: number }[] } | undefined;
+        for (const s of usable) {
+          materials.push({
+            file_id: id,
+            material_type: P1_MATERIAL_TYPE[s.kind],
+            segments: s.pages.map((p) => `page:${p}`),
+            content: content && Array.isArray(content.pages) ? { ...content, pages: content.pages.filter((p) => s.pages.includes(p.page)) } : (content ?? null),
+          });
+        }
+        included.add(id);
+      }
       return {
         ok: true,
         builderId: "jiuli-demo-p1",
         warnings,
-        requiresFiles: missingText([mainId]),
+        requiresFiles: missingText([mainId, ...included]),
         request: envelope(kind, snapshot, { customer_directory: [{ customer_id: customer.customer_id, customer_name: customer.name, aliases: customer.aliases ?? [] }], normalization: {} }, { materials }),
       };
     }

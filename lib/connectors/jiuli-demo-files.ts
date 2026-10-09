@@ -205,6 +205,8 @@ export class JiuliDemoFilesConnector implements JiuliReadonlyConnector {
         authorized: okId && authorized.has(id),
         exists: !!abs && existsSync(/*turbopackIgnore: true*/ abs),
         has_text_content: okId && existsSync(/*turbopackIgnore: true*/ this.safePath(resolve(this.root, "demo-generated", "extracted"), `${id}.json`)),
+        segments: Array.isArray(f?.documentSegments) ? (f.documentSegments as Rec[]).map((s) => ({ kind: String(s.kind), pages: ((s.pages as unknown[]) ?? []).map(Number) })) : undefined,
+        same_document_as: (f?.sameBusinessDocumentAs as string | undefined) ?? null,
       };
     });
   }

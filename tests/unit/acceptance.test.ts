@@ -656,3 +656,26 @@ describe("提示词源文件更新检测", () => {
     expect(after.find((x) => x.version_id === seed.version_id)!.system_prompt).toBe(seed.system_prompt);
   });
 });
+
+describe.skipIf(!hasDemo)("九立导入 P1 带辅助材料", () => {
+  it("按 documentSegments 拆为 INVOICE / PACKING_LIST，内容只含对应页；无法判断类型的才警告", async () => {
+    const { buildInput, INPUT_BUILDER_VERSION } = await import("@/lib/input-builders");
+    const c = new JiuliDemoFilesConnector({ root: DEMO_ROOT, allowedCustomers: "*" });
+    const drafts = JSON.parse(readFileSync(join(DEMO_ROOT, "demo-generated/mock/entrustment-drafts.json"), "utf8")) as { id: string; customerId: string }[];
+    const task = drafts.find((d) => d.id === "D-1df4f4d83480")!;
+    const snap = await buildJiuliSnapshot(c, { projectId: "jiuli", customerId: task.customerId, taskId: task.id, batchIds: [] });
+    const built = buildInput("JIULI_P1", snap);
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    const mats = (built.request.input as { materials: { file_id: string; material_type: string; segments: string[]; content: { pages?: { page: number }[] } | null }[] }).materials;
+    expect(mats[0].material_type).toBe("ORDER");
+    const inv = mats.find((m) => m.file_id === "F-80d89610605b" && m.material_type === "INVOICE")!;
+    const pl = mats.find((m) => m.file_id === "F-80d89610605b" && m.material_type === "PACKING_LIST")!;
+    expect(inv.segments).toEqual(["page:1"]);
+    expect(pl.segments).toEqual(["page:2", "page:3"]);
+    expect(inv.content!.pages!.map((p) => p.page)).toEqual([1]);
+    expect(pl.content!.pages!.map((p) => p.page)).toEqual([2, 3]);
+    expect(built.warnings.join()).not.toContain("未标明");
+    expect(INPUT_BUILDER_VERSION).toBe("1.1.0");
+  });
+});

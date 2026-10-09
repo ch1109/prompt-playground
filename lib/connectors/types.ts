@@ -67,6 +67,10 @@ export interface MaterialMetadata {
   authorized: boolean;
   exists: boolean;
   has_text_content: boolean;
+  /** 文件内单证分段（九立 Demo documentSegments：kind 如 invoice / packing-list，pages 从 1 开始） */
+  segments?: { kind: string; pages: number[] }[];
+  /** 与另一文件为同一业务单证（例如同一委托书的 xls 与 pdf） */
+  same_document_as?: string | null;
 }
 
 export interface AuthorizedPreview {
