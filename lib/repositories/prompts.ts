@@ -48,7 +48,7 @@ export function ensureSeed() {
   const d = db();
   if (seeded.has(d)) return;
   const now = new Date().toISOString();
-  d.prepare("INSERT OR IGNORE INTO projects VALUES (?,?,?,?)").run(DEFAULT_PROJECT_ID, "九立 AI 核对", "P1~P4 结构化提示词调试", now);
+  d.prepare("INSERT OR IGNORE INTO projects (project_id, name, description, created_at) VALUES (?,?,?,?)").run(DEFAULT_PROJECT_ID, "九立 AI 核对", "P1~P4 结构化提示词调试", now);
   for (const s of SEED) {
     d.prepare("INSERT OR IGNORE INTO prompts VALUES (?,?,?,?,?,?)").run(
       s.id,
@@ -114,38 +114,78 @@ export function createProject(input: { name: string; description?: string; templ
   if (!name) throw new Error("项目名称不能为空");
   const d = db();
   const project = { project_id: newId("proj"), name, description: input.description?.trim() || null, created_at: new Date().toISOString() };
-  d.prepare("INSERT INTO projects VALUES (?,?,?,?)").run(project.project_id, project.name, project.description, project.created_at);
+  d.prepare("INSERT INTO projects (project_id, name, description, created_at) VALUES (?,?,?,?)").run(project.project_id, project.name, project.description, project.created_at);
   const sources = input.template === "JIULI" ? listPrompts(DEFAULT_PROJECT_ID) : listPrompts(DEFAULT_PROJECT_ID).filter((x) => x.prompt_kind === "GENERIC_JSON");
   for (const src of sources) {
     const promptId = `${project.project_id}-${src.prompt_id.replace(/^jiuli-/, "")}`;
     d.prepare("INSERT INTO prompts VALUES (?,?,?,?,?,?)").run(promptId, project.project_id, src.prompt_kind, src.name, src.active_schema_version, src.renderer_id);
-    const latest = listVersions(src.prompt_id)[0];
-    if (!latest) continue;
-    d.prepare("INSERT INTO prompt_versions VALUES (?,?,?,?,?,?,?,?,?,?)").run(
-      newId("pv"),
-      promptId,
-      `复制自 九立 AI 核对 · ${latest.label}`,
-      latest.system_prompt,
-      latest.user_prompt_template,
-      latest.variables_schema,
-      latest.content_hash,
-      project.created_at,
-      null,
-      `copy:${latest.version_id}`,
-    );
+    copyLatestVersion(src.prompt_id, promptId, project.created_at);
   }
   return project;
 }
 
-export function listProjects() {
+/** 把九立项目某提示词的最新版本复制为新提示词的初始版本（source=copy:<原版本>） */
+function copyLatestVersion(srcPromptId: string, promptId: string, createdAt: string) {
+  const latest = listVersions(srcPromptId)[0];
+  if (!latest) return;
+  db()
+    .prepare("INSERT INTO prompt_versions VALUES (?,?,?,?,?,?,?,?,?,?)")
+    .run(newId("pv"), promptId, `复制自 九立 AI 核对 · ${latest.label}`, latest.system_prompt, latest.user_prompt_template, latest.variables_schema, latest.content_hash, createdAt, null, `copy:${latest.version_id}`);
+}
+
+export interface ProjectRow {
+  project_id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  archived_at: string | null;
+}
+
+/** 全部项目（含已归档，由界面分组显示） */
+export function listProjects(): ProjectRow[] {
   ensureSeed();
-  return db().prepare("SELECT * FROM projects ORDER BY created_at").all();
+  return db().prepare("SELECT project_id, name, description, created_at, archived_at FROM projects ORDER BY created_at").all() as unknown as ProjectRow[];
+}
+
+/** 改名 / 归档 / 恢复。归档只做标记，数据全部保留；默认项目不能归档。项目不存在返回 undefined */
+export function updateProject(projectId: string, patch: { name?: string; archived?: boolean }): ProjectRow | undefined {
+  ensureSeed();
+  const d = db();
+  if (!d.prepare("SELECT 1 FROM projects WHERE project_id = ?").get(projectId)) return undefined;
+  if (patch.name !== undefined) {
+    const name = patch.name.trim();
+    if (!name) throw new Error("项目名称不能为空");
+    d.prepare("UPDATE projects SET name = ? WHERE project_id = ?").run(name, projectId);
+  }
+  if (patch.archived !== undefined) {
+    if (patch.archived && projectId === DEFAULT_PROJECT_ID) throw new Error("默认项目「九立 AI 核对」不能归档");
+    d.prepare("UPDATE projects SET archived_at = ? WHERE project_id = ?").run(patch.archived ? new Date().toISOString() : null, projectId);
+  }
+  return listProjects().find((p) => p.project_id === projectId);
+}
+
+/**
+ * 在项目内新建提示词。P1~P4 以九立项目同种类最新版本为起点（沿用其 Schema）；通用 JSON 从默认提示开始。
+ */
+export function createPrompt(input: { projectId: string; name: string; kind: PromptKind }): PromptDefinition {
+  ensureSeed();
+  const d = db();
+  const name = input.name.trim();
+  if (!name) throw new Error("提示词名称不能为空");
+  if (!d.prepare("SELECT 1 FROM projects WHERE project_id = ?").get(input.projectId)) throw new Error("项目不存在");
+  const src = listPrompts(DEFAULT_PROJECT_ID).find((p) => p.prompt_kind === input.kind);
+  if (!src) throw new Error(`不支持的提示词种类 ${input.kind}`);
+  const prompt: PromptDefinition = { prompt_id: newId("prm"), project_id: input.projectId, prompt_kind: input.kind, name, active_schema_version: src.active_schema_version, renderer_id: src.renderer_id };
+  d.prepare("INSERT INTO prompts VALUES (?,?,?,?,?,?)").run(prompt.prompt_id, prompt.project_id, prompt.prompt_kind, prompt.name, prompt.active_schema_version, prompt.renderer_id);
+  if (input.kind === "GENERIC_JSON") insertSeed(prompt.prompt_id, "默认", "只输出一个合法 JSON 对象。", "studio-editor", null);
+  else copyLatestVersion(src.prompt_id, prompt.prompt_id, new Date().toISOString());
+  return prompt;
 }
 
 export function listPrompts(projectId: string): PromptDefinition[] {
   ensureSeed();
-  // 通用 JSON 排最后：进入项目时默认落在业务 Prompt（P1）
-  return db().prepare("SELECT * FROM prompts WHERE project_id = ? ORDER BY prompt_kind = 'GENERIC_JSON', prompt_id").all(projectId) as unknown as PromptDefinition[];
+  // 按种类 P1→P4 排列，通用 JSON 排最后（进入项目默认落在 P1）；同种类按创建顺序
+  return db().prepare("SELECT * FROM prompts WHERE project_id = ? ORDER BY prompt_kind = 'GENERIC_JSON', prompt_kind, rowid").all(projectId) as unknown as PromptDefinition[];
 }
 
 export function getPrompt(promptId: string): PromptDefinition | undefined {

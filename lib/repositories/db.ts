@@ -66,6 +66,9 @@ export function db(): DatabaseSync {
     const cols = (d.prepare("PRAGMA table_info(input_snapshots)").all() as { name: string }[]).map((c) => c.name);
     if (!cols.includes("expires_at")) d.exec("ALTER TABLE input_snapshots ADD COLUMN expires_at TEXT");
     if (!cols.includes("deleted_at")) d.exec("ALTER TABLE input_snapshots ADD COLUMN deleted_at TEXT");
+    // 迁移：项目归档时间
+    const projCols = (d.prepare("PRAGMA table_info(projects)").all() as { name: string }[]).map((c) => c.name);
+    if (!projCols.includes("archived_at")) d.exec("ALTER TABLE projects ADD COLUMN archived_at TEXT");
     // 迁移：标注修改与删除时间（删除只做标记留痕）
     const annCols = (d.prepare("PRAGMA table_info(annotations)").all() as { name: string }[]).map((c) => c.name);
     if (!annCols.includes("updated_at")) d.exec("ALTER TABLE annotations ADD COLUMN updated_at TEXT");

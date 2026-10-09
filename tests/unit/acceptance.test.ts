@@ -817,6 +817,37 @@ describe("多项目", () => {
     expect(listRuns("jiuli").some((r) => r.prompt_id === p2.prompt_id)).toBe(false);
     expect(() => createProject({ name: " ", template: "BLANK" })).toThrow();
   });
+
+  it("项目可改名、归档与恢复（数据保留）；默认项目不能归档", async () => {
+    const { createProject, updateProject, listProjects, listPrompts } = await import("@/lib/repositories/prompts");
+    const p = createProject({ name: "旧名", template: "BLANK" });
+    const find = () => listProjects().find((x) => x.project_id === p.project_id)!;
+    expect(updateProject(p.project_id, { name: "  新名  " })!.name).toBe("新名");
+    expect(find().archived_at).toBeNull();
+    updateProject(p.project_id, { archived: true });
+    expect(find().archived_at).toBeTruthy();
+    expect(listPrompts(p.project_id)).toHaveLength(1);
+    updateProject(p.project_id, { archived: false });
+    expect(find().archived_at).toBeNull();
+    expect(() => updateProject(p.project_id, { name: " " })).toThrow();
+    expect(() => updateProject("jiuli", { archived: true })).toThrow();
+    expect(updateProject("no-such", { name: "x" })).toBeUndefined();
+  });
+
+  it("项目内可新建提示词：P1~P4 以九立项目同种类最新版本为起点，通用 JSON 用默认提示", async () => {
+    const { createProject, createPrompt, listPrompts, listVersions } = await import("@/lib/repositories/prompts");
+    const p = createProject({ name: "加提示词", template: "BLANK" });
+    const p3 = createPrompt({ projectId: p.project_id, name: " P3 实验 ", kind: "JIULI_P3" });
+    expect(p3.name).toBe("P3 实验");
+    expect(p3.active_schema_version).toBe("jiuli-ai-v3");
+    expect(listVersions(p3.prompt_id)[0].system_prompt).toBe(listVersions("jiuli-p3")[0].system_prompt);
+    const g = createPrompt({ projectId: p.project_id, name: "摘要", kind: "GENERIC_JSON" });
+    expect(listVersions(g.prompt_id)[0].system_prompt).toContain("JSON");
+    expect(listPrompts(p.project_id)).toHaveLength(3);
+    expect(listPrompts(p.project_id).at(-1)!.prompt_kind).toBe("GENERIC_JSON");
+    expect(() => createPrompt({ projectId: "no-such", name: "x", kind: "JIULI_P1" })).toThrow();
+    expect(() => createPrompt({ projectId: p.project_id, name: " ", kind: "JIULI_P1" })).toThrow();
+  });
 });
 
 describe("文件导入（PDF / Excel / 图片）", () => {

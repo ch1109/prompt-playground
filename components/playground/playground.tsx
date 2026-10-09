@@ -3,6 +3,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { api, ApiError } from "@/lib/client/api";
 import type { CapabilityDTO, FixtureSummary, PromptDef, PromptVersionDTO, ProviderInfoDTO, RunDetail, RunListItem, SnapshotListItem } from "@/lib/client/types";
+import type { PromptKind } from "@/lib/contracts/run";
 import { emptyWorkspace, inputSignature, runSnapshotId, useStudio } from "@/lib/state/studio-store";
 import { Badge, Btn, cx, runStatusView } from "@/components/ui";
 import { EditorPane } from "./editor-pane";
@@ -28,7 +29,16 @@ function useNarrow(): boolean {
 interface ProjectDTO {
   project_id: string;
   name: string;
+  archived_at?: string | null;
 }
+
+const NEW_PROMPT_KINDS: [PromptKind, string][] = [
+  ["JIULI_P1", "P1 委托材料识别"],
+  ["JIULI_P2", "P2 查货材料识别"],
+  ["JIULI_P3", "P3 商品对应关系"],
+  ["JIULI_P4", "P4 字段核验"],
+  ["GENERIC_JSON", "通用 JSON"],
+];
 
 export function Playground({ projectId }: { projectId: string }) {
   const s = useStudio();
@@ -36,6 +46,9 @@ export function Playground({ projectId }: { projectId: string }) {
   const [projects, setProjects] = useState<ProjectDTO[] | null>(null);
   const [promptsLoaded, setPromptsLoaded] = useState(false);
   const [newProject, setNewProject] = useState<{ name: string; template: "JIULI" | "BLANK" } | null>(null);
+  /** 正在编辑的项目名称（改名表单） */
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [newPrompt, setNewPrompt] = useState<{ name: string; kind: PromptKind } | null>(null);
   const [prompts, setPrompts] = useState<PromptDef[]>([]);
   const [versions, setVersions] = useState<Record<string, PromptVersionDTO[]>>({});
   const [fixtures, setFixtures] = useState<FixtureSummary[]>([]);
@@ -62,6 +75,54 @@ export function Playground({ projectId }: { projectId: string }) {
   useEffect(() => {
     Promise.resolve(useStudio.persist.rehydrate()).then(() => setHydrated(true));
   }, []);
+
+  const loadProjects = useCallback(() => api<ProjectDTO[]>("/api/projects").then(setProjects).catch((e) => setError(e.message)), []);
+  const loadPrompts = useCallback(
+    () =>
+      api<PromptDef[]>(`/api/prompts?project=${projectId}`)
+        .then((p) => {
+          setPrompts(p);
+          setPromptsLoaded(true);
+          return p;
+        })
+        .catch((e) => {
+          setError(e.message);
+          return [] as PromptDef[];
+        }),
+    [projectId],
+  );
+  const project = projects?.find((p) => p.project_id === projectId);
+
+  async function updateProject(patch: { name?: string; archived?: boolean }) {
+    setError(null);
+    try {
+      await api(`/api/projects/${encodeURIComponent(projectId)}`, { method: "PATCH", json: patch });
+      setRenaming(null);
+      await loadProjects();
+      return true;
+    } catch (e) {
+      report(e);
+      return false;
+    }
+  }
+
+  async function archiveProject() {
+    if (!window.confirm(`归档项目「${project?.name}」？\n\n归档后它移到下拉框的「已归档」分组，运行、快照、标注全部保留，可随时恢复。`)) return;
+    if (await updateProject({ archived: true })) router.push("/projects/jiuli/playground");
+  }
+
+  async function createPrompt() {
+    if (!newPrompt?.name.trim()) return setError("请填写提示词名称");
+    setError(null);
+    try {
+      const p = await api<PromptDef>("/api/prompts", { json: { projectId, ...newPrompt } });
+      setNewPrompt(null);
+      await loadPrompts();
+      s.setActivePrompt(p.prompt_id);
+    } catch (e) {
+      report(e);
+    }
+  }
 
   // 当前选中的 Prompt 不属于本项目（例如刚切换项目）→ 选本项目第一个
   useEffect(() => {
@@ -128,17 +189,12 @@ export function Playground({ projectId }: { projectId: string }) {
   const loadSnapshots = useCallback(() => api<SnapshotListItem[]>(`/api/snapshots?project=${projectId}&limit=${snapshotLimit}`).then(setSnapshots), [projectId, snapshotLimit]);
 
   useEffect(() => {
-    api<ProjectDTO[]>("/api/projects").then(setProjects).catch((e) => setError(e.message));
-    api<PromptDef[]>(`/api/prompts?project=${projectId}`)
-      .then((p) => {
-        setPrompts(p);
-        setPromptsLoaded(true);
-      })
-      .catch((e) => setError(e.message));
+    loadProjects();
+    loadPrompts();
     api<{ items: FixtureSummary[] }>("/api/fixtures").then((r) => setFixtures(r.items));
     api<ProviderInfoDTO>("/api/models").then(setProvider);
     api<CapabilityDTO>("/api/connectors/jiuli/capabilities").then(setCapability).catch(() => setCapability(null));
-  }, [projectId]);
+  }, [loadProjects, loadPrompts]);
   useEffect(() => {
     loadRuns();
   }, [loadRuns]);
@@ -396,12 +452,49 @@ export function Playground({ projectId }: { projectId: string }) {
                 className="w-full rounded border border-ink-700 bg-ink-950 px-1 py-0.5 text-[12.5px]"
               >
                 {!projects?.some((p) => p.project_id === projectId) && <option value={projectId}>{projects ? "（项目不存在）" : "…"}</option>}
-                {projects?.map((p) => (
-                  <option key={p.project_id} value={p.project_id}>
-                    {p.name}
-                  </option>
-                ))}
+                {projects
+                  ?.filter((p) => !p.archived_at)
+                  .map((p) => (
+                    <option key={p.project_id} value={p.project_id}>
+                      {p.name}
+                    </option>
+                  ))}
+                {projects?.some((p) => p.archived_at) && (
+                  <optgroup label="已归档">
+                    {projects
+                      .filter((p) => p.archived_at)
+                      .map((p) => (
+                        <option key={p.project_id} value={p.project_id}>
+                          {p.name}（已归档）
+                        </option>
+                      ))}
+                  </optgroup>
+                )}
               </select>
+              {project?.archived_at && (
+                <div className="flex items-center gap-1 rounded border border-risk/40 bg-risk/10 px-1.5 py-1 text-[11px] text-risk" data-testid="project-archived">
+                  此项目已归档
+                  <button onClick={() => updateProject({ archived: false })} className="ml-auto text-info hover:underline">
+                    恢复
+                  </button>
+                </div>
+              )}
+              {renaming !== null && (
+                <div className="space-y-1 rounded border border-ink-700 p-1.5" data-testid="rename-project-form">
+                  <input
+                    value={renaming}
+                    onChange={(e) => setRenaming(e.target.value)}
+                    aria-label="新项目名称"
+                    className="w-full rounded border border-ink-700 bg-ink-950 px-1.5 py-0.5 text-[12px]"
+                  />
+                  <div className="flex gap-1">
+                    <Btn tone="primary" onClick={() => updateProject({ name: renaming })}>
+                      保存
+                    </Btn>
+                    <Btn onClick={() => setRenaming(null)}>取消</Btn>
+                  </div>
+                </div>
+              )}
               {newProject ? (
                 <div className="space-y-1 rounded border border-ink-700 p-1.5" data-testid="new-project-form">
                   <input
@@ -428,12 +521,61 @@ export function Playground({ projectId }: { projectId: string }) {
                   </div>
                 </div>
               ) : (
-                <button onClick={() => setNewProject({ name: "", template: "JIULI" })} className="text-[11.5px] text-info hover:underline">
-                  ＋ 新建项目
+                <div className="flex gap-2 text-[11.5px]">
+                  <button onClick={() => setNewProject({ name: "", template: "JIULI" })} className="text-info hover:underline">
+                    ＋ 新建项目
+                  </button>
+                  {project && (
+                    <button onClick={() => setRenaming(project.name)} className="text-ink-400 hover:text-ink-100">
+                      改名
+                    </button>
+                  )}
+                  {project && !project.archived_at && projectId !== "jiuli" && (
+                    <button onClick={archiveProject} className="text-ink-400 hover:text-ink-100">
+                      归档
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center px-3 pt-2 pb-1 text-[10.5px] tracking-widest text-ink-400">
+              提示词
+              {project && !newPrompt && (
+                <button onClick={() => setNewPrompt({ name: "", kind: "JIULI_P1" })} className="ml-auto tracking-normal text-info hover:underline" aria-label="新建提示词" title="在本项目新建提示词">
+                  ＋ 新建
                 </button>
               )}
             </div>
-            <div className="px-3 pt-2 pb-1 text-[10.5px] tracking-widest text-ink-400">提示词</div>
+            {newPrompt && (
+              <div className="mx-3 mb-1 space-y-1 rounded border border-ink-700 p-1.5" data-testid="new-prompt-form">
+                <input
+                  value={newPrompt.name}
+                  onChange={(e) => setNewPrompt({ ...newPrompt, name: e.target.value })}
+                  placeholder="提示词名称"
+                  aria-label="提示词名称"
+                  className="w-full rounded border border-ink-700 bg-ink-950 px-1.5 py-0.5 text-[12px]"
+                />
+                <select
+                  value={newPrompt.kind}
+                  onChange={(e) => setNewPrompt({ ...newPrompt, kind: e.target.value as PromptKind })}
+                  aria-label="提示词种类"
+                  className="w-full rounded border border-ink-700 bg-ink-950 px-1 py-0.5 text-[12px]"
+                >
+                  {NEW_PROMPT_KINDS.map(([k, l]) => (
+                    <option key={k} value={k}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10.5px] text-ink-400">{newPrompt.kind === "GENERIC_JSON" ? "从默认提示开始，结果按 JSON 树展示。" : "以九立项目同种类的最新版本为起点。"}</p>
+                <div className="flex gap-1">
+                  <Btn tone="primary" onClick={createPrompt}>
+                    创建
+                  </Btn>
+                  <Btn onClick={() => setNewPrompt(null)}>取消</Btn>
+                </div>
+              </div>
+            )}
             <ul>
               {prompts.map((p, i) => (
                 <li key={p.prompt_id} className="rise" style={{ animationDelay: `${i * 50}ms` }}>

@@ -357,6 +357,45 @@ test("重渲染 / 回放 / 保存版本失败时显示错误，不静默", async
   await expect(page.getByLabel("新版本名称")).toHaveValue("会失败的版本");
 });
 
+test("项目可改名、归档、恢复；项目内可新建提示词；默认项目不能归档", async ({ page }) => {
+  const created = await page.request.post("/api/projects", { data: { name: `管理测试 ${Date.now()}`, template: "BLANK" } }).then((r) => r.json());
+  const pid: string = created.data.project_id;
+  await page.goto(`/projects/${pid}/playground`);
+  const sidebar = page.getByTestId("sidebar");
+  // 改名
+  const newName = `改名后 ${Date.now()}`;
+  await sidebar.getByRole("button", { name: "改名" }).click();
+  await page.getByLabel("新项目名称").fill(newName);
+  await page.getByTestId("rename-project-form").getByRole("button", { name: "保存" }).click();
+  await expect(page.locator("header")).toContainText(newName);
+  // 新建提示词（P3），创建后自动选中
+  await sidebar.getByRole("button", { name: "新建提示词" }).click();
+  await page.getByLabel("提示词名称").fill("P3 实验版");
+  await page.getByLabel("提示词种类").selectOption("JIULI_P3");
+  await page.getByTestId("new-prompt-form").getByRole("button", { name: "创建" }).click();
+  await expect(sidebar.locator("[data-prompt]")).toHaveCount(2);
+  await expect(page.locator("header")).toContainText("P3 实验版");
+  await page.getByRole("button", { name: /^提示词/ }).click();
+  await expect(page.getByLabel("System 提示词")).toHaveValue(/P3/);
+  // 归档：先取消一次
+  page.once("dialog", (d) => d.dismiss());
+  await sidebar.getByRole("button", { name: "归档" }).click();
+  await expect(page).toHaveURL(new RegExp(pid));
+  page.once("dialog", (d) => d.accept());
+  await sidebar.getByRole("button", { name: "归档" }).click();
+  await expect(page).toHaveURL(/\/projects\/jiuli\/playground/);
+  // 默认项目没有归档按钮
+  await expect(sidebar.getByRole("button", { name: "归档" })).toHaveCount(0);
+  await expect(page.getByLabel("切换项目").locator("option", { hasText: `${newName}（已归档）` })).toHaveCount(1);
+  // 进入已归档项目可恢复，数据还在
+  await page.getByLabel("切换项目").selectOption(pid);
+  await expect(page.getByTestId("project-archived")).toBeVisible();
+  await expect(sidebar.locator("[data-prompt]")).toHaveCount(2);
+  await page.getByTestId("project-archived").getByRole("button", { name: "恢复" }).click();
+  await expect(page.getByTestId("project-archived")).toHaveCount(0);
+  await expect(page.getByLabel("切换项目").locator("option", { hasText: "（已归档）" }).filter({ hasText: newName })).toHaveCount(0);
+});
+
 test("请求预览可展开 system 全文，并能复制全部发送内容", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/projects/jiuli/playground");
