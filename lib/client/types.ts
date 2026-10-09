@@ -50,6 +50,8 @@ export interface RunDetail {
   request: unknown;
   /** 引用的快照已删除/到期的时间 */
   snapshot_deleted_at?: string | null;
+  /** 运行时所用 Prompt 版本的名称 */
+  prompt_version_label?: string | null;
 }
 
 export interface RunListItem {

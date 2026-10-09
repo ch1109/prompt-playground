@@ -323,7 +323,16 @@ function MetaTab({ detail }: { detail: RunDetail }) {
         <Row k="模式 / 状态" v={`${r.mode} / ${r.status}`} />
         <Row k="标签" v={r.label} />
         <Row k="Prompt / 种类" v={`${r.prompt_id} / ${r.prompt_kind}`} />
-        <Row k="Prompt 版本" v={r.prompt_version_id ? `${r.prompt_version_id}${r.is_unsaved_draft ? "（运行时为未保存草稿）" : ""}` : r.mode === "RENDER_ONLY" ? "不适用（仅渲染）" : "未保存草稿"} />
+        <Row
+          k="Prompt 版本"
+          v={
+            r.prompt_version_id
+              ? `${detail.prompt_version_label ? `${detail.prompt_version_label}（${r.prompt_version_id}）` : r.prompt_version_id}${r.is_unsaved_draft ? "（运行时为基于此版本的未保存草稿）" : ""}`
+              : r.mode === "RENDER_ONLY"
+                ? "不适用（仅渲染）"
+                : "未保存草稿"
+          }
+        />
         <Row k="实际提示词 Hash" v={r.actual_prompt_hash} />
         <Row k="构造输入 Hash" v={r.built_input_hash} />
         <Row k="输入构造器" v={r.input_builder_id} />

@@ -131,6 +131,32 @@ test("标注类型精简（P3 才有候选/关系类型），保存后提示已�
   await expect(options).toHaveText(["模型错了", "正确候选（P3）", "错误关系（P3）", "备注"]);
 });
 
+test("运行信息与运行对比显示版本名称，而不只是版本 ID", async ({ page }) => {
+  await renderFixture(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
+  const runs = await page.request.get("/api/runs?project=jiuli&promptId=jiuli-p1").then((r) => r.json());
+  const [id1, id2] = [runs.data[0].run_id, runs.data[1].run_id];
+  const labels: Record<string, string> = { [id1]: "版本甲", [id2]: "版本乙" };
+  await page.route(/\/api\/runs\/run_[^/]+$/, async (r) => {
+    const res = await r.fetch();
+    const body = await res.json();
+    const id = body.data.run.run_id as string;
+    body.data.run = { ...body.data.run, mode: "MODEL_RUN", prompt_version_id: `pv_${id}`, is_unsaved_draft: false };
+    body.data.prompt_version_label = labels[id] ?? null;
+    await r.fulfill({ response: res, json: body });
+  });
+  await page.reload();
+  await page.getByRole("tab", { name: "运行信息" }).click();
+  await expect(page.getByTestId("tab-meta")).toContainText("版本甲（pv_");
+  await page.getByRole("button", { name: /运行历史/ }).click();
+  await page.getByLabel(`对比 ${id1}`).check();
+  await page.getByLabel(`对比 ${id2}`).check();
+  await page.getByRole("button", { name: "对比 2/2" }).click();
+  const row = page.getByTestId("compare-metrics").locator("tr", { hasText: "Prompt 版本" });
+  await expect(row).toContainText("版本甲");
+  await expect(row).toContainText("版本乙");
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
 test("AT19 来源无原文：显示 METADATA_ONLY / MISSING，不提供越权下载", async ({ page }) => {
   await renderFixture(page, "jiuli-p3", "constructed/p3-v3-multi-candidate.json");
   await page.locator('[data-table-id="orderRows"] [data-row-id="OR_001"] [data-field="match_status"]').click();

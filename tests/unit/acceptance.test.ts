@@ -703,6 +703,15 @@ describe("运行对比：提示词差异与关键指标", () => {
     // 仅渲染的 Run 没有提示词：明确为 null，而不是"无差异"
     expect(compareRuns(base, b).system).toBeNull();
   });
+  it("Prompt 版本显示版本名称（未保存草稿另行标注），没有名称时才显示 ID", async () => {
+    const { compareRuns } = await import("@/components/playground/run-compare");
+    const base = renderOnly({ projectId: "jiuli", promptId: "jiuli-p2", raw: "{}" });
+    const a = { ...base, mode: "MODEL_RUN" as const, prompt_version_id: "pv_a", is_unsaved_draft: false };
+    const b = { ...a, prompt_version_id: "pv_b", is_unsaved_draft: true };
+    const row = compareRuns(a, b, ["v3.0 原文", "fix1"]).metrics.find((m) => m.key === "Prompt 版本")!;
+    expect(row).toMatchObject({ a: "v3.0 原文", b: "fix1（基于此版本的未保存草稿）", differs: true });
+    expect(compareRuns(a, b).metrics.find((m) => m.key === "Prompt 版本")!.a).toBe("pv_a");
+  });
 });
 
 describe("标注导出", () => {

@@ -41,13 +41,20 @@ function textHunks(a?: string, b?: string): StructuredPatchHunk[] | null {
 }
 
 /** 两次 Run 的关键指标与实际发送提示词的差异（仅对比，不代表准确率） */
-export function compareRuns(a: Run, b: Run) {
+/** 版本显示：优先版本名称，其次 ID；运行时为未保存草稿的另行标注 */
+function versionText(r: Run, label?: string | null) {
+  if (!r.prompt_version_id) return r.mode === "MODEL_RUN" ? "未保存草稿" : "—";
+  const name = label || r.prompt_version_id;
+  return r.is_unsaved_draft ? `${name}（基于此版本的未保存草稿）` : name;
+}
+
+export function compareRuns(a: Run, b: Run, versionLabels: [string | null | undefined, string | null | undefined] = [undefined, undefined]) {
   const schemaErrors = (r: Run) => String(r.schema_diagnostics.filter((d) => d.level === "ERROR").length);
   const rows: [string, (r: Run) => string][] = [
     ["状态", (r) => r.status],
     ["模式", (r) => r.mode],
     ["模型", (r) => dash(r.model_name)],
-    ["Prompt 版本", (r) => (r.prompt_version_id ? `${r.prompt_version_id}${r.is_unsaved_draft ? "（未保存草稿）" : ""}` : r.mode === "MODEL_RUN" ? "未保存草稿" : "—")],
+    ["Prompt 版本", (r) => versionText(r, versionLabels[r === a ? 0 : 1])],
     ["实际提示词 Hash", (r) => dash(r.actual_prompt_hash?.slice(0, 12))],
     ["构造输入 Hash", (r) => dash(r.built_input_hash?.slice(0, 12))],
     ["输入快照", (r) => dash(r.input_snapshot_id)],
@@ -101,7 +108,7 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
     api<RunDetail>(`/api/runs/${ids[1]}`).then(setB);
   }, [ids]);
   const rows = useMemo(() => (a && b ? diffJson(a.run.parsed_json ?? a.run.raw_response, b.run.parsed_json ?? b.run.raw_response) : []), [a, b]);
-  const cmp = useMemo(() => (a && b ? compareRuns(a.run, b.run) : null), [a, b]);
+  const cmp = useMemo(() => (a && b ? compareRuns(a.run, b.run, [a.prompt_version_label, b.prompt_version_label]) : null), [a, b]);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-8" role="dialog" aria-label="对比两次运行">
       <div className="flex max-h-full w-full max-w-5xl flex-col rounded-md border border-ink-600 bg-ink-900 shadow-2xl">
