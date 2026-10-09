@@ -63,6 +63,7 @@ export interface RunListItem {
   model_name: string | null;
   is_unsaved_draft: boolean;
   replay_of_run_id: string | null;
+  schema_id: string | null;
 }
 
 export interface SnapshotListItem {

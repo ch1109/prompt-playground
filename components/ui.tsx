@@ -60,6 +60,12 @@ export const RUN_STATUS_LABEL: Record<string, string> = {
   CREATED: "已创建",
 };
 
+/** Run 状态徽章：解析成功但没有登记 Schema（UNKNOWN_SCHEMA）时不显示"解析成功"，避免误以为已通过校验 */
+export function runStatusView(status: string, schemaId: string | null | undefined): { label: string; tone: keyof typeof TONES } {
+  if (status === "SUCCEEDED" && !schemaId) return { label: "未校验（未登记 Schema）", tone: "mute" };
+  return { label: RUN_STATUS_LABEL[status] ?? status, tone: RUN_STATUS_TONE[status] ?? "mute" };
+}
+
 /** 业务状态词的颜色语义（不是准确率） */
 export function stateTone(v: string): keyof typeof TONES {
   if (/^(MATCHED|COMPLETE|VERIFIED_CONSISTENT|SUCCESS|KEEP|DISJOINT)$/.test(v)) return "ok";

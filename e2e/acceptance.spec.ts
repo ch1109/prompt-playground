@@ -349,6 +349,17 @@ test("重渲染 / 回放 / 保存版本失败时显示错误，不静默", async
   await expect(page.getByLabel("新版本名称")).toHaveValue("会失败的版本");
 });
 
+test("未登记 Schema 的结果不显示「解析成功」，结果区与历史均标为未校验", async ({ page }) => {
+  await renderFixture(page, "jiuli-p1", "constructed/unknown-schema-version.json");
+  const pane = page.getByTestId("result-pane");
+  await expect(pane).toContainText("未校验（未登记 Schema）");
+  await expect(pane).not.toContainText("解析成功");
+  await page.getByRole("button", { name: /运行历史/ }).click();
+  const row = page.getByTestId("history").locator("tr", { hasText: "未登记 schema_version" }).first();
+  await expect(row).toContainText("未校验（未登记 Schema）");
+  await expect(row).not.toContainText("解析成功");
+});
+
 test("有未保存修改时切换版本先确认：取消则保留草稿，确认才载入旧版本", async ({ page }) => {
   await page.goto("/projects/jiuli/playground");
   await page.click('[data-prompt="jiuli-p2"]');

@@ -63,6 +63,8 @@ export interface RunListItem {
   model_name: string | null;
   is_unsaved_draft: boolean;
   replay_of_run_id: string | null;
+  /** 为空表示未登记 Schema（UNKNOWN_SCHEMA）或未解析 */
+  schema_id: string | null;
 }
 
 export function listRuns(projectId: string, promptId?: string, limit = 100): RunListItem[] {
@@ -85,6 +87,7 @@ export function listRuns(projectId: string, promptId?: string, limit = 100): Run
       model_name: b.model_name ?? null,
       is_unsaved_draft: b.is_unsaved_draft,
       replay_of_run_id: b.replay_of_run_id ?? null,
+      schema_id: b.schema_id ?? null,
     };
   });
 }

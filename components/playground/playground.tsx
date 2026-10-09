@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { api, ApiError } from "@/lib/client/api";
 import type { CapabilityDTO, FixtureSummary, PromptDef, PromptVersionDTO, ProviderInfoDTO, RunDetail, RunListItem, SnapshotListItem } from "@/lib/client/types";
 import { emptyWorkspace, inputSignature, runSnapshotId, useStudio } from "@/lib/state/studio-store";
-import { Badge, Btn, cx, RUN_STATUS_LABEL, RUN_STATUS_TONE } from "@/components/ui";
+import { Badge, Btn, cx, runStatusView } from "@/components/ui";
 import { EditorPane } from "./editor-pane";
 import { ResultPane } from "./result-pane";
 import { RunCompare } from "./run-compare";
@@ -500,7 +500,7 @@ export function Playground({ projectId }: { projectId: string }) {
                         <Badge>{r.mode}</Badge>
                       </td>
                       <td className="px-2">
-                        <Badge tone={RUN_STATUS_TONE[r.status]}>{RUN_STATUS_LABEL[r.status] ?? r.status}</Badge>
+                        <Badge tone={runStatusView(r.status, r.schema_id).tone}>{runStatusView(r.status, r.schema_id).label}</Badge>
                       </td>
                       <td className="max-w-[320px] truncate px-2">{r.label}</td>
                       <td className="px-2 text-ink-400">{r.model_name ?? "—"}</td>

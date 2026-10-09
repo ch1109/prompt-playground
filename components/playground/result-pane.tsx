@@ -7,7 +7,7 @@ import { getByPointer } from "@/lib/pipeline/json-pointer";
 import { useStudio, type ResultTab } from "@/lib/state/studio-store";
 import { EvidenceViewer } from "@/components/renderers/evidence-viewer";
 import { BusinessView } from "@/components/views/business-view";
-import { Badge, Btn, cx, Empty, RUN_STATUS_LABEL, RUN_STATUS_TONE } from "@/components/ui";
+import { Badge, Btn, cx, Empty, runStatusView } from "@/components/ui";
 import { JsonTree, RawText } from "./json-tree";
 
 const TABS: { id: ResultTab; label: string }[] = [
@@ -75,8 +75,8 @@ export function ResultPane({ detail, dirty, canPreview, loading, runningSince }:
           {run && (
             <>
               <Badge tone="mute">{run.mode}</Badge>
-              <Badge tone={RUN_STATUS_TONE[run.status]} title={run.status}>
-                {RUN_STATUS_LABEL[run.status] ?? run.status}
+              <Badge tone={runStatusView(run.status, run.schema_id).tone} title={run.status}>
+                {runStatusView(run.status, run.schema_id).label}
               </Badge>
             </>
           )}
