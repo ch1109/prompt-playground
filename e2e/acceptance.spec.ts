@@ -357,6 +357,30 @@ test("重渲染 / 回放 / 保存版本失败时显示错误，不静默", async
   await expect(page.getByLabel("新版本名称")).toHaveValue("会失败的版本");
 });
 
+test("请求预览可展开 system 全文，并能复制全部发送内容", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/projects/jiuli/playground");
+  await page.click('[data-prompt="jiuli-p1"]');
+  await page.getByRole("button", { name: /^提示词/ }).click();
+  await expect(page.getByText("与版本一致")).toBeVisible();
+  const system = await page.getByLabel("System 提示词").inputValue();
+  const tail = system.trim().slice(-30);
+  await page.getByRole("button", { name: "输入" }).click();
+  await page.getByRole("button", { name: "样本库" }).click();
+  await page.click('[data-fixture-id="v3/SC-08-audit/P1"]');
+  await page.getByRole("button", { name: "请求预览" }).click();
+  const text = page.getByTestId("preview-text");
+  await expect(text).toContainText("已折叠");
+  await expect(text).not.toContainText(tail);
+  await page.getByRole("button", { name: /展开 system 全文/ }).click();
+  await expect(text).toContainText(tail);
+  await page.getByRole("button", { name: "复制全部发送内容" }).click();
+  await expect(page.getByRole("button", { name: "已复制" })).toBeVisible();
+  const clip = await page.evaluate(() => navigator.clipboard.readText());
+  expect(clip).toContain(tail);
+  expect(clip).toContain("# user");
+});
+
 test("切换 Prompt 时带上可用的快照；不适用或已有选择时不带", async ({ page }) => {
   const project = await page.request.post("/api/projects", { data: { name: `快照带入 ${Date.now()}`, template: "JIULI" } }).then((r) => r.json());
   const pid: string = project.data.project_id;

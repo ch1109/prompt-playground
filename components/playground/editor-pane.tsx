@@ -643,12 +643,17 @@ interface PreviewDTO {
   provider: ProviderInfoDTO;
 }
 
+/** 预览中 system 默认只显示开头，可展开全文 */
+const PREVIEW_HEAD = 600;
+
 function PreviewTab({ fixtures }: { fixtures: FixtureSummary[] }) {
   const [ws, , promptId] = useWorkspace();
   // 与「运行模型」同一来源，保证预览的就是要发送的
   const snapshotId = runSnapshotId(ws);
   const [p, setP] = useState<PreviewDTO | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [fullSystem, setFullSystem] = useState(false);
+  const [copied, setCopied] = useState(false);
   useEffect(() => {
     setP(null);
     setErr(null);
@@ -706,7 +711,24 @@ function PreviewTab({ fixtures }: { fixtures: FixtureSummary[] }) {
           ⚠ {w}
         </p>
       ))}
-      <pre className="max-h-[50vh] overflow-auto rounded border border-ink-700 bg-ink-950 p-2 text-[11px] whitespace-pre-wrap">{`# system（${p.system?.length} 字）\n${p.system?.slice(0, 600)}${(p.system?.length ?? 0) > 600 ? "…" : ""}\n\n# user\n${p.user}`}</pre>
+      <div className="flex items-center gap-2">
+        {(p.system?.length ?? 0) > PREVIEW_HEAD && (
+          <Btn onClick={() => setFullSystem((v) => !v)}>{fullSystem ? "收起 system" : `展开 system 全文（${p.system?.length} 字）`}</Btn>
+        )}
+        <Btn
+          onClick={() =>
+            navigator.clipboard?.writeText(`# system\n${p.system ?? ""}\n\n# user\n${p.user ?? ""}`).then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            })
+          }
+        >
+          {copied ? "已复制" : "复制全部发送内容"}
+        </Btn>
+      </div>
+      <pre className="max-h-[50vh] overflow-auto rounded border border-ink-700 bg-ink-950 p-2 text-[11px] whitespace-pre-wrap" data-testid="preview-text">
+        {`# system（${p.system?.length} 字）\n${fullSystem ? p.system : p.system?.slice(0, PREVIEW_HEAD)}${!fullSystem && (p.system?.length ?? 0) > PREVIEW_HEAD ? "…（已折叠，点上方「展开」查看全文）" : ""}\n\n# user\n${p.user}`}
+      </pre>
     </div>
   );
 }
