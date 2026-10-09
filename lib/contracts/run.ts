@@ -106,6 +106,8 @@ export interface Run {
   schema_diagnostics: Diagnostic[];
   view_model?: ViewModel | null;
   token_usage?: TokenUsage | null;
+  /** 服务商返回的结束原因（如 stop / length）；length 表示达到 max_tokens 被截断 */
+  finish_reason?: string | null;
   latency_ms?: number | null;
   estimated_cost?: { value: number; currency: string; basis: string } | null;
   error?: { code: string; message: string } | null;

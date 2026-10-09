@@ -158,6 +158,46 @@ test("刷新页面不丢工作区：草稿、输入选择、当前结果都恢�
   expect(consoleErrors).toEqual([]);
 });
 
+test("模型运行中显示已等待秒数；RUNNING 的 Run 结束后自动显示；截断有明确提示", async ({ page }) => {
+  // 1) 本窗口发起的调用：用拦截模拟"已配置模型 + 慢响应"
+  await page.route("**/api/models", (r) =>
+    r.fulfill({ json: { ok: true, data: { provider: "openai-compatible@fake", model: "fake", configured: true, supportsFileInput: false, adapterVersion: "1.0.0" }, request_id: "x" } }),
+  );
+  await page.goto("/projects/jiuli/playground");
+  await page.click('[data-prompt="jiuli-p1"]');
+  await page.click('[data-fixture-id="v3/SC-08-audit/P1"]');
+  await page.route("**/api/runs", async (r) => {
+    if (r.request().method() !== "POST") return r.continue();
+    await new Promise((res) => setTimeout(res, 2500));
+    await r.fulfill({ status: 502, json: { ok: false, error: { code: "FAKE_SLOW", message: "模拟慢调用结束" }, request_id: "x" } });
+  });
+  await page.getByTestId("btn-run").click();
+  await expect(page.getByTestId("running-banner")).toContainText("已等待");
+  await expect(page.getByTestId("error-message")).toContainText("FAKE_SLOW");
+  await expect(page.getByTestId("running-banner")).toHaveCount(0);
+  await page.unroute("**/api/runs");
+
+  // 2) 打开一个仍在 RUNNING 的 Run：结束后自动显示；3) 截断提示
+  await page.click('[data-testid="btn-render"]');
+  await expect(page.locator('[data-table-id="orderRows"]')).toBeVisible();
+  let calls = 0;
+  await page.route(/\/api\/runs\/run_[^/]+$/, async (r) => {
+    const res = await r.fetch();
+    const body = await res.json();
+    calls++;
+    if (calls <= 1) body.data.run = { ...body.data.run, status: "RUNNING", view_model: null };
+    else body.data.run = { ...body.data.run, finish_reason: "length" };
+    await r.fulfill({ response: res, json: body });
+  });
+  await page.getByRole("button", { name: /运行历史/ }).click();
+  await page.getByTestId("history").getByRole("button", { name: "回放" }).first().click();
+  await expect(page.getByText("该运行仍在进行中")).toBeVisible();
+  await expect(page.getByText("该运行仍在进行中")).toHaveCount(0, { timeout: 8000 });
+  await expect(page.getByText("被截断（finish_reason=length）")).toBeVisible();
+  await page.getByRole("tab", { name: "运行信息" }).click();
+  await expect(page.getByText("达到 max_tokens 被截断")).toBeVisible();
+});
+
 test("重渲染 / 回放 / 保存版本失败时显示错误，不静默", async ({ page }) => {
   await renderFixture(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
   const boom = (code: string) => (route: import("@playwright/test").Route) =>

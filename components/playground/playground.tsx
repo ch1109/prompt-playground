@@ -23,6 +23,8 @@ export function Playground({ projectId }: { projectId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [compare, setCompare] = useState<string[]>([]);
   const [showCompare, setShowCompare] = useState(false);
+  /** 本窗口发起的模型调用开始时间（显示已等待秒数） */
+  const [runningSince, setRunningSince] = useState<number | null>(null);
 
   const promptId = s.activePromptId;
   const prompt = prompts.find((p) => p.prompt_id === promptId);
@@ -48,6 +50,22 @@ export function Playground({ projectId }: { projectId: string }) {
   }, [hydrated, runId, cached, promptId, s]);
 
   const loadRuns = useCallback(() => api<RunListItem[]>(`/api/runs?project=${projectId}`).then(setRuns), [projectId]);
+  // 打开的 Run 仍在运行（例如刷新前发起）：轮询直到结束后自动显示结果
+  const runningRunId = detail?.run.status === "RUNNING" ? detail.run.run_id : null;
+  useEffect(() => {
+    if (!runningRunId) return;
+    const t = setInterval(() => {
+      api<RunDetail>(`/api/runs/${runningRunId}`)
+        .then((d) => {
+          if (d.run.status === "RUNNING") return;
+          s.putRun(d);
+          loadRuns();
+        })
+        .catch(() => {});
+    }, 3000);
+    return () => clearInterval(t);
+  }, [runningRunId, s, loadRuns]);
+
   const loadSnapshots = useCallback(() => api<SnapshotListItem[]>(`/api/snapshots?project=${projectId}`).then(setSnapshots), [projectId]);
 
   useEffect(() => {
@@ -145,6 +163,9 @@ export function Playground({ projectId }: { projectId: string }) {
   async function modelRun() {
     setError(null);
     setBusy(true);
+    setRunningSince(Date.now());
+    // 调用期间定时刷新历史，让 RUNNING 记录可见
+    const poll = setInterval(loadRuns, 3000);
     try {
       // 与请求预览同一来源（runSnapshotId）；样本快照尚未就绪时在此补建
       let w = ws;
@@ -166,6 +187,8 @@ export function Playground({ projectId }: { projectId: string }) {
     } catch (e) {
       setError(e instanceof ApiError ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : String(e));
     } finally {
+      clearInterval(poll);
+      setRunningSince(null);
       setBusy(false);
     }
   }
@@ -323,7 +346,7 @@ export function Playground({ projectId }: { projectId: string }) {
               </>
             )}
             <div className="min-w-0 flex-1">
-              <ResultPane detail={detail} dirty={dirty} canPreview={capability?.status === "CONNECTED_DEMO_FILES"} loading={busy} />
+              <ResultPane detail={detail} dirty={dirty} canPreview={capability?.status === "CONNECTED_DEMO_FILES"} loading={busy} runningSince={runningSince} />
             </div>
           </div>
 

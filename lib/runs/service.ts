@@ -1,6 +1,7 @@
 import { findAdapterById } from "@/lib/adapters/registry";
 import type { AdapterContext, MaterialAccess } from "@/lib/adapters/types";
 import type { ModelParams, PipelineResult, PromptKind, Run, RunMode } from "@/lib/contracts/run";
+import type { Diagnostic } from "@/lib/contracts/view-model";
 import type { InputSnapshot } from "@/lib/contracts/snapshot";
 import { newId, sha256, stableStringify } from "@/lib/hash";
 import { buildInput, renderUserTemplate } from "@/lib/input-builders";
@@ -8,7 +9,7 @@ import { getProvider, redactSecrets } from "@/lib/models/openai-compatible";
 import { runPipeline } from "@/lib/pipeline/pipeline";
 import { findRendererConfig } from "@/lib/renderer-config/registry";
 import { contentHash, getPrompt, getVersion } from "@/lib/repositories/prompts";
-import { getRun, saveRun } from "@/lib/repositories/runs";
+import { finishRun, getRun, saveRun, startRun } from "@/lib/repositories/runs";
 import { getSnapshot } from "@/lib/repositories/snapshots";
 import { getJiuliConnector } from "@/lib/connectors/registry";
 import { buildPageImages, referencedFileIds } from "./page-images";
@@ -174,9 +175,6 @@ export async function modelRun(
   const user = renderUserTemplate(input.userTemplate, built.request);
   const runId = newId("run");
   const started = new Date().toISOString();
-  const pages = input.attachImages ? await buildPageImages(referencedFileIds(built.request)) : null;
-  const images = pages?.images.map((i) => ({ mediaType: i.media_type, base64: i.base64 }));
-  const result = await provider.complete({ system: input.system, user, params: input.params, images });
 
   const common = {
     run_id: runId,
@@ -191,55 +189,75 @@ export async function modelRun(
     model_name: info.model,
     provider_adapter_version: info.adapterVersion,
     model_params: input.params,
-    // 附带图片时，图片 hash 也计入实际提示词 hash
-    actual_prompt_hash: contentHash(input.system, pages?.images.length ? `${user}\n${pages.images.map((i) => i.sha256).join(",")}` : user),
+    actual_prompt_hash: contentHash(input.system, user),
     built_input_hash: sha256(stableStringify(built.request)),
-    attached_images: pages ? pages.images.map(({ base64: _b, ...m }) => m) : null,
+    attached_images: null as Run["attached_images"],
     actual_prompt: { system: redactSecrets(input.system), user: redactSecrets(user) },
     started_at: started,
-    ended_at: new Date().toISOString(),
-    latency_ms: result.latencyMs,
     estimated_cost: null,
     label: input.label ?? `${info.model} 运行`,
     input_builder_id: built.builderId,
-    input_builder_warnings: [...built.warnings, ...(pages?.warnings ?? [])],
+    input_builder_warnings: built.warnings,
   };
+  const noResult = { schema_id: null, schema_version: null, adapter_id: null, adapter_version: null, renderer_config_version: null, parse_diagnostics: [], schema_diagnostics: [], view_model: null, token_usage: null };
 
-  if (!result.ok) {
-    const raw = result.partialRaw ?? "";
-    const run: Run = {
+  // 先登记 RUNNING：调用期间历史中可见；进程中断时启动会标为 INTERRUPTED
+  startRun({ ...common, ...noResult, status: "RUNNING", ended_at: null, latency_ms: null, raw_response: "", raw_response_hash: "", error: null });
+
+  try {
+    const pages = input.attachImages ? await buildPageImages(referencedFileIds(built.request)) : null;
+    const images = pages?.images.map((i) => ({ mediaType: i.media_type, base64: i.base64 }));
+    const result = await provider.complete({ system: input.system, user, params: input.params, images });
+    const done = {
       ...common,
-      schema_id: null,
-      schema_version: null,
-      adapter_id: null,
-      adapter_version: null,
-      renderer_config_version: null,
-      status: "MODEL_ERROR",
-      raw_response: raw,
-      raw_response_hash: sha256(raw),
-      parse_diagnostics: [],
-      schema_diagnostics: [],
-      view_model: null,
-      token_usage: null,
-      error: { code: result.code, message: result.message },
+      // 附带图片时，图片 hash 也计入实际提示词 hash
+      actual_prompt_hash: pages?.images.length ? contentHash(input.system, `${user}\n${pages.images.map((i) => i.sha256).join(",")}`) : common.actual_prompt_hash,
+      attached_images: pages ? pages.images.map(({ base64: _b, ...m }) => m) : null,
+      input_builder_warnings: [...built.warnings, ...(pages?.warnings ?? [])],
+      ended_at: new Date().toISOString(),
+      latency_ms: result.latencyMs,
     };
-    return saveRun(run);
-  }
 
-  const pr = runPipeline({ raw: result.raw, promptKind: prompt.prompt_kind, context: { ...contextFromSnapshot(runId, prompt.prompt_kind, snapshot), request: built.request } });
-  const run: Run = {
-    ...common,
-    ...versionsOf(pr),
-    status: pr.status,
-    raw_response: result.raw,
-    raw_response_hash: sha256(result.raw),
-    parsed_json: pr.parse.value,
-    ...diagByPhase(pr),
-    view_model: pr.viewModel ?? null,
-    token_usage: result.usage,
-    error: null,
-  };
-  return saveRun(run);
+    if (!result.ok) {
+      const raw = result.partialRaw ?? "";
+      return finishRun({ ...done, ...noResult, status: "MODEL_ERROR", raw_response: raw, raw_response_hash: sha256(raw), error: { code: result.code, message: result.message } });
+    }
+
+    const finishReason = typeof result.responseMeta.finish_reason === "string" ? result.responseMeta.finish_reason : null;
+    const pr = runPipeline({ raw: result.raw, promptKind: prompt.prompt_kind, context: { ...contextFromSnapshot(runId, prompt.prompt_kind, snapshot), request: built.request } });
+    // 达到 max_tokens 被截断：单独说明原因，避免只看到"JSON 解析失败"
+    const truncated: Diagnostic[] =
+      finishReason === "length"
+        ? [{ phase: "PARSE", level: "ERROR", code: "MODEL_OUTPUT_TRUNCATED", message: `模型输出达到 max_tokens 上限被截断（finish_reason=length，max_tokens=${input.params.max_tokens ?? "服务商默认"}）。可调大 max_tokens 后重跑。` }]
+        : [];
+    const diag = diagByPhase(pr);
+    return finishRun({
+      ...done,
+      ...versionsOf(pr),
+      status: pr.status,
+      raw_response: result.raw,
+      raw_response_hash: sha256(result.raw),
+      parsed_json: pr.parse.value,
+      parse_diagnostics: [...truncated, ...diag.parse_diagnostics],
+      schema_diagnostics: diag.schema_diagnostics,
+      view_model: pr.viewModel ? { ...pr.viewModel, diagnostics: [...truncated, ...pr.viewModel.diagnostics] } : null,
+      token_usage: result.usage,
+      finish_reason: finishReason,
+      error: null,
+    });
+  } catch (e) {
+    // 任何意外异常也要落到终态，不能永远停在 RUNNING
+    return finishRun({
+      ...common,
+      ...noResult,
+      ended_at: new Date().toISOString(),
+      latency_ms: null,
+      status: "MODEL_ERROR",
+      raw_response: "",
+      raw_response_hash: sha256(""),
+      error: { code: "RUN_INTERNAL_ERROR", message: redactSecrets(e instanceof Error ? e.message : String(e)) },
+    });
+  }
 }
 
 /**
@@ -249,6 +267,7 @@ export async function modelRun(
 export function rerender(runId: string): Run {
   const orig = getRun(runId);
   if (!orig) throw new RunServiceError("RUN_NOT_FOUND", "Run 不存在", 404);
+  if (orig.status === "RUNNING") throw new RunServiceError("RUN_NOT_FINISHED", "Run 仍在运行中，结束后才能重渲染", 409);
   const snapshot = loadSnapshot(orig.input_snapshot_id);
   const newRunId = newId("run");
   const ctx = contextFromSnapshot(newRunId, orig.prompt_kind, snapshot);

@@ -15,7 +15,7 @@ import { runPipeline } from "@/lib/pipeline/pipeline";
 import { getByPointer } from "@/lib/pipeline/json-pointer";
 import { validateRendererConfig } from "@/lib/renderer-config/registry";
 import { db, resetDbForTests } from "@/lib/repositories/db";
-import { addAnnotation, getRun } from "@/lib/repositories/runs";
+import { addAnnotation, getRun, saveRun } from "@/lib/repositories/runs";
 import { createSnapshot, getSnapshot } from "@/lib/repositories/snapshots";
 import { modelRun, renderOnly, rerender, RunServiceError } from "@/lib/runs/service";
 import { P1_VALUE_KEYS } from "@/lib/schemas/common";
@@ -508,10 +508,9 @@ describe("AT27 模型不支持文件格式", () => {
 describe("AT28 代码版本升级重渲染历史 Run", () => {
   it("不改历史原始结果，标明 Adapter 版本变化", () => {
     const f = fx("constructed/p1-v3-conflict.json");
-    const run = renderOnly({ projectId: "jiuli", promptId: "jiuli-p1", raw: f.raw });
-    // 模拟"历史 Run 由旧版 Adapter 生成"
-    const row = db().prepare("SELECT body FROM runs WHERE run_id = ?").get(run.run_id) as { body: string };
-    db().prepare("UPDATE runs SET body = ? WHERE run_id = ?").run(JSON.stringify({ ...JSON.parse(row.body), adapter_version: "0.9.0" }), run.run_id);
+    // 模拟"历史 Run 由旧版 Adapter 生成"（已结束的 Run 不可 UPDATE，直接写入一条旧版本记录）
+    const current = renderOnly({ projectId: "jiuli", promptId: "jiuli-p1", raw: f.raw });
+    const run = saveRun({ ...current, run_id: "run_old_adapter", adapter_version: "0.9.0" });
     const re = rerender(run.run_id);
     expect(re.mode).toBe("REPLAY");
     expect(re.replay_of_run_id).toBe(run.run_id);
@@ -540,5 +539,54 @@ describe("预览与运行使用同一份输入", () => {
     expect(runSnapshotId({ ...ws, inputMode: "snapshot" })).toBe("snap_jiuli");
     expect(runSnapshotId({ ...ws, inputMode: "paste" })).toBeNull();
     expect(runSnapshotId({ ...ws, inputMode: "jiuli" })).toBeNull();
+  });
+});
+
+describe("运行中状态与截断诊断", () => {
+  const snap = () => snapshotForFixture("jiuli", fx("v3/SC-08/P1"))!;
+  const okBody = (content: string, finish_reason = "stop") => Response.json({ choices: [{ message: { content }, finish_reason }] });
+
+  it("调用期间可见 RUNNING，结束后变为终态；运行中不能重渲染", async () => {
+    let release!: (r: Response) => void;
+    setProviderForTests(new OpenAICompatibleProvider(cfg, fakeFetch(() => new Promise<Response>((r) => (release = r)))));
+    const pending = modelRun({ projectId: "jiuli", promptId: "jiuli-p1", snapshotId: snap().snapshot_id, system: "S", userTemplate: "{{input_json}}", params: {} });
+    await new Promise((r) => setTimeout(r, 20));
+    const { listRuns } = await import("@/lib/repositories/runs");
+    const running = listRuns("jiuli").find((r) => r.status === "RUNNING");
+    expect(running).toBeDefined();
+    expect(getRun(running!.run_id)!.raw_response).toBe("");
+    expect(() => rerender(running!.run_id)).toThrow(RunServiceError);
+    release(okBody(fx("v3/SC-08/P1").raw));
+    const done = await pending;
+    setProviderForTests(undefined);
+    expect(done.run_id).toBe(running!.run_id);
+    expect(done.status).toBe("SUCCEEDED");
+    expect(getRun(done.run_id)!.status).toBe("SUCCEEDED");
+    expect(getRun(done.run_id)!.raw_response_hash).toBe(createHash("sha256").update(fx("v3/SC-08/P1").raw).digest("hex"));
+  });
+
+  it("finish_reason=length → 记录结束原因并给出截断诊断", async () => {
+    setProviderForTests(new OpenAICompatibleProvider(cfg, fakeFetch(async () => okBody('{"schema_version":"jiuli-ai-v3","out', "length"))));
+    const run = await modelRun({ projectId: "jiuli", promptId: "jiuli-p1", snapshotId: snap().snapshot_id, system: "S", userTemplate: "{{input_json}}", params: { max_tokens: 10 } });
+    setProviderForTests(undefined);
+    expect(run.status).toBe("PARSE_ERROR");
+    expect(run.finish_reason).toBe("length");
+    expect(run.parse_diagnostics.map((d) => d.code)).toContain("MODEL_OUTPUT_TRUNCATED");
+  });
+
+  it("已结束的 Run 在数据库层面不可修改", () => {
+    const run = renderOnly({ projectId: "jiuli", promptId: "jiuli-p1", raw: fx("v3/SC-08/P1").raw });
+    expect(() => db().prepare("UPDATE runs SET status = 'MODEL_ERROR' WHERE run_id = ?").run(run.run_id)).toThrow();
+  });
+
+  it("服务重启时遗留的 RUNNING 标记为中断（MODEL_ERROR / INTERRUPTED）", async () => {
+    const { startRun, markInterruptedRuns } = await import("@/lib/repositories/runs");
+    const base = renderOnly({ projectId: "jiuli", promptId: "jiuli-p1", raw: "{}" });
+    const id = "run_interrupted_test";
+    startRun({ ...base, run_id: id, mode: "MODEL_RUN", status: "RUNNING", raw_response: "", raw_response_hash: "" });
+    markInterruptedRuns();
+    const r = getRun(id)!;
+    expect(r.status).toBe("MODEL_ERROR");
+    expect(r.error?.code).toBe("INTERRUPTED");
   });
 });

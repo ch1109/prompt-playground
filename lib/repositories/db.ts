@@ -42,6 +42,9 @@ CREATE TABLE IF NOT EXISTS annotations (
 );
 CREATE TRIGGER IF NOT EXISTS raw_responses_immutable BEFORE UPDATE ON raw_responses
 BEGIN SELECT RAISE(ABORT, 'raw_responses 不可修改'); END;
+-- 只有运行中（RUNNING）的 Run 可以更新为终态；结束后不可修改
+CREATE TRIGGER IF NOT EXISTS runs_finished_immutable BEFORE UPDATE ON runs WHEN OLD.status != 'RUNNING'
+BEGIN SELECT RAISE(ABORT, '已结束的 Run 不可修改'); END;
 CREATE TRIGGER IF NOT EXISTS prompt_versions_immutable BEFORE UPDATE ON prompt_versions
 BEGIN SELECT RAISE(ABORT, 'prompt_versions 只新增不修改'); END;
 `;
@@ -60,8 +63,19 @@ export function db(): DatabaseSync {
     d.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
     d.exec(SCHEMA);
     globalForDb.__studioDb = d;
+    // 进程刚启动时不可能有正在进行的调用：遗留的 RUNNING 都是上次被中断的
+    markInterruptedRuns(d);
   }
   return globalForDb.__studioDb;
+}
+
+/** 把遗留的 RUNNING Run 标为 MODEL_ERROR / INTERRUPTED（服务重启或进程退出导致调用中断） */
+export function markInterruptedRuns(d: DatabaseSync = db()) {
+  const error = JSON.stringify({ code: "INTERRUPTED", message: "服务重启或进程退出，模型调用被中断，未取得结果" });
+  d.prepare("UPDATE runs SET status = 'MODEL_ERROR', body = json_set(body, '$.status', 'MODEL_ERROR', '$.ended_at', ?, '$.error', json(?)) WHERE status = 'RUNNING'").run(
+    new Date().toISOString(),
+    error,
+  );
 }
 
 /** 仅测试使用：切换到新的数据库 */

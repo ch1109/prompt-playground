@@ -2,6 +2,8 @@ import type { Run } from "@/lib/contracts/run";
 import { newId, sha256 } from "@/lib/hash";
 import { db } from "./db";
 
+export { markInterruptedRuns } from "./db";
+
 /** 写入 Run：原始响应单独存入不可修改的 raw_responses 表 */
 export function saveRun(run: Run): Run {
   const d = db();
@@ -21,12 +23,32 @@ export function saveRun(run: Run): Run {
   return run;
 }
 
+/** 模型调用开始时先登记 RUNNING Run（此时还没有原始响应） */
+export function startRun(run: Run): Run {
+  const { raw_response: _raw, raw_response_hash: _h, ...body } = run;
+  db()
+    .prepare("INSERT INTO runs VALUES (?,?,?,?,?,?,?,?,?)")
+    .run(run.run_id, run.project_id, run.prompt_id, run.prompt_kind, run.input_snapshot_id ?? null, run.mode, "RUNNING", run.started_at, JSON.stringify({ ...body, status: "RUNNING" }));
+  return run;
+}
+
+/** RUNNING → 终态：原始响应写入不可修改表，Run 只能从 RUNNING 更新一次 */
+export function finishRun(run: Run): Run {
+  const d = db();
+  d.prepare("INSERT INTO raw_responses VALUES (?,?,?,?)").run(run.run_id, run.raw_response, sha256(run.raw_response), run.started_at);
+  const { raw_response: _raw, ...body } = run;
+  const r = d.prepare("UPDATE runs SET status = ?, body = ? WHERE run_id = ? AND status = 'RUNNING'").run(run.status, JSON.stringify(body), run.run_id);
+  if (r.changes !== 1) throw new Error(`Run ${run.run_id} 不处于运行中，不能更新`);
+  return run;
+}
+
 export function getRun(runId: string): Run | undefined {
   const d = db();
   const row = d.prepare("SELECT body FROM runs WHERE run_id = ?").get(runId) as { body: string } | undefined;
   if (!row) return undefined;
-  const raw = d.prepare("SELECT raw, sha256 FROM raw_responses WHERE run_id = ?").get(runId) as { raw: string; sha256: string };
-  return { ...(JSON.parse(row.body) as Omit<Run, "raw_response">), raw_response: raw.raw, raw_response_hash: raw.sha256 };
+  // 运行中或被中断的 Run 还没有原始响应
+  const raw = d.prepare("SELECT raw, sha256 FROM raw_responses WHERE run_id = ?").get(runId) as { raw: string; sha256: string } | undefined;
+  return { ...(JSON.parse(row.body) as Omit<Run, "raw_response">), raw_response: raw?.raw ?? "", raw_response_hash: raw?.sha256 ?? "" };
 }
 
 export interface RunListItem {

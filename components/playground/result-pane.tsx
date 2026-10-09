@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/client/api";
 import type { AnnotationDTO, RunDetail } from "@/lib/client/types";
 import type { ViewModel } from "@/lib/contracts/view-model";
@@ -38,7 +38,17 @@ function Banner({ tone, children }: { tone: "warn" | "bad" | "info"; children: R
   );
 }
 
-export function ResultPane({ detail, dirty, canPreview, loading }: { detail?: RunDetail; dirty: boolean; canPreview: boolean; loading: boolean }) {
+/** 已等待秒数（每秒刷新） */
+function Elapsed({ since }: { since: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return <>{Math.max(0, Math.round((now - since) / 1000))}</>;
+}
+
+export function ResultPane({ detail, dirty, canPreview, loading, runningSince }: { detail?: RunDetail; dirty: boolean; canPreview: boolean; loading: boolean; runningSince?: number | null }) {
   const tab = useStudio((s) => s.resultTab);
   const setStore = useStudio((s) => s.set);
   const maximized = useStudio((s) => s.maximized);
@@ -79,6 +89,17 @@ export function ResultPane({ detail, dirty, canPreview, loading }: { detail?: Ru
         </div>
       </div>
 
+      {runningSince && (
+        <Banner tone="info">
+          <span data-testid="running-banner">
+            模型运行中… 已等待 <Elapsed since={runningSince} /> 秒（超时上限约 300 秒）。「运行历史」中可看到这条运行中的记录。
+          </span>
+        </Banner>
+      )}
+      {run?.status === "RUNNING" && !runningSince && <Banner tone="info">该运行仍在进行中（可能在刷新前或其他窗口发起），结果返回后自动显示。</Banner>}
+      {run?.finish_reason === "length" && (
+        <Banner tone="bad">模型输出达到 max_tokens 上限被截断（finish_reason=length）。请在「模型」页调大 max_tokens 后重跑。</Banner>
+      )}
       {dirty && run && <Banner tone="warn">当前结果来自上次运行（与未保存/未运行的编辑不同）。</Banner>}
       {run?.status === "PARSE_ERROR" && <Banner tone="bad">原始回复不是合法 JSON：不生成任何业务表格。请在「原始 JSON」查看原文与错误位置。</Banner>}
       {run?.status === "SCHEMA_INVALID" && <Banner tone="warn">JSON 合法但 Schema 校验未通过（SCHEMA_INVALID）：下方为可安全理解部分的局部渲染，非完整结果。</Banner>}
@@ -281,6 +302,7 @@ function MetaTab({ detail }: { detail: RunDetail }) {
         <Row k="开始 / 结束" v={`${r.started_at} → ${r.ended_at ?? "—"}`} />
         <Row k="耗时" v={r.latency_ms != null ? `${r.latency_ms} ms` : null} />
         <Row k="Token" v={r.token_usage ? JSON.stringify(r.token_usage) : null} />
+        <Row k="结束原因" v={r.finish_reason ? `${r.finish_reason}${r.finish_reason === "length" ? "（达到 max_tokens 被截断）" : ""}` : null} />
         <Row k="费用" v={r.estimated_cost ? `${r.estimated_cost.value} ${r.estimated_cost.currency}（${r.estimated_cost.basis}）` : null} />
         <Row k="原始响应 sha256" v={r.raw_response_hash} />
         <Row k="回放来源" v={r.replay_of_run_id} />
