@@ -118,6 +118,19 @@ test("样本运行的证据只有元数据时说明原因", async ({ page }) => 
   await expect(drawer.getByTestId("evidence-note").first()).toContainText("样本只带模型输出与请求");
 });
 
+test("标注类型精简（P3 才有候选/关系类型），保存后提示已保存", async ({ page }) => {
+  await renderFixture(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
+  await page.locator('[data-table-id="orderRows"] [data-row-id="row-1"] [data-field="brand"]').click();
+  const options = page.getByLabel("标注类型").locator("option");
+  await expect(options).toHaveText(["模型错了", "备注"]);
+  await page.getByLabel("正确值").fill("无牌");
+  await page.getByRole("button", { name: "保存标注" }).click();
+  await expect(page.getByTestId("annotation-form").getByRole("status")).toHaveText("已保存");
+  await renderFixture(page, "jiuli-p3", "constructed/p3-v3-multi-candidate.json");
+  await page.locator('[data-table-id="orderRows"] [data-row-id="OR_001"] [data-field="match_status"]').click();
+  await expect(options).toHaveText(["模型错了", "正确候选（P3）", "错误关系（P3）", "备注"]);
+});
+
 test("AT19 来源无原文：显示 METADATA_ONLY / MISSING，不提供越权下载", async ({ page }) => {
   await renderFixture(page, "jiuli-p3", "constructed/p3-v3-multi-candidate.json");
   await page.locator('[data-table-id="orderRows"] [data-row-id="OR_001"] [data-field="match_status"]').click();

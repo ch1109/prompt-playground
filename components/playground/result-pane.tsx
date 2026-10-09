@@ -377,14 +377,17 @@ function MetaTab({ detail }: { detail: RunDetail }) {
   );
 }
 
-const ANN_TYPES: [string, string][] = [
-  ["MODEL_WRONG", "模型错了"],
-  ["CORRECT_VALUE", "正确值"],
-  ["ERROR_REASON", "错误原因"],
-  ["CORRECT_CANDIDATE", "正确候选（P3）"],
-  ["WRONG_RELATION", "错误关系（P3）"],
-  ["NOTE", "备注"],
-];
+/** 全部类型的显示名（含旧数据里的"正确值""错误原因"，照常显示与导出） */
+const ANN_LABEL: Record<string, string> = {
+  MODEL_WRONG: "模型错了",
+  CORRECT_VALUE: "正确值",
+  ERROR_REASON: "错误原因",
+  CORRECT_CANDIDATE: "正确候选（P3）",
+  WRONG_RELATION: "错误关系（P3）",
+  NOTE: "备注",
+};
+/** 新建时可选的类型：正确值、错误原因直接填下方输入框，不再作为单独类型；P3 才有候选/关系类型 */
+const annTypeChoices = (kind: string) => ["MODEL_WRONG", ...(kind === "JIULI_P3" ? ["CORRECT_CANDIDATE", "WRONG_RELATION"] : []), "NOTE"];
 
 /** 纠错标注独立保存，不修改模型输出、九立池或原始附件 */
 function AnnotationForm({ detail }: { detail: RunDetail }) {
@@ -396,6 +399,10 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
   const [err, setErr] = useState<string | null>(null);
   /** 正在修改的标注；为空时表单用于新增 */
   const [editing, setEditing] = useState<AnnotationDTO | null>(null);
+  const [saved, setSaved] = useState(false);
+  const choices = annTypeChoices(detail.run.prompt_kind);
+  // 修改旧标注时保留它原来的类型
+  if (editing && !choices.includes(editing.issue_type)) choices.push(editing.issue_type);
   const target = [sel.tableId, sel.rowId, sel.fieldKey].filter(Boolean).join(" / ") || sel.relationId || null;
 
   function reset() {
@@ -416,6 +423,8 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
         putRun({ ...detail, annotations: [...detail.annotations, a] });
       }
       reset();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     }
@@ -459,19 +468,24 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
       <div className="space-y-1.5">
         <div className="text-[11px] text-ink-400">{editing ? `正在修改：${editing.target ?? editing.target_json_pointer ?? "整个 Run"}` : `目标：${target ?? "（未选择，标注整个 Run）"}`}</div>
         <select value={type} onChange={(e) => setType(e.target.value)} aria-label="标注类型" className="w-full rounded border border-ink-700 bg-ink-950 px-1 py-0.5 text-[12px]">
-          {ANN_TYPES.map(([v, l]) => (
+          {choices.map((v) => (
             <option key={v} value={v}>
-              {l}
+              {ANN_LABEL[v] ?? v}
             </option>
           ))}
         </select>
         <input value={expected} onChange={(e) => setExpected(e.target.value)} placeholder="正确值（可选）" aria-label="正确值" className="w-full rounded border border-ink-700 bg-ink-950 px-2 py-0.5 text-[12px]" />
-        <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="错误原因 / 备注" aria-label="标注备注" rows={2} className="w-full rounded border border-ink-700 bg-ink-950 px-2 py-0.5 text-[12px]" />
+        <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="错误原因 / 备注（可选）" aria-label="标注备注" rows={2} className="w-full rounded border border-ink-700 bg-ink-950 px-2 py-0.5 text-[12px]" />
         <div className="flex gap-1">
           <Btn tone="outline" onClick={save}>
             {editing ? "保存修改" : "保存标注"}
           </Btn>
           {editing && <Btn onClick={reset}>取消修改</Btn>}
+          {saved && (
+            <span className="self-center text-[11px] text-verify" role="status">
+              已保存
+            </span>
+          )}
         </div>
         {err && <p className="text-[11px] text-stamp">{err}</p>}
       </div>
@@ -480,7 +494,7 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
           {detail.annotations.map((a) => (
             <li key={a.annotation_id} className={cx("rounded bg-ink-800 px-2 py-1 text-[11px]", editing?.annotation_id === a.annotation_id && "ring-1 ring-info")}>
               <div className="flex items-center gap-1">
-                <Badge tone="info">{ANN_TYPES.find(([v]) => v === a.issue_type)?.[1] ?? a.issue_type}</Badge> <span className="min-w-0 flex-1 truncate text-ink-400">{a.target ?? a.target_json_pointer}</span>
+                <Badge tone="info">{ANN_LABEL[a.issue_type] ?? a.issue_type}</Badge> <span className="min-w-0 flex-1 truncate text-ink-400">{a.target ?? a.target_json_pointer}</span>
                 <button onClick={() => startEdit(a)} className="text-info hover:underline" aria-label={`修改标注 ${a.annotation_id}`}>
                   修改
                 </button>
