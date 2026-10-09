@@ -504,6 +504,26 @@ test("未登记 Schema 的结果不显示「解析成功」，结果区与历史
   await expect(row).not.toContainText("解析成功");
 });
 
+test("版本加载完成前就开始输入：输入内容保留为草稿，不被最新版本覆盖", async ({ page }) => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  await page.route(/\/api\/prompts\/jiuli-p3$/, async (r) => {
+    await gate;
+    await r.continue();
+  });
+  await page.goto("/projects/jiuli/playground");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.click('[data-prompt="jiuli-p3"]');
+  await page.getByRole("button", { name: /^提示词/ }).click();
+  const typed = `抢先输入 ${Date.now()}`;
+  await page.getByLabel("System 提示词").fill(typed);
+  release();
+  await expect(page.getByLabel("Prompt 版本")).not.toHaveValue("");
+  await expect(page.getByText("未保存草稿")).toBeVisible();
+  await expect(page.getByLabel("System 提示词")).toHaveValue(typed);
+});
+
 test("有未保存修改时切换版本先确认：取消则保留草稿，确认才载入旧版本", async ({ page }) => {
   await page.goto("/projects/jiuli/playground");
   await page.click('[data-prompt="jiuli-p2"]');

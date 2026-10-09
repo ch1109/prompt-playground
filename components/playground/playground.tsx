@@ -209,7 +209,11 @@ export function Playground({ projectId }: { projectId: string }) {
       setVersions((v) => ({ ...v, [promptId]: r.versions }));
       const cur = useStudio.getState().workspaces[promptId];
       const latest = r.versions[0];
-      if (!cur?.versionId && latest) s.patchWorkspace(promptId, { versionId: latest.version_id, versionHash: latest.content_hash, system: latest.system_prompt, userTemplate: latest.user_prompt_template });
+      if (!cur?.versionId && latest) {
+        // 加载完成前用户已经开始输入：保留输入（显示为基于最新版本的未保存草稿），不覆盖
+        const typed = !!cur?.system;
+        s.patchWorkspace(promptId, typed ? { versionId: latest.version_id, versionHash: latest.content_hash } : { versionId: latest.version_id, versionHash: latest.content_hash, system: latest.system_prompt, userTemplate: latest.user_prompt_template });
+      }
     });
   }, [promptId, versions, s]);
 
