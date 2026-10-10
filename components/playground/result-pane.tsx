@@ -199,7 +199,7 @@ export function ResultPane({
             </div>
           </div>
         )}
-        {run && tab === "visual" && <ResultTab detail={detail!} canPreview={canPreview} />}
+        {run && tab === "visual" && <ResultTab detail={detail!} canPreview={canPreview} onCompare={onCompare} onEditPrompt={onEditPrompt} />}
         {run && tab === "json" && <JsonTab detail={detail!} />}
         {run && tab === "details" && (
           <div className="space-y-5">
@@ -225,6 +225,7 @@ export function ResultPane({
           </div>
           <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
             <SelectionInfo />
+            <FieldVerdict detail={detail!} />
             {vm ? <EvidenceViewer vm={vm} canPreview={canPreview} snapshotSource={detail?.snapshot?.source_type} request={detail?.request} /> : <p className="text-[12px] text-ink-400">无业务视图，无法定位来源。</p>}
             <AnnotationForm detail={detail!} />
           </div>
@@ -236,10 +237,10 @@ export function ResultPane({
 }
 
 /** 「结果」：九立预设显示业务视图；其他情况按 JSON 树（回答是 JSON）或文本（回答是文字）显示 */
-function ResultTab({ detail, canPreview }: { detail: RunDetail; canPreview: boolean }) {
+function ResultTab({ detail, canPreview, onCompare, onEditPrompt }: { detail: RunDetail; canPreview: boolean; onCompare?: () => void; onEditPrompt?: () => void }) {
   const run = detail.run;
   const select = useStudio((s) => s.select);
-  if (run.view_model && detail.renderer) return <BusinessView vm={run.view_model} cfg={detail.renderer} canPreview={canPreview} status={run.status} mode={run.mode} />;
+  if (run.view_model && detail.renderer) return <BusinessView vm={run.view_model} cfg={detail.renderer} canPreview={canPreview} status={run.status} mode={run.mode} onCompare={onCompare} onEditPrompt={onEditPrompt} />;
   if (run.status !== "SUCCEEDED") return <Empty>没有可展示的结果，原因见上方提示。</Empty>;
   if (run.parsed_json !== undefined) {
     return (
@@ -471,6 +472,60 @@ function MetaTab({ detail }: { detail: RunDetail }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * 选中字段后的快速评判：「✓ 这个值对」直接保存一条「标注正确」；
+ * 「✗ 这个值错」跳到下方完整标注表单（默认就是「标注错误」，必须选错误归因）。只写标注，不改模型输出。
+ */
+function FieldVerdict({ detail }: { detail: RunDetail }) {
+  const sel = useStudio((s) => s.selection);
+  const putRun = useStudio((s) => s.putRun);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const p = sel.jsonPointer;
+  if (!p || p.startsWith("req:") || !sel.fieldKey || detail.run.parsed_json === undefined) return null;
+  const col = detail.run.view_model?.tables.find((t) => t.id === sel.tableId)?.columns.find((c) => c.key === sel.fieldKey);
+  const hit = getByPointer(detail.run.parsed_json, p);
+  const target = [sel.tableId, sel.rowId, sel.fieldKey].filter(Boolean).join(" / ");
+  const done = detail.annotations.find((a) => a.target_json_pointer === p && a.assessment === "CORRECT");
+  async function markCorrect() {
+    setErr(null);
+    setBusy(true);
+    try {
+      const a = await api<AnnotationDTO>(`/api/runs/${detail.run.run_id}/annotations`, {
+        json: { issue_type: "ASSESSMENT", assessment: "CORRECT", error_category: null, category_confirmed: null, target_json_pointer: p, target, source_ref_ids: sel.sourceRefId ? [sel.sourceRefId] : [] },
+      });
+      putRun({ ...detail, annotations: [...detail.annotations, a] });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="rounded-lg border border-ink-700 bg-ink-900 p-2.5 text-[12px]" data-testid="field-verdict">
+      <div className="text-ink-400">{col?.title ?? sel.fieldKey}</div>
+      <div className="mt-0.5 font-semibold break-words text-ink-100">{hit.found ? (typeof hit.value === "string" ? hit.value || "（空）" : JSON.stringify(hit.value)) : "（模型输出里没有这个位置）"}</div>
+      <div className="mt-2 flex gap-1.5">
+        <Btn tone="outline" onClick={markCorrect} disabled={busy || !!done} data-testid="btn-mark-correct">
+          {done ? "✓ 已标为正确" : "✓ 这个值对"}
+        </Btn>
+        <Btn
+          onClick={() => {
+            const form = document.querySelector<HTMLElement>('[data-testid="annotation-form"]');
+            form?.scrollIntoView({ block: "start", behavior: "smooth" });
+            form?.querySelector<HTMLElement>('[aria-label="错误归因"]')?.focus();
+          }}
+          data-testid="btn-mark-wrong"
+        >
+          ✗ 这个值错
+        </Btn>
+      </div>
+      <p className="mt-1.5 text-[11px] text-ink-400">「这个值错」要在下方选错误原因、可填正确值。标注单独保存，不改模型原始输出。</p>
+      {err && <p className="mt-1 text-stamp">{err}</p>}
     </div>
   );
 }

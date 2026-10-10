@@ -72,3 +72,47 @@ test("商品表：不再有密集的来源绿点；行可展开看全部 25 字�
   // 有冲突的字段排在展开区最前
   await expect(fields.locator("button").first()).toContainText("冲突");
 });
+
+test("检查动作：选中字段可一键标「这个值对」，模型原始输出不变；可只看有问题的行", async ({ page }) => {
+  await pickInDrawer(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
+  const currentRun = () => page.evaluate(() => JSON.parse(localStorage.getItem("prompt-studio:workspace") ?? "{}").state?.workspaces?.["jiuli-p1"]?.runId ?? null);
+  await expect.poll(currentRun).not.toBeNull();
+  const runId: string = await currentRun();
+  const before = await page.request.get(`/api/runs/${runId}`).then((r) => r.json());
+  const table = page.locator('[data-table-id="orderRows"]');
+  await table.locator("tbody tr").first().locator('[data-field="model"]').click();
+  const verdict = page.getByTestId("field-verdict");
+  await expect(verdict).toContainText("型号");
+  await verdict.getByTestId("btn-mark-correct").click();
+  await expect(verdict.getByTestId("btn-mark-correct")).toHaveText("✓ 已标为正确");
+  await expect(page.getByTestId("evidence-drawer")).toContainText("标注正确");
+  const after = await page.request.get(`/api/runs/${runId}`).then((r) => r.json());
+  expect(after.data.run.raw_response_hash).toBe(before.data.run.raw_response_hash);
+  expect(after.data.annotations.some((a: { assessment: string }) => a.assessment === "CORRECT")).toBe(true);
+  // 「这个值错」跳到完整标注表单（必须选错误归因）
+  await verdict.getByTestId("btn-mark-wrong").click();
+  await expect(page.getByLabel("错误归因")).toBeFocused();
+  // 精简状态里的「只看有问题的行」
+  const rows = await table.locator("tbody tr").count();
+  await page.getByTestId("btn-only-issues").click();
+  await expect(table.locator("tbody tr")).not.toHaveCount(rows);
+  await page.getByTestId("btn-only-issues").click();
+  await expect(table.locator("tbody tr")).toHaveCount(rows);
+});
+
+test("版本对比模式：在页面里勾选两次运行，直接显示对比，不弹窗", async ({ page }) => {
+  await pickInDrawer(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
+  await page.getByTestId("btn-change-input").click();
+  await page.getByTestId("input-drawer").getByTestId("btn-change-fixture").click();
+  await page.getByTestId("input-drawer").locator('[data-fixture-id="constructed/p1-v3-xss.json"]').click();
+  await expect(page.getByTestId("context-bar")).toContainText("恶意 HTML");
+  await page.getByTestId("headline-actions").getByRole("button", { name: "对比历史运行" }).click();
+  const mode = page.getByTestId("compare-mode");
+  await expect(mode).toBeVisible();
+  const boxes = mode.getByRole("checkbox");
+  await boxes.nth(0).check();
+  await boxes.nth(1).check();
+  const region = page.getByRole("region", { name: "对比两次运行" });
+  await expect(region.getByTestId("compare-metrics")).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "对比两次运行" })).toHaveCount(0);
+});

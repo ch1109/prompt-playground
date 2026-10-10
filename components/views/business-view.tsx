@@ -9,7 +9,7 @@ import { FieldDiff } from "@/components/renderers/field-diff";
 import { IssueList } from "@/components/renderers/issue-list";
 import { RelationCanvas } from "@/components/renderers/relation-canvas";
 import { SummaryStrip } from "@/components/renderers/summary-strip";
-import { Badge, cx, Section } from "@/components/ui";
+import { Badge, Btn, cx, Section } from "@/components/ui";
 
 /** binding 是登记的逻辑选择器：tables.<id> 选择 ViewModel.tables 中 id 相同的表，不执行任何表达式 */
 function resolveTable(vm: ViewModel, binding: string): TableView | undefined {
@@ -85,7 +85,7 @@ function byId(cfg: RendererConfig) {
 const shortTitle = (t: string) => t.replace(/（.*$/, "");
 
 // ---------------- P1：第一屏只有 主表 + 待处理问题；合计、读取情况、统计折叠 ----------------
-function WideTableLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
+function WideTableLayout({ vm, cfg, onlyIssues, setOnlyIssues }: { vm: ViewModel; cfg: RendererConfig; onlyIssues: boolean; setOnlyIssues: (v: boolean) => void }) {
   const tableRegions = cfg.regions.filter((r) => r.component === "data-table");
   const secondary = tableRegions
     .slice(1)
@@ -94,7 +94,7 @@ function WideTableLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
   const strip = cfg.regions.filter((r) => r.component === "summary-strip");
   return (
     <div className="space-y-3">
-      {tableRegions.slice(0, 1).map((r) => <Region key={r.id} region={r} vm={vm} extra={{ maxHeight: 460, expandable: true }} />)}
+      {tableRegions.slice(0, 1).map((r) => <Region key={r.id} region={r} vm={vm} extra={{ maxHeight: 460, expandable: true, onlyIssues, onOnlyIssuesChange: setOnlyIssues }} />)}
       {vm.issues.length ? (
         cfg.regions.filter((r) => r.component === "issue-list").map((r) => <Region key={r.id} region={r} vm={vm} />)
       ) : (
@@ -345,13 +345,16 @@ export interface HeadlineProps {
   /** 运行状态与模式：区分「模型运行成功」「示例结果」，以及结构是否完全符合 */
   status: string;
   mode: string;
+  /** 下一步动作 */
+  onCompare?: () => void;
+  onEditPrompt?: () => void;
 }
 
 /**
  * 结果区第一屏的精简状态：运行是否成功、主表多少行、模型报告了几个问题、准确性能否评测。
  * 明确把"模型运行成功"和"识别结果正确"分开：没有标准答案时写「准确性未评测」。
  */
-export function ResultHeadline({ vm, cfg, status, mode }: { vm: ViewModel; cfg: RendererConfig } & HeadlineProps) {
+export function ResultHeadline({ vm, cfg, status, mode, onCompare, onEditPrompt, onlyIssues, setOnlyIssues }: { vm: ViewModel; cfg: RendererConfig; onlyIssues?: boolean; setOnlyIssues?: (v: boolean) => void } & HeadlineProps) {
   const h = vm.metadata?.headline;
   const mainId = cfg.regions.find((r) => r.component === "data-table")?.binding.slice(7);
   const main = vm.tables.find((t) => t.id === mainId);
@@ -376,30 +379,50 @@ export function ResultHeadline({ vm, cfg, status, mode }: { vm: ViewModel; cfg: 
           </span>
         ))}
       {h && (
-        <span className="ml-auto text-ink-300">
+        <span className="text-ink-300">
           客户 <b className="text-ink-100">{h.customerName || "未识别"}</b>
           {h.customerId && <span className="ml-1 font-mono text-[11px] text-ink-400">{h.customerId}</span>}
         </span>
       )}
+      <span className="ml-auto flex flex-wrap items-center gap-1.5" data-testid="headline-actions">
+        {setOnlyIssues && vm.issues.length > 0 && (
+          <Btn onClick={() => setOnlyIssues(!onlyIssues)} aria-pressed={onlyIssues} data-testid="btn-only-issues">
+            {onlyIssues ? "显示全部行" : "只看有问题的行"}
+          </Btn>
+        )}
+        {onCompare && (
+          <Btn onClick={onCompare} title="选两次运行，看改提示词前后差在哪">
+            对比历史运行
+          </Btn>
+        )}
+        {onEditPrompt && (
+          <Btn onClick={onEditPrompt} title="切到提示词调试：左边改提示词，右边看结果">
+            编辑提示词
+          </Btn>
+        )}
+      </span>
     </div>
   );
 }
 
-export function BusinessView({ vm, cfg, canPreview, status, mode }: { vm: ViewModel; cfg: RendererConfig; canPreview: boolean } & HeadlineProps) {
+export function BusinessView({ vm, cfg, canPreview, ...headline }: { vm: ViewModel; cfg: RendererConfig; canPreview: boolean } & HeadlineProps) {
+  // 「只看有问题的行」目前只接到 P1 宽表的主表；其他布局下按钮不显示
+  const [onlyIssues, setOnlyIssues] = useState(false);
+  const wide = cfg.layout === "wide-table-with-issues";
   return (
     <IssuesContext.Provider value={vm.issues}>
       <div className="space-y-3">
-        <ResultHeadline vm={vm} cfg={cfg} status={status} mode={mode} />
-        <Layout vm={vm} cfg={cfg} canPreview={canPreview} />
+        <ResultHeadline vm={vm} cfg={cfg} {...headline} onlyIssues={onlyIssues} setOnlyIssues={wide ? setOnlyIssues : undefined} />
+        <Layout vm={vm} cfg={cfg} canPreview={canPreview} onlyIssues={onlyIssues} setOnlyIssues={setOnlyIssues} />
       </div>
     </IssuesContext.Provider>
   );
 }
 
-function Layout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig; canPreview: boolean }) {
+function Layout({ vm, cfg, onlyIssues, setOnlyIssues }: { vm: ViewModel; cfg: RendererConfig; canPreview: boolean; onlyIssues: boolean; setOnlyIssues: (v: boolean) => void }) {
   switch (cfg.layout) {
     case "wide-table-with-issues":
-      return <WideTableLayout vm={vm} cfg={cfg} />;
+      return <WideTableLayout vm={vm} cfg={cfg} onlyIssues={onlyIssues} setOnlyIssues={setOnlyIssues} />;
     case "hierarchy-with-issues":
       return <HierarchyLayout vm={vm} cfg={cfg} />;
     case "candidate-comparison":
