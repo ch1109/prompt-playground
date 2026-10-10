@@ -24,6 +24,8 @@ export interface PromptVersion {
   created_at: string;
   parent_version_id: string | null;
   source: string | null;
+  /** 变更说明（v1.1 起）；旧版本为空 */
+  change_note?: string | null;
 }
 
 export const DEFAULT_PROJECT_ID = "jiuli";
@@ -83,7 +85,7 @@ function insertSeed(promptId: string, label: string, system: string, source: str
     source,
   };
   db()
-    .prepare("INSERT INTO prompt_versions VALUES (?,?,?,?,?,?,?,?,?,?)")
+    .prepare("INSERT INTO prompt_versions (version_id, prompt_id, label, system_prompt, user_prompt_template, variables_schema, content_hash, created_at, parent_version_id, source) VALUES (?,?,?,?,?,?,?,?,?,?)")
     .run(v.version_id, v.prompt_id, v.label, v.system_prompt, v.user_prompt_template, v.variables_schema, v.content_hash, v.created_at, v.parent_version_id, v.source);
   return v;
 }
@@ -129,7 +131,7 @@ function copyLatestVersion(srcPromptId: string, promptId: string, createdAt: str
   const latest = listVersions(srcPromptId)[0];
   if (!latest) return;
   db()
-    .prepare("INSERT INTO prompt_versions VALUES (?,?,?,?,?,?,?,?,?,?)")
+    .prepare("INSERT INTO prompt_versions (version_id, prompt_id, label, system_prompt, user_prompt_template, variables_schema, content_hash, created_at, parent_version_id, source) VALUES (?,?,?,?,?,?,?,?,?,?)")
     .run(newId("pv"), promptId, `复制自 九立 AI 核对 · ${latest.label}`, latest.system_prompt, latest.user_prompt_template, latest.variables_schema, latest.content_hash, createdAt, null, `copy:${latest.version_id}`);
 }
 
@@ -203,7 +205,7 @@ export function getVersion(versionId: string): PromptVersion | undefined {
 }
 
 /** 创建不可变 PromptVersion（不覆盖历史） */
-export function createVersion(input: { prompt_id: string; label: string; system_prompt: string; user_prompt_template: string; parent_version_id?: string | null }): PromptVersion {
+export function createVersion(input: { prompt_id: string; label: string; system_prompt: string; user_prompt_template: string; parent_version_id?: string | null; change_note?: string | null }): PromptVersion {
   ensureSeed();
   const v: PromptVersion = {
     version_id: newId("pv"),
@@ -216,9 +218,10 @@ export function createVersion(input: { prompt_id: string; label: string; system_
     created_at: new Date().toISOString(),
     parent_version_id: input.parent_version_id ?? null,
     source: "studio-editor",
+    change_note: input.change_note?.trim() || null,
   };
   db()
-    .prepare("INSERT INTO prompt_versions VALUES (?,?,?,?,?,?,?,?,?,?)")
-    .run(v.version_id, v.prompt_id, v.label, v.system_prompt, v.user_prompt_template, v.variables_schema, v.content_hash, v.created_at, v.parent_version_id, v.source);
+    .prepare("INSERT INTO prompt_versions (version_id, prompt_id, label, system_prompt, user_prompt_template, variables_schema, content_hash, created_at, parent_version_id, source, change_note) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+    .run(v.version_id, v.prompt_id, v.label, v.system_prompt, v.user_prompt_template, v.variables_schema, v.content_hash, v.created_at, v.parent_version_id, v.source, v.change_note ?? null);
   return v;
 }

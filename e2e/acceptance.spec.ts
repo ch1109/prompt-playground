@@ -136,17 +136,21 @@ test("样本运行的证据只有元数据时说明原因", async ({ page }) => 
   await expect(drawer.getByTestId("evidence-note").first()).toContainText("样本只带模型输出与请求");
 });
 
-test("标注类型精简（P3 才有候选/关系类型），保存后提示已保存", async ({ page }) => {
+test("标注类型精简（P3 才有候选/关系类型），标注错误必须选归因，保存后提示已保存", async ({ page }) => {
   await renderFixture(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
   await page.locator('[data-table-id="orderRows"] [data-row-id="row-1"] [data-field="brand"]').click();
-  const options = page.getByLabel("标注类型").locator("option");
-  await expect(options).toHaveText(["模型错了", "备注"]);
+  const form = page.getByTestId("annotation-form");
+  await expect(form.getByLabel("标注类型")).toHaveCount(0);
+  await expect(form.getByRole("radio")).toHaveText(["标注错误", "标注正确", "暂不确定"]);
   await page.getByLabel("正确值").fill("无牌");
+  await expect(page.getByRole("button", { name: "保存标注" })).toBeDisabled();
+  await page.getByLabel("错误归因").selectOption("MODEL_EXTRACTION");
   await page.getByRole("button", { name: "保存标注" }).click();
-  await expect(page.getByTestId("annotation-form").getByRole("status")).toHaveText("已保存");
+  await expect(form.getByRole("status")).toHaveText("已保存");
+  await expect(form).toContainText("（疑似 / 待核实）");
   await renderFixture(page, "jiuli-p3", "constructed/p3-v3-multi-candidate.json");
   await page.locator('[data-table-id="orderRows"] [data-row-id="OR_001"] [data-field="match_status"]').click();
-  await expect(options).toHaveText(["模型错了", "正确候选（P3）", "错误关系（P3）", "备注"]);
+  await expect(page.getByLabel("标注类型").locator("option")).toHaveText(["评判", "正确候选（P3）", "错误关系（P3）", "备注"]);
 });
 
 test("运行信息与运行对比显示版本名称，而不只是版本 ID", async ({ page }) => {
@@ -780,6 +784,7 @@ test("标注独立保存，不改原始输出", async ({ page }) => {
   await page.locator('[data-change-id="OR_001:gross_weight"]').click();
   await page.getByLabel("正确值").fill("2.4");
   await page.getByLabel("标注备注").fill("模型应选箱单 GW");
+  await page.getByLabel("错误归因").selectOption("PROMPT_RULE");
   await page.getByRole("button", { name: "保存标注" }).click();
   await expect(page.getByTestId("annotation-form")).toContainText("正确值：2.4");
   // 有标注的行显示角标；可导出 CSV
@@ -801,6 +806,7 @@ test("标注可修改、可删除：删除后角标消失、导出中不再出�
   const marker = `标注-${Date.now()}`;
   await page.getByLabel("正确值").fill("错写的值");
   await page.getByLabel("标注备注").fill(marker);
+  await page.getByLabel("错误归因").selectOption("UNDETERMINED");
   await page.getByRole("button", { name: "保存标注" }).click();
   const form = page.getByTestId("annotation-form");
   await expect(form).toContainText("正确值：错写的值");

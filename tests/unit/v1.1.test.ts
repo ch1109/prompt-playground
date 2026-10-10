@@ -248,3 +248,38 @@ describe("R-13 Excel 来源定位", () => {
     expect(excelRowExcerpt(req, { fileId: "F-不存在", sheet: "12-10-2", row: 7 })).toBeNull();
   });
 });
+
+describe("R-14 独立人工纠错标注", () => {
+  const post = async (runId: string, body: unknown) => {
+    const { POST } = await import("@/app/api/runs/[id]/annotations/route");
+    const res = await POST(new Request("http://x", { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } }) as never, { params: Promise.resolve({ id: runId }) } as never);
+    return { status: res.status, json: (await res.json()) as { ok: boolean; data: Record<string, unknown>; error?: { message: string } } };
+  };
+
+  it("AT-31 标注 P2 产地正确值：写 Annotation（含模型原值、归因、标注人），raw_response 完全不变", async () => {
+    const { renderOnly } = await import("@/lib/runs/service");
+    const f = fx("v3/SC-08/P2");
+    const run = renderOnly({ projectId: "jiuli", promptId: "jiuli-p2", raw: f.raw, snapshotId: snapshotForFixture("jiuli", f)!.snapshot_id });
+    const before = getRun(run.run_id)!;
+    const pointer = "/output/raw_rows/0/origin_candidates/0/value";
+    const r = await post(run.run_id, { assessment: "WRONG", error_category: "MODEL_EXTRACTION", category_confirmed: false, expected_value: "马来西亚", target_json_pointer: pointer, target: "inspectionRawRows / r1 / origin", source_ref_ids: ["ev-1"] });
+    expect(r.status).toBe(201);
+    expect(r.json.data).toMatchObject({ issue_type: "ASSESSMENT", assessment: "WRONG", error_category: "MODEL_EXTRACTION", category_confirmed: false, expected_value: "马来西亚", source_ref_ids: ["ev-1"], author: "本机用户" });
+    expect(JSON.parse(String(r.json.data.model_value))).toBe(JSON.parse(f.raw).output.raw_rows[0].origin_candidates[0].value);
+    const after = getRun(run.run_id)!;
+    expect(after.raw_response).toBe(before.raw_response);
+    expect(after.raw_response_hash).toBe(before.raw_response_hash);
+  });
+
+  it("标注错误必须给归因；标注正确不能带归因；请求输入位置不记模型原值", async () => {
+    const { renderOnly } = await import("@/lib/runs/service");
+    const f = fx("v3/SC-08/P1");
+    const run = renderOnly({ projectId: "jiuli", promptId: "jiuli-p1", raw: f.raw, snapshotId: snapshotForFixture("jiuli", f)!.snapshot_id });
+    expect((await post(run.run_id, { assessment: "WRONG" })).status).toBe(400);
+    expect((await post(run.run_id, { assessment: "CORRECT", error_category: "PROMPT_RULE" })).status).toBe(400);
+    const ok = await post(run.run_id, { assessment: "UNSURE", target_json_pointer: "req:/input/materials/0/file_id" });
+    expect(ok.status).toBe(201);
+    expect(ok.json.data.model_value).toBeNull();
+    expect(ok.json.data.category_confirmed).toBe(true);
+  });
+});

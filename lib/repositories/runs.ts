@@ -92,7 +92,11 @@ export function listRuns(projectId: string, promptId?: string, limit = 100): Run
   });
 }
 
-export const ANNOTATION_TYPES = ["MODEL_WRONG", "CORRECT_VALUE", "ERROR_REASON", "CORRECT_CANDIDATE", "WRONG_RELATION", "NOTE"];
+/** ASSESSMENT = v1.1 的评判型标注（错误 / 正确 / 不确定 + 错误归因）；其余为旧类型与 P3 关系类型 */
+export const ANNOTATION_TYPES = ["ASSESSMENT", "MODEL_WRONG", "CORRECT_VALUE", "ERROR_REASON", "CORRECT_CANDIDATE", "WRONG_RELATION", "NOTE"];
+export const ASSESSMENTS = ["WRONG", "CORRECT", "UNSURE"] as const;
+/** 错误归因（需求 R-14） */
+export const ERROR_CATEGORIES = ["INPUT_PREPROCESSING", "MODEL_EXTRACTION", "PROMPT_RULE", "CANDIDATE_RECALL", "MATCH_JUDGEMENT", "SCHEMA_CONTRACT", "ADAPTER_RENDER", "UNDETERMINED"] as const;
 
 export interface Annotation {
   annotation_id: string;
@@ -104,33 +108,91 @@ export interface Annotation {
   note: string | null;
   created_at: string;
   updated_at?: string | null;
+  assessment?: (typeof ASSESSMENTS)[number] | null;
+  error_category?: (typeof ERROR_CATEGORIES)[number] | null;
+  /** 错误归因是否已核实；false = 疑似 / 待核实 */
+  category_confirmed?: boolean | null;
+  /** 保存时该位置上模型输出的原值（JSON 文本）；指向请求上下文或不存在时为 null */
+  model_value?: string | null;
+  source_ref_ids?: string[];
+  author?: string | null;
+}
+
+export type AnnotationInput = Omit<Annotation, "annotation_id" | "created_at" | "updated_at">;
+
+/** 校验评判字段的组合；返回错误说明或 null */
+export function checkAssessment(a: Pick<Annotation, "assessment" | "error_category">): string | null {
+  if (a.assessment && !ASSESSMENTS.includes(a.assessment)) return `assessment 必须是 ${ASSESSMENTS.join("/")}`;
+  if (a.error_category && !ERROR_CATEGORIES.includes(a.error_category)) return `error_category 必须是 ${ERROR_CATEGORIES.join("/")}`;
+  if (a.assessment === "WRONG" && !a.error_category) return "标注错误时必须选择错误归因（证据不足可选 UNDETERMINED 或标为待核实）";
+  if (a.assessment === "CORRECT" && a.error_category) return "标注正确时不填错误归因";
+  return null;
+}
+
+type Row = Record<string, unknown>;
+function fromRow(r: Row): Annotation {
+  return {
+    ...(r as unknown as Annotation),
+    category_confirmed: r.category_confirmed === null || r.category_confirmed === undefined ? null : r.category_confirmed === 1,
+    source_ref_ids: typeof r.source_ref_ids === "string" ? (JSON.parse(r.source_ref_ids) as string[]) : [],
+  };
 }
 
 /** 标注独立保存：不修改 Run、原始响应或任何九立数据 */
-export function addAnnotation(a: Omit<Annotation, "annotation_id" | "created_at">): Annotation {
+export function addAnnotation(a: AnnotationInput): Annotation {
   const full: Annotation = { ...a, annotation_id: newId("ann"), created_at: new Date().toISOString() };
   db()
-    .prepare("INSERT INTO annotations (annotation_id, run_id, target_json_pointer, target, issue_type, expected_value, note, created_at) VALUES (?,?,?,?,?,?,?,?)")
-    .run(full.annotation_id, full.run_id, full.target_json_pointer, full.target, full.issue_type, full.expected_value, full.note, full.created_at);
-  return full;
+    .prepare(
+      "INSERT INTO annotations (annotation_id, run_id, target_json_pointer, target, issue_type, expected_value, note, created_at, assessment, error_category, category_confirmed, model_value, source_ref_ids, author) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    )
+    .run(
+      full.annotation_id,
+      full.run_id,
+      full.target_json_pointer,
+      full.target,
+      full.issue_type,
+      full.expected_value,
+      full.note,
+      full.created_at,
+      full.assessment ?? null,
+      full.error_category ?? null,
+      full.category_confirmed === undefined || full.category_confirmed === null ? null : full.category_confirmed ? 1 : 0,
+      full.model_value ?? null,
+      JSON.stringify(full.source_ref_ids ?? []),
+      full.author ?? null,
+    );
+  return getAnnotation(full.annotation_id)!;
 }
 
-const ANN_COLS = "annotation_id, run_id, target_json_pointer, target, issue_type, expected_value, note, created_at, updated_at";
+const ANN_COLS = "annotation_id, run_id, target_json_pointer, target, issue_type, expected_value, note, created_at, updated_at, assessment, error_category, category_confirmed, model_value, source_ref_ids, author";
 
 export function listAnnotations(runId: string): Annotation[] {
-  return db().prepare(`SELECT ${ANN_COLS} FROM annotations WHERE run_id = ? AND deleted_at IS NULL ORDER BY created_at`).all(runId) as unknown as Annotation[];
+  return (db().prepare(`SELECT ${ANN_COLS} FROM annotations WHERE run_id = ? AND deleted_at IS NULL ORDER BY created_at`).all(runId) as Row[]).map(fromRow);
 }
 
 export function getAnnotation(annotationId: string): Annotation | undefined {
-  return db().prepare(`SELECT ${ANN_COLS} FROM annotations WHERE annotation_id = ? AND deleted_at IS NULL`).get(annotationId) as unknown as Annotation | undefined;
+  const r = db().prepare(`SELECT ${ANN_COLS} FROM annotations WHERE annotation_id = ? AND deleted_at IS NULL`).get(annotationId) as Row | undefined;
+  return r ? fromRow(r) : undefined;
 }
 
-/** 修改标注内容（不涉及模型输出）；已删除的返回 undefined */
-export function updateAnnotation(annotationId: string, patch: Pick<Annotation, "issue_type" | "expected_value" | "note">): Annotation | undefined {
-  const r = db()
-    .prepare("UPDATE annotations SET issue_type = ?, expected_value = ?, note = ?, updated_at = ? WHERE annotation_id = ? AND deleted_at IS NULL")
-    .run(patch.issue_type, patch.expected_value, patch.note, new Date().toISOString(), annotationId);
-  return r.changes ? getAnnotation(annotationId) : undefined;
+/** 修改标注内容（不涉及模型输出，模型原值与目标不变）；已删除的返回 undefined */
+export function updateAnnotation(annotationId: string, patch: Pick<Annotation, "issue_type" | "expected_value" | "note"> & Partial<Pick<Annotation, "assessment" | "error_category" | "category_confirmed">>): Annotation | undefined {
+  const cur = getAnnotation(annotationId);
+  if (!cur) return undefined;
+  const next = { ...cur, ...patch };
+  db()
+    .prepare("UPDATE annotations SET issue_type = ?, expected_value = ?, note = ?, assessment = ?, error_category = ?, category_confirmed = ?, updated_at = ? WHERE annotation_id = ? AND deleted_at IS NULL")
+    .run(
+      next.issue_type,
+      next.expected_value,
+      next.note,
+      next.assessment ?? null,
+      next.error_category ?? null,
+      next.category_confirmed === undefined || next.category_confirmed === null ? null : next.category_confirmed ? 1 : 0,
+      new Date().toISOString(),
+      annotationId,
+    );
+  return getAnnotation(annotationId);
 }
 
 /** 删除标注：只做删除标记（留痕），不再列出、不进入导出 */

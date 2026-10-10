@@ -40,6 +40,12 @@ export interface AnnotationDTO {
   note: string | null;
   created_at: string;
   updated_at?: string | null;
+  assessment?: "WRONG" | "CORRECT" | "UNSURE" | null;
+  error_category?: string | null;
+  category_confirmed?: boolean | null;
+  model_value?: string | null;
+  source_ref_ids?: string[];
+  author?: string | null;
 }
 
 export interface RunDetail {

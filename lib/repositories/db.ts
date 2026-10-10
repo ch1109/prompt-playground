@@ -73,6 +73,12 @@ export function db(): DatabaseSync {
     const annCols = (d.prepare("PRAGMA table_info(annotations)").all() as { name: string }[]).map((c) => c.name);
     if (!annCols.includes("updated_at")) d.exec("ALTER TABLE annotations ADD COLUMN updated_at TEXT");
     if (!annCols.includes("deleted_at")) d.exec("ALTER TABLE annotations ADD COLUMN deleted_at TEXT");
+    // 迁移（v1.1 R-14）：评判、错误归因、是否已核实、保存时的模型原值、来源引用、标注人；旧标注这些列为空
+    for (const [col, type] of [["assessment", "TEXT"], ["error_category", "TEXT"], ["category_confirmed", "INTEGER"], ["model_value", "TEXT"], ["source_ref_ids", "TEXT"], ["author", "TEXT"]])
+      if (!annCols.includes(col)) d.exec(`ALTER TABLE annotations ADD COLUMN ${col} ${type}`);
+    // 迁移（v1.1 R-06）：Prompt 版本变更说明
+    const pvCols = (d.prepare("PRAGMA table_info(prompt_versions)").all() as { name: string }[]).map((c) => c.name);
+    if (!pvCols.includes("change_note")) d.exec("ALTER TABLE prompt_versions ADD COLUMN change_note TEXT");
     globalForDb.__studioDb = d;
     // 进程刚启动时不可能有正在进行的调用：遗留的 RUNNING 都是上次被中断的
     markInterruptedRuns(d);

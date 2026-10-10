@@ -422,6 +422,7 @@ function MetaTab({ detail }: { detail: RunDetail }) {
 
 /** 全部类型的显示名（含旧数据里的"正确值""错误原因"，照常显示与导出） */
 const ANN_LABEL: Record<string, string> = {
+  ASSESSMENT: "评判",
   MODEL_WRONG: "模型错了",
   CORRECT_VALUE: "正确值",
   ERROR_REASON: "错误原因",
@@ -429,14 +430,30 @@ const ANN_LABEL: Record<string, string> = {
   WRONG_RELATION: "错误关系（P3）",
   NOTE: "备注",
 };
-/** 新建时可选的类型：正确值、错误原因直接填下方输入框，不再作为单独类型；P3 才有候选/关系类型 */
-const annTypeChoices = (kind: string) => ["MODEL_WRONG", ...(kind === "JIULI_P3" ? ["CORRECT_CANDIDATE", "WRONG_RELATION"] : []), "NOTE"];
+const ASSESS_LABEL = { WRONG: "标注错误", CORRECT: "标注正确", UNSURE: "暂不确定" } as const;
+type Assess = keyof typeof ASSESS_LABEL;
+/** 错误归因（需求 R-14） */
+const CATEGORY_LABEL: Record<string, string> = {
+  INPUT_PREPROCESSING: "输入预处理：丢页 / 转换失真 / 未发送图像",
+  MODEL_EXTRACTION: "模型识别：收到证据但识别错误",
+  PROMPT_RULE: "提示词规则：规则执行或优先级错误",
+  CANDIDATE_RECALL: "候选召回：正确候选未进入 P3 输入",
+  MATCH_JUDGEMENT: "匹配裁决：候选已存在但 P3 判错",
+  SCHEMA_CONTRACT: "输出结构：Schema / 契约问题",
+  ADAPTER_RENDER: "显示映射：模型输出正确但显示错",
+  UNDETERMINED: "暂时无法归因",
+};
+/** P3 才有候选 / 关系类型；其余只用「评判」与「备注」 */
+const annTypeChoices = (kind: string) => ["ASSESSMENT", ...(kind === "JIULI_P3" ? ["CORRECT_CANDIDATE", "WRONG_RELATION"] : []), "NOTE"];
 
 /** 纠错标注独立保存，不修改模型输出、九立池或原始附件 */
 function AnnotationForm({ detail }: { detail: RunDetail }) {
   const sel = useStudio((s) => s.selection);
   const putRun = useStudio((s) => s.putRun);
-  const [type, setType] = useState("MODEL_WRONG");
+  const [type, setType] = useState("ASSESSMENT");
+  const [assess, setAssess] = useState<Assess>("WRONG");
+  const [category, setCategory] = useState("");
+  const [confirmed, setConfirmed] = useState(false);
   const [expected, setExpected] = useState("");
   const [note, setNote] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -447,22 +464,38 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
   // 修改旧标注时保留它原来的类型
   if (editing && !choices.includes(editing.issue_type)) choices.push(editing.issue_type);
   const target = [sel.tableId, sel.rowId, sel.fieldKey].filter(Boolean).join(" / ") || sel.relationId || null;
+  const pointer = editing ? editing.target_json_pointer : sel.jsonPointer;
+  const modelValue = editing
+    ? editing.model_value != null
+      ? JSON.parse(editing.model_value)
+      : undefined
+    : pointer && !pointer.startsWith("req:") && detail.run.parsed_json !== undefined
+      ? getByPointer(detail.run.parsed_json, pointer)
+      : undefined;
+  const shownModelValue = editing ? modelValue : (modelValue as { found?: boolean; value?: unknown } | undefined)?.found ? (modelValue as { value: unknown }).value : undefined;
+  const assessing = type === "ASSESSMENT";
 
   function reset() {
     setEditing(null);
-    setType("MODEL_WRONG");
+    setType("ASSESSMENT");
+    setAssess("WRONG");
+    setCategory("");
+    setConfirmed(false);
     setExpected("");
     setNote("");
   }
 
   async function save() {
     setErr(null);
+    const judgement = assessing ? { assessment: assess, error_category: assess === "CORRECT" ? null : category || null, category_confirmed: assess === "CORRECT" ? null : confirmed } : {};
     try {
       if (editing) {
-        const a = await api<AnnotationDTO>(`/api/annotations/${editing.annotation_id}`, { method: "PATCH", json: { issue_type: type, expected_value: expected, note } });
+        const a = await api<AnnotationDTO>(`/api/annotations/${editing.annotation_id}`, { method: "PATCH", json: { issue_type: type, expected_value: expected, note, ...judgement } });
         putRun({ ...detail, annotations: detail.annotations.map((x) => (x.annotation_id === a.annotation_id ? a : x)) });
       } else {
-        const a = await api<AnnotationDTO>(`/api/runs/${detail.run.run_id}/annotations`, { json: { issue_type: type, expected_value: expected || undefined, note: note || undefined, target_json_pointer: sel.jsonPointer, target } });
+        const a = await api<AnnotationDTO>(`/api/runs/${detail.run.run_id}/annotations`, {
+          json: { issue_type: type, expected_value: expected || undefined, note: note || undefined, target_json_pointer: sel.jsonPointer, target, source_ref_ids: sel.sourceRefId ? [sel.sourceRefId] : [], ...judgement },
+        });
         putRun({ ...detail, annotations: [...detail.annotations, a] });
       }
       reset();
@@ -477,6 +510,9 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
     setErr(null);
     setEditing(a);
     setType(a.issue_type);
+    setAssess(a.assessment ?? "WRONG");
+    setCategory(a.error_category ?? "");
+    setConfirmed(a.category_confirmed ?? false);
     setExpected(a.expected_value ?? "");
     setNote(a.note ?? "");
   }
@@ -496,7 +532,7 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
   return (
     <div className="border-t border-ink-700 pt-2" data-testid="annotation-form">
       <h4 className="mb-1 flex items-center gap-2 text-[11.5px] font-semibold text-ink-300">
-        评测标注（独立保存，不改模型输出）
+        人工纠错标注（独立保存，不改模型输出）
         <span className="ml-auto font-normal">
           导出全部：
           <a href={`/api/annotations/export?project=${detail.run.project_id}&format=csv`} className="text-info hover:underline" data-testid="export-annotations-csv">
@@ -510,17 +546,69 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
       </h4>
       <div className="space-y-1.5">
         <div className="text-[11px] text-ink-400">{editing ? `正在修改：${editing.target ?? editing.target_json_pointer ?? "整个 Run"}` : `目标：${target ?? "（未选择，标注整个 Run）"}`}</div>
-        <select value={type} onChange={(e) => setType(e.target.value)} aria-label="标注类型" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-1 py-0.5 text-[12px]">
-          {choices.map((v) => (
-            <option key={v} value={v}>
-              {ANN_LABEL[v] ?? v}
-            </option>
-          ))}
-        </select>
-        <input value={expected} onChange={(e) => setExpected(e.target.value)} placeholder="正确值（可选）" aria-label="正确值" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5 text-[12px]" />
-        <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="错误原因 / 备注（可选）" aria-label="标注备注" rows={2} className="w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5 text-[12px]" />
+        {pointer && (
+          <div className="text-[11px] text-ink-400" data-testid="annotation-model-value">
+            模型原值：
+            <span className="font-mono text-ink-100">{pointer.startsWith("req:") ? "（所选位置是请求输入，不是模型输出）" : shownModelValue === undefined ? "（该位置在模型输出中不存在）" : JSON.stringify(shownModelValue)}</span>
+          </div>
+        )}
+        {choices.length > 2 || editing ? (
+          <select value={type} onChange={(e) => setType(e.target.value)} aria-label="标注类型" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-1 py-0.5 text-[12px]">
+            {choices.map((v) => (
+              <option key={v} value={v}>
+                {ANN_LABEL[v] ?? v}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <div className="flex gap-0.5 rounded-lg bg-ink-800 p-0.5 text-[11.5px]">
+            {choices.map((v) => (
+              <button key={v} onClick={() => setType(v)} className={cx("flex-1 px-2 py-0.5", type === v ? "rounded-md bg-ink-900 text-ink-100 shadow-sm" : "text-ink-400")}>
+                {ANN_LABEL[v]}
+              </button>
+            ))}
+          </div>
+        )}
+        {assessing && (
+          <>
+            <div className="flex gap-1" role="radiogroup" aria-label="评判">
+              {(Object.keys(ASSESS_LABEL) as Assess[]).map((k) => (
+                <button
+                  key={k}
+                  role="radio"
+                  aria-checked={assess === k}
+                  onClick={() => setAssess(k)}
+                  className={cx(
+                    "flex-1 rounded-lg border px-1.5 py-1 text-[11.5px]",
+                    assess === k ? (k === "WRONG" ? "border-stamp bg-stamp/10 text-stamp" : k === "CORRECT" ? "border-verify bg-verify/10 text-verify" : "border-risk bg-risk/10 text-risk") : "border-ink-700 text-ink-400",
+                  )}
+                >
+                  {ASSESS_LABEL[k]}
+                </button>
+              ))}
+            </div>
+            {assess !== "CORRECT" && (
+              <>
+                <select value={category} onChange={(e) => setCategory(e.target.value)} aria-label="错误归因" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-1 py-0.5 text-[12px]">
+                  <option value="">{assess === "WRONG" ? "选择错误归因（必选）" : "错误归因（可选）"}</option>
+                  {Object.entries(CATEGORY_LABEL).map(([k, v]) => (
+                    <option key={k} value={k}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+                <label className="flex items-center gap-1 text-[11px] text-ink-300">
+                  <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} aria-label="归因已核实" />
+                  归因已核实（不勾选 = 疑似 / 待核实，证据不足时不要强行归为模型错误）
+                </label>
+              </>
+            )}
+          </>
+        )}
+        <input value={expected} onChange={(e) => setExpected(e.target.value)} placeholder="人工期望值（可选）" aria-label="正确值" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5 text-[12px]" />
+        <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="依据 / 备注（可选）" aria-label="标注备注" rows={2} className="w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5 text-[12px]" />
         <div className="flex gap-1">
-          <Btn tone="outline" onClick={save}>
+          <Btn tone="outline" onClick={save} disabled={assessing && assess === "WRONG" && !category} title={assessing && assess === "WRONG" && !category ? "标注错误时请先选择错误归因" : undefined}>
             {editing ? "保存修改" : "保存标注"}
           </Btn>
           {editing && <Btn onClick={reset}>取消修改</Btn>}
@@ -537,7 +625,8 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
           {detail.annotations.map((a) => (
             <li key={a.annotation_id} className={cx("rounded-lg bg-ink-800 px-2 py-1 text-[11px]", editing?.annotation_id === a.annotation_id && "ring-1 ring-info")}>
               <div className="flex items-center gap-1">
-                <Badge tone="info">{ANN_LABEL[a.issue_type] ?? a.issue_type}</Badge> <span className="min-w-0 flex-1 truncate text-ink-400">{a.target ?? a.target_json_pointer}</span>
+                <Badge tone={a.assessment === "WRONG" ? "bad" : a.assessment === "CORRECT" ? "ok" : a.assessment === "UNSURE" ? "warn" : "info"}>{a.assessment ? ASSESS_LABEL[a.assessment] : (ANN_LABEL[a.issue_type] ?? a.issue_type)}</Badge>{" "}
+                <span className="min-w-0 flex-1 truncate text-ink-400">{a.target ?? a.target_json_pointer}</span>
                 <button onClick={() => startEdit(a)} className="text-info hover:underline" aria-label={`修改标注 ${a.annotation_id}`}>
                   修改
                 </button>
@@ -545,8 +634,16 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
                   删除
                 </button>
               </div>
+              {a.error_category && (
+                <div>
+                  归因：{CATEGORY_LABEL[a.error_category] ?? a.error_category}
+                  {a.category_confirmed === false && <span className="ml-1 text-risk">（疑似 / 待核实）</span>}
+                </div>
+              )}
+              {a.model_value != null && <div className="text-ink-400">模型原值：{a.model_value}</div>}
               {a.expected_value && <div>正确值：{a.expected_value}</div>}
               {a.note && <div className="text-ink-300">{a.note}</div>}
+              {a.author && <div className="text-[10px] text-ink-600">{a.author} · {a.created_at.slice(0, 19).replace("T", " ")}</div>}
             </li>
           ))}
         </ul>
