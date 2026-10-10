@@ -13,7 +13,7 @@ import { GuideDialog } from "./guide-dialog";
 
 const GUIDE_SEEN_KEY = "prompt-studio-guide-seen";
 
-const SHORT: Record<string, string> = { JIULI_P1: "P1", JIULI_P2: "P2", JIULI_P3: "P3", JIULI_P4: "P4", GENERIC_JSON: "{ }" };
+const SHORT: Record<string, string> = { JIULI_P1: "P1", JIULI_P2: "P2", JIULI_P3: "P3", JIULI_P4: "P4", GENERIC_JSON: "通用" };
 
 /** 桌面宽度 <1280px 时编辑区/结果区改为页签切换（PRD §5.4） */
 const NARROW_QUERY = "(max-width: 1279px)";
@@ -36,11 +36,11 @@ interface ProjectDTO {
 }
 
 const NEW_PROMPT_KINDS: [PromptKind, string][] = [
+  ["GENERIC_JSON", "通用提示词"],
   ["JIULI_P1", "P1 委托材料识别"],
   ["JIULI_P2", "P2 查货材料识别"],
   ["JIULI_P3", "P3 商品对应关系"],
   ["JIULI_P4", "P4 字段核验"],
-  ["GENERIC_JSON", "通用 JSON"],
 ];
 
 export function Playground({ projectId }: { projectId: string }) {
@@ -94,8 +94,8 @@ export function Playground({ projectId }: { projectId: string }) {
   const exampleFixture = kindFixtures.find((f) => f.origin === "CONSTRUCTED" && f.hasRequest && f.schemaVersion) ?? kindFixtures.find((f) => f.origin === "RECORDED_MODEL_OUTPUT") ?? kindFixtures[0];
   const emptyHint =
     (hasFixtures
-      ? "在「输入 → 样本库」选择样本后点「仅渲染」；或选择带 ctx 的样本 / 已有快照后点「运行模型」。"
-      : "在「输入 → 粘贴 / 文件 JSON」粘贴模型输出后点「仅渲染」；要真实运行，先把请求上下文「存为快照」再点「运行模型」。") +
+      ? "在「输入」上传文件后点「运行模型」；也可以在「示例」里选一个示例，点「仅渲染」直接看结果。"
+      : "在「输入」上传文件（可以是整个文件夹）后点「运行模型」；也可以在「更多 → 粘贴 JSON」粘贴模型输出后点「仅渲染」。") +
     (provider && !provider.configured ? "（模型未配置，目前只能仅渲染）" : "");
   /** 顶栏显示的当前版本；文本与该版本不同即为未保存草稿（与「提示词」页签的判断一致） */
   const currentVersion = versions[promptId]?.find((v) => v.version_id === ws.versionId);
@@ -139,7 +139,7 @@ export function Playground({ projectId }: { projectId: string }) {
   }
 
   async function archiveProject() {
-    if (!window.confirm(`归档项目「${project?.name}」？\n\n归档后它移到下拉框的「已归档」分组，运行、快照、标注全部保留，可随时恢复。`)) return;
+    if (!window.confirm(`归档项目「${project?.name}」？\n\n归档后它移到下拉框的「已归档」分组，运行记录、输入、标注全部保留，可随时恢复。`)) return;
     if (await updateProject({ archived: true })) router.push("/projects/jiuli/playground");
   }
 
@@ -270,7 +270,7 @@ export function Playground({ projectId }: { projectId: string }) {
       let snapshotId: string | null = null;
       const body: Record<string, unknown> = { mode: "RENDER_ONLY", projectId, promptId };
       if (ws.inputMode === "fixture") {
-        if (!ws.fixtureId) throw new Error("请先在「输入 → 样本库」选择样本");
+        if (!ws.fixtureId) throw new Error("请先在「输入 → 示例」选择一个示例");
         body.fixtureId = ws.fixtureId;
       } else if (ws.inputMode === "paste") {
         if (!ws.pasteRaw.trim()) throw new Error("请粘贴模型原始输出");
@@ -282,7 +282,7 @@ export function Playground({ projectId }: { projectId: string }) {
         body.snapshotId = snapshotId;
         body.label = "粘贴 JSON";
       } else {
-        throw new Error("「仅渲染」需要样本或粘贴的 JSON；快照输入请使用「运行模型」");
+        throw new Error("「仅渲染」需要示例或粘贴的 JSON；上传的文件请用「运行模型」");
       }
       const run = await api<{ run_id: string }>("/api/runs", { json: body });
       await openRun(run.run_id, { sig: inputSignature(ws, "RENDER_ONLY"), mode: "RENDER_ONLY" });
@@ -330,12 +330,12 @@ export function Playground({ projectId }: { projectId: string }) {
       // 与请求预览同一来源（runSnapshotId）；样本快照尚未就绪时在此补建
       let w = ws;
       if (w.inputMode === "fixture") {
-        if (!w.fixtureId) throw new Error("请选择样本");
+        if (!w.fixtureId) throw new Error("请选择示例");
         if (!w.fixtureSnapshotId) {
           w = { ...w, fixtureSnapshotId: await fixtureSnapshot(w.fixtureId) };
           s.patchWorkspace(promptId, { fixtureSnapshotId: w.fixtureSnapshotId });
         }
-        if (!w.fixtureSnapshotId) throw new Error("该样本没有请求上下文，不能真实运行，只能「仅渲染」");
+        if (!w.fixtureSnapshotId) throw new Error("这个示例没有附带输入，不能真实运行，只能「仅渲染」");
       }
       const snapshotId = runSnapshotId(w);
       if (!snapshotId) throw new Error("真实运行必须选择输入快照（带 ctx 的样本、已有快照，或从九立只读导入）；粘贴的请求可先点「请求存为快照」");
@@ -527,7 +527,7 @@ export function Playground({ projectId }: { projectId: string }) {
                 <input value={newProject.name} onChange={(e) => setNewProject({ ...newProject, name: e.target.value })} placeholder="项目名称" aria-label="项目名称" className={field} />
                 <select value={newProject.template} onChange={(e) => setNewProject({ ...newProject, template: e.target.value as "JIULI" | "BLANK" })} aria-label="项目模板" className={field}>
                   <option value="JIULI">复制九立 P1~P4 提示词</option>
-                  <option value="BLANK">空白（通用 JSON）</option>
+                  <option value="BLANK">空白（只有通用提示词）</option>
                 </select>
                 <div className="flex gap-1">
                   <Btn tone="primary" onClick={createProject}>
@@ -559,7 +559,7 @@ export function Playground({ projectId }: { projectId: string }) {
             right={
               project &&
               !newPrompt && (
-                <button onClick={() => setNewPrompt({ name: "", kind: "JIULI_P1" })} className="rounded-md p-0.5 text-ink-400 hover:bg-ink-800 hover:text-ink-100" aria-label="新建提示词" title="在本项目新建提示词">
+                <button onClick={() => setNewPrompt({ name: "", kind: "GENERIC_JSON" })} className="rounded-md p-0.5 text-ink-400 hover:bg-ink-800 hover:text-ink-100" aria-label="新建提示词" title="在本项目新建提示词">
                   <Icon d={ICONS.plus} />
                 </button>
               )
@@ -577,7 +577,7 @@ export function Playground({ projectId }: { projectId: string }) {
                   </option>
                 ))}
               </select>
-              <p className="text-[11px] text-ink-400">{newPrompt.kind === "GENERIC_JSON" ? "从默认提示开始，结果按 JSON 树展示。" : "以九立项目同种类的最新版本为起点。"}</p>
+              <p className="text-[11px] text-ink-400">{newPrompt.kind === "GENERIC_JSON" ? "任意提示词 + 任意文件；模型回答 JSON 时按树展示，回答文字时按文本展示。" : "以九立项目同种类的最新版本为起点。"}</p>
               <div className="flex gap-1">
                 <Btn tone="primary" onClick={createPrompt}>
                   创建
@@ -589,8 +589,10 @@ export function Playground({ projectId }: { projectId: string }) {
           <ul className="min-h-0 space-y-0.5 overflow-auto px-1">
             {prompts.map((p, i) => {
               const active = promptId === p.prompt_id;
+              const groupStart = p.prompt_kind !== "GENERIC_JSON" && (i === 0 || prompts[i - 1].prompt_kind === "GENERIC_JSON");
               return (
                 <li key={p.prompt_id} className="rise" style={{ animationDelay: `${i * 40}ms` }}>
+                  {groupStart && <div className="px-2 pb-0.5 pt-2 text-[11px] text-ink-400">九立预设</div>}
                   <button
                     onClick={() => switchPrompt(p.prompt_id)}
                     data-prompt={p.prompt_id}
@@ -777,13 +779,13 @@ export function Playground({ projectId }: { projectId: string }) {
                       <Badge>{r.mode}</Badge>
                     </td>
                     <td className="px-3">
-                      <Badge tone={runStatusView(r.status, r.schema_id).tone}>{runStatusView(r.status, r.schema_id).label}</Badge>
+                      <Badge tone={runStatusView(r.status, r.schema_id, r.prompt_kind).tone}>{runStatusView(r.status, r.schema_id, r.prompt_kind).label}</Badge>
                     </td>
                     <td className="max-w-[320px] truncate px-3">{r.label}</td>
                     <td className="px-3 text-ink-400">{r.model_name ?? "—"}</td>
                     <td className="space-x-1 px-3 py-1 whitespace-nowrap">
                       <Btn onClick={() => replay(r.run_id)}>回放</Btn>
-                      <Btn onClick={() => rerender(r.run_id)} title="用当前 Adapter/Renderer 重新渲染（另存为新 Run，不改历史）">
+                      <Btn onClick={() => rerender(r.run_id)} title="用当前的显示规则重新整理这次结果（另存为新记录，不改历史）">
                         重渲染
                       </Btn>
                     </td>

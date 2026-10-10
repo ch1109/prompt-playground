@@ -5,7 +5,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import type { SelectionState } from "@/lib/contracts/renderer-config";
 import type { RunDetail } from "@/lib/client/types";
 
-export type ResultTab = "visual" | "json" | "schema" | "meta";
+export type ResultTab = "visual" | "json" | "details";
 export type InputMode = "fixture" | "paste" | "snapshot" | "jiuli" | "upload";
 
 /** 每个 Prompt 独立的工作草稿与上次 Run（PRD §5.2） */
@@ -37,7 +37,7 @@ export const emptyWorkspace = (): Workspace => ({
   userTemplate: "{{input_json}}",
   versionId: null,
   versionHash: null,
-  inputMode: "fixture",
+  inputMode: "upload",
   pasteRaw: "",
   pasteRequest: "",
   fixtureId: null,
@@ -99,7 +99,7 @@ interface StudioState {
 export const useStudio = create<StudioState>()(
   persist(
     (set, get) => ({
-      activePromptId: "jiuli-p1",
+      activePromptId: "generic-json",
       workspaces: {},
       runs: {},
       selection: { runId: null },

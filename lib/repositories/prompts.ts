@@ -38,7 +38,7 @@ const SEED: { id: string; kind: PromptKind; name: string; file?: string }[] = [
   { id: "jiuli-p2", kind: "JIULI_P2", name: "P2 查货材料识别", file: "P2_inspection_facts_FINAL_v3.0.txt" },
   { id: "jiuli-p3", kind: "JIULI_P3", name: "P3 商品对应关系", file: "P3_product_matching_FINAL_v3.0.txt" },
   { id: "jiuli-p4", kind: "JIULI_P4", name: "P4 字段核验与 Patch", file: "P4_field_verification_FINAL_v3.0.txt" },
-  { id: "generic-json", kind: "GENERIC_JSON", name: "通用 JSON（未登记 Schema）" },
+  { id: "generic-json", kind: "GENERIC_JSON", name: "通用提示词" },
 ];
 
 export function contentHash(system: string, user: string) {
@@ -68,6 +68,8 @@ export function ensureSeed() {
     const has = d.prepare("SELECT 1 FROM prompt_versions WHERE prompt_id = ? LIMIT 1").get(s.id);
     if (!has) insertSeed(s.id, "默认", "只输出一个合法 JSON 对象。", "seed", null);
   }
+  // v1.2：内置通用提示词改名（只改仍是旧默认名的，用户改过的名字不动）
+  d.prepare("UPDATE prompts SET name = '通用提示词' WHERE prompt_kind = 'GENERIC_JSON' AND name = '通用 JSON（未登记 Schema）'").run();
   seeded.add(d);
 }
 
@@ -186,8 +188,8 @@ export function createPrompt(input: { projectId: string; name: string; kind: Pro
 
 export function listPrompts(projectId: string): PromptDefinition[] {
   ensureSeed();
-  // 按种类 P1→P4 排列，通用 JSON 排最后（进入项目默认落在 P1）；同种类按创建顺序
-  return db().prepare("SELECT * FROM prompts WHERE project_id = ? ORDER BY prompt_kind = 'GENERIC_JSON', prompt_kind, rowid").all(projectId) as unknown as PromptDefinition[];
+  // 通用提示词排最前（进入项目默认落在通用），九立预设按 P1→P4；同种类按创建顺序
+  return db().prepare("SELECT * FROM prompts WHERE project_id = ? ORDER BY prompt_kind != 'GENERIC_JSON', prompt_kind, rowid").all(projectId) as unknown as PromptDefinition[];
 }
 
 export function getPrompt(promptId: string): PromptDefinition | undefined {

@@ -51,18 +51,22 @@ export const RUN_STATUS_TONE: Record<string, keyof typeof TONES> = {
 
 export const RUN_STATUS_LABEL: Record<string, string> = {
   SUCCEEDED: "解析成功",
-  SCHEMA_INVALID: "Schema 不合法",
+  SCHEMA_INVALID: "结构不符",
   PARSE_ERROR: "JSON 解析失败",
   MODEL_ERROR: "模型调用失败",
-  ADAPTER_ERROR: "适配器异常",
+  ADAPTER_ERROR: "整理表格出错",
   RUNNING: "运行中",
   CANCELLED: "已取消",
   CREATED: "已创建",
 };
 
-/** Run 状态徽章：解析成功但没有登记 Schema（UNKNOWN_SCHEMA）时不显示"解析成功"，避免误以为已通过校验 */
-export function runStatusView(status: string, schemaId: string | null | undefined): { label: string; tone: keyof typeof TONES } {
-  if (status === "SUCCEEDED" && !schemaId) return { label: "未校验（未登记 Schema）", tone: "mute" };
+/**
+ * 运行状态徽章。通用提示词没有预设结构，成功就是「完成」；
+ * 九立预设成功但结构没对上时不显示"解析成功"，避免误以为已通过校验。
+ */
+export function runStatusView(status: string, schemaId: string | null | undefined, kind?: string): { label: string; tone: keyof typeof TONES } {
+  if (status === "SUCCEEDED" && kind === "GENERIC_JSON") return { label: "完成", tone: "ok" };
+  if (status === "SUCCEEDED" && !schemaId) return { label: "未校验（不符合预设结构）", tone: "mute" };
   return { label: RUN_STATUS_LABEL[status] ?? status, tone: RUN_STATUS_TONE[status] ?? "mute" };
 }
 

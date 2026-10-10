@@ -810,7 +810,7 @@ describe.skipIf(!hasDemo)("九立导入 P1 带辅助材料", () => {
     expect(inv.content!.pages!.map((p) => p.page)).toEqual([1]);
     expect(pl.content!.pages!.map((p) => p.page)).toEqual([2, 3]);
     expect(built.warnings.join()).not.toContain("未标明");
-    expect(INPUT_BUILDER_VERSION).toBe("1.2.0");
+    expect(INPUT_BUILDER_VERSION).toBe("1.3.0");
   });
 
   it("导入前列出将带上的文件；排除的辅助材料不进快照、不进 P1 请求；主委托文件不能排除", async () => {
@@ -944,7 +944,7 @@ describe("多项目", () => {
     const g = createPrompt({ projectId: p.project_id, name: "摘要", kind: "GENERIC_JSON" });
     expect(listVersions(g.prompt_id)[0].system_prompt).toContain("JSON");
     expect(listPrompts(p.project_id)).toHaveLength(3);
-    expect(listPrompts(p.project_id).at(-1)!.prompt_kind).toBe("GENERIC_JSON");
+    expect(listPrompts(p.project_id)[0].prompt_kind).toBe("GENERIC_JSON");
     expect(() => createPrompt({ projectId: "no-such", name: "x", kind: "JIULI_P1" })).toThrow();
     expect(() => createPrompt({ projectId: p.project_id, name: " ", kind: "JIULI_P1" })).toThrow();
   });

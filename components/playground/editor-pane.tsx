@@ -69,8 +69,8 @@ export function EditorPane(props: {
         {tab === "preview" && <PreviewTab fixtures={props.fixtures} isDraft={isDraft} versionLabel={version?.label} />}
       </div>
       <div className="border-t border-ink-700 px-3 py-1 text-[11px] text-ink-400">
-        输入：{ws.inputMode === "fixture" ? (ws.fixtureId ? `样本 ${ws.fixtureId}` : "还没选样本，请点上方列表里的一项") :ws.inputMode === "paste" ? "粘贴 JSON（仅渲染）" : ws.inputMode === "jiuli" ? "九立导入（创建快照后使用）" : ws.inputMode === "upload" ? `上传文件 ${ws.uploadSnapshotId ?? "（未上传）"}` : `快照 ${ws.snapshotId ?? "未选"}`}
-        {runSnapshotId(ws) && ws.inputMode === "fixture" && ` · 快照 ${runSnapshotId(ws)}`}
+        输入：{ws.inputMode === "fixture" ? (ws.fixtureId ? `示例 ${ws.fixtureId}` : "还没选示例，请点上方列表里的一项") :ws.inputMode === "paste" ? "粘贴 JSON（仅渲染）" : ws.inputMode === "jiuli" ? "九立导入（导入后使用）" : ws.inputMode === "upload" ? (ws.uploadSnapshotId ? "已上传的文件" : "还没上传文件") : ws.snapshotId ? "已选历史输入" : "还没选历史输入"}
+        
       </div>
     </div>
   );
@@ -113,7 +113,7 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
       <label className="block text-[11px] text-ink-400">System（提示词正文）</label>
       <PromptEditor system={ws.system} userTemplate={ws.userTemplate} onSystem={(v) => patch({ system: v })} />
       <label className="block text-[11px] text-ink-400">
-        User 模板（变量 <code className="text-info">{"{{input_json}}"}</code> = 由快照显式构造的请求 JSON）
+        User 模板（<code className="text-info">{"{{input_json}}"}</code> 会被替换成输入内容的 JSON）
       </label>
       <textarea
         value={ws.userTemplate}
@@ -139,28 +139,41 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
           保存为新版本
         </Btn>
       </div>
-      <p className="text-[11px] text-ink-400">版本只新增不覆盖；未保存也可运行，Run 会记录 is_unsaved_draft 与实际发送内容 Hash。</p>
+      <p className="text-[11px] text-ink-400">版本只新增不覆盖；没保存也能运行，运行记录会注明用的是未保存的草稿。</p>
     </div>
   );
 }
 
 function InputTab({ projectId, kind, fixtures, snapshots, capability, onPickFixture, onSnapshotsChanged, onMoreSnapshots }: { projectId: string; kind: PromptKind; fixtures: FixtureSummary[]; snapshots: SnapshotListItem[]; capability: CapabilityDTO | null; onPickFixture: (fixtureId: string) => void; onSnapshotsChanged: () => void; onMoreSnapshots?: () => void }) {
   const [ws, patch] = useWorkspace();
+  // 常用三种放主位置；粘贴 JSON、九立导入是少用的高级入口，放在右侧小字
   const modes: [InputMode, string][] = [
-    ["fixture", "样本库"],
-    ["paste", "粘贴 / 文件 JSON"],
-    ["snapshot", "已有快照"],
-    ["jiuli", "从九立导入"],
     ["upload", "上传文件"],
+    ["fixture", "示例"],
+    ["snapshot", "历史输入"],
+  ];
+  const more: [InputMode, string][] = [
+    ["paste", "粘贴 JSON"],
+    ["jiuli", "从九立导入"],
   ];
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-0.5 rounded-xl bg-ink-800 p-1 text-[12.5px]">
-        {modes.map(([m, l]) => (
-          <button key={m} onClick={() => patch({ inputMode: m })} className={cx("flex-1 whitespace-nowrap rounded-lg px-2 py-1 transition-colors", ws.inputMode === m ? "bg-ink-900 font-medium text-ink-100 shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-ink-400 hover:text-ink-100")}>
-            {l}
-          </button>
-        ))}
+      <div className="flex items-center gap-2">
+        <div className="flex flex-1 gap-0.5 rounded-xl bg-ink-800 p-1 text-[12.5px]">
+          {modes.map(([m, l]) => (
+            <button key={m} onClick={() => patch({ inputMode: m })} className={cx("flex-1 whitespace-nowrap rounded-lg px-2 py-1 transition-colors", ws.inputMode === m ? "bg-ink-900 font-medium text-ink-100 shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-ink-400 hover:text-ink-100")}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <div className="flex shrink-0 items-center gap-1 text-[11.5px] text-ink-400">
+          更多：
+          {more.map(([m, l]) => (
+            <button key={m} onClick={() => patch({ inputMode: m })} className={cx("rounded px-1 hover:text-ink-100", ws.inputMode === m && "font-medium text-ink-100 underline")}>
+              {l}
+            </button>
+          ))}
+        </div>
       </div>
       {ws.inputMode === "fixture" && <FixtureList kind={kind} fixtures={fixtures} onPick={onPickFixture} />}
       {ws.inputMode === "paste" && <PasteInput projectId={projectId} kind={kind} onSnapshotsChanged={onSnapshotsChanged} />}
@@ -171,7 +184,7 @@ function InputTab({ projectId, kind, fixtures, snapshots, capability, onPickFixt
   );
 }
 
-const ORIGIN_GROUP = { RECORDED_MODEL_OUTPUT: "真实运行录制（非 Gold）", CONSTRUCTED: "人工构造异常样本", STRUCTURE_EXAMPLE: "结构 Fixture（规格示例）" } as const;
+const ORIGIN_GROUP = { RECORDED_MODEL_OUTPUT: "真实运行录制（不是标准答案）", CONSTRUCTED: "人工构造的异常示例", STRUCTURE_EXAMPLE: "格式示例" } as const;
 
 /** 样本库（R-01）：按来源分组，支持搜索与来源 / Gold / Schema 版本筛选；选中后显示详情 */
 function FixtureList({ kind, fixtures, onPick }: { kind: PromptKind; fixtures: FixtureSummary[]; onPick: (fixtureId: string) => void }) {
@@ -191,12 +204,12 @@ function FixtureList({ kind, fixtures, onPick }: { kind: PromptKind; fixtures: F
       (!needle || [f.title, f.id, f.group, ...f.tags].some((x) => x.toLowerCase().includes(needle))),
   );
   const picked = all.find((f) => f.id === ws.fixtureId);
-  if (!all.length) return <Empty>当前 Prompt 没有样本。可在「粘贴 / 文件 JSON」粘贴模型输出或请求上下文，或从九立导入 / 上传文件创建快照。</Empty>;
+  if (!all.length) return <Empty>当前提示词没有示例。可以直接「上传文件」，或在「更多 → 粘贴 JSON」粘贴模型输出。</Empty>;
   return (
     <div className="space-y-2" data-testid="fixture-list">
       <div className="flex flex-wrap items-center gap-1.5">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索样本名、样本号、验收项（如 AT09）…" aria-label="搜索样本" className="min-w-40 flex-1 rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-[12px] outline-none focus:border-ink-400" />
-        <select value={origin} onChange={(e) => setOrigin(e.target.value as typeof origin)} aria-label="样本来源" className="rounded-lg border border-ink-700 bg-ink-900 px-1 py-1 text-[11.5px]">
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索示例名、样本号、验收项（如 AT09）…" aria-label="搜索样本" className="min-w-40 flex-1 rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-[12px] outline-none focus:border-ink-400" />
+        <select value={origin} onChange={(e) => setOrigin(e.target.value as typeof origin)} aria-label="示例来源" className="rounded-lg border border-ink-700 bg-ink-900 px-1 py-1 text-[11.5px]">
           <option value="">全部来源</option>
           {Object.entries(ORIGIN_GROUP).map(([k, v]) => (
             <option key={k} value={k}>
@@ -204,8 +217,8 @@ function FixtureList({ kind, fixtures, onPick }: { kind: PromptKind; fixtures: F
             </option>
           ))}
         </select>
-        <select value={schema} onChange={(e) => setSchema(e.target.value)} aria-label="Schema 版本" className="rounded-lg border border-ink-700 bg-ink-900 px-1 py-1 text-[11.5px]">
-          <option value="">全部 Schema</option>
+        <select value={schema} onChange={(e) => setSchema(e.target.value)} aria-label="结构版本" className="rounded-lg border border-ink-700 bg-ink-900 px-1 py-1 text-[11.5px]">
+          <option value="">全部结构版本</option>
           {schemas.map((v) => (
             <option key={v} value={v}>
               {v}
@@ -219,7 +232,7 @@ function FixtureList({ kind, fixtures, onPick }: { kind: PromptKind; fixtures: F
       </div>
       {picked && <FixtureDetailCard f={picked} />}
       <p className="text-[11px] text-ink-400">
-        {list.length}/{all.length} 个样本。录制输出不是 Gold，构造样本不是真实单证，都不能用于宣称准确率。
+        {list.length}/{all.length} 个示例。录制输出不是标准答案，构造示例不是真实单证，都不能用来说明准确率。
       </p>
       {(Object.keys(ORIGIN_GROUP) as FixtureSummary["origin"][]).map((o) => {
         const items = list.filter((f) => f.origin === o);
@@ -249,7 +262,7 @@ function FixtureList({ kind, fixtures, onPick }: { kind: PromptKind; fixtures: F
           </div>
         );
       })}
-      {!list.length && <Empty>没有符合条件的样本</Empty>}
+      {!list.length && <Empty>没有符合条件的示例</Empty>}
     </div>
   );
 }
@@ -306,9 +319,9 @@ function PasteInput({ projectId, kind, onSnapshotsChanged }: { projectId: string
       <input type="file" accept=".json" aria-label="上传请求上下文文件" onChange={(e) => e.target.files?.[0] && readFile(e.target.files[0], "pasteRequest")} className="text-[11px] text-ink-400" />
       <div className="flex items-center gap-2">
         <Btn tone="outline" disabled={busy || !ws.pasteRequest.trim()} onClick={saveRequest}>
-          {busy ? "保存中…" : "请求存为快照（用于真实运行）"}
+          {busy ? "保存中…" : "把请求存为输入（用于真实运行）"}
         </Btn>
-        <span className="text-[11px] text-ink-400">存好后自动切到「已有快照」并选中，可直接「运行模型」。</span>
+        <span className="text-[11px] text-ink-400">存好后自动切到「历史输入」并选中，可直接「运行模型」。</span>
       </div>
       {err && <p className="text-[12px] text-stamp">{err}</p>}
     </div>
@@ -322,7 +335,7 @@ function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged, onMore }
   const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  if (!snapshots.length) return <Empty>还没有快照。可从样本、JSON 或九立只读导入创建。</Empty>;
+  if (!snapshots.length) return <Empty>还没有历史输入。上传文件、粘贴 JSON 或九立导入后会出现在这里。</Empty>;
   const usable = snapshots.filter((s) => s.usable_kinds.includes(kind));
   const hidden = snapshots.length - usable.length;
   const list = showAll ? snapshots : usable;
@@ -356,7 +369,7 @@ function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged, onMore }
 
   /** 删除快照内容（Studio 自有数据）；所有工作区对它的引用一并清除 */
   async function remove(s: SnapshotListItem) {
-    if (!window.confirm(`删除快照「${s.label}」？\n\n快照内容与材料记录会被删除，无法恢复；引用它的历史 Run 和原始输出保留，但不能再用这个快照重跑或重渲染。九立数据不受影响。`)) return;
+    if (!window.confirm(`删除输入「${s.label}」？\n\n这份输入和材料记录会被删除，无法恢复；用过它的运行记录和原始输出保留，但不能再用它重跑。九立数据不受影响。`)) return;
     setErr(null);
     try {
       await api(`/api/snapshots/${s.snapshot_id}`, { method: "DELETE" });
@@ -376,17 +389,17 @@ function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged, onMore }
     <div className="space-y-1" data-testid="snapshot-list">
       <div className="flex items-center gap-2 text-[11px] text-ink-400">
         <span>
-          显示可用于 {KIND_SHORT[kind]} 的快照 {usable.length} 个
+          显示可用于 {KIND_SHORT[kind]} 的输入 {usable.length} 个
           {hidden > 0 && `，另有 ${hidden} 个不适用`}
         </span>
         {hidden > 0 && (
           <label className="ml-auto flex items-center gap-1">
-            <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} aria-label="显示全部快照" />
+            <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} aria-label="显示全部输入" />
             显示全部
           </label>
         )}
       </div>
-      {!list.length && <Empty>没有可用于 {KIND_SHORT[kind]} 的快照。</Empty>}
+      {!list.length && <Empty>没有可用于 {KIND_SHORT[kind]} 的输入。</Empty>}
       <ul className="space-y-px">
         {list.map((s) => {
           const ok = s.usable_kinds.includes(kind);
@@ -423,11 +436,11 @@ function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged, onMore }
                 <option value="30">30 天后删</option>
                 <option value="90">90 天后删</option>
               </select>
-              <Btn onClick={() => remove(s)} aria-label={`删除快照 ${s.snapshot_id}`} title="删除快照内容（无法恢复）">
+              <Btn onClick={() => remove(s)} aria-label={`删除输入 ${s.snapshot_id}`} title="删除这份输入（无法恢复）">
                 删除
               </Btn>
               {s.source_type === "JIULI_READONLY" && (
-                <Btn onClick={() => refresh(s)} disabled={busy !== null} title="重新只读读取同一客户/任务/批次，生成新快照；旧快照不变" aria-label={`刷新快照 ${s.snapshot_id}`}>
+                <Btn onClick={() => refresh(s)} disabled={busy !== null} title="重新只读读取同一客户/任务/批次，生成新的输入；旧的不变" aria-label={`刷新输入 ${s.snapshot_id}`}>
                   {busy === s.snapshot_id ? "读取中…" : "刷新"}
                 </Btn>
               )}
@@ -437,7 +450,7 @@ function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged, onMore }
       </ul>
       {onMore && (
         <Btn onClick={onMore} className="w-full justify-center">
-          加载更早的快照（已显示最近 {snapshots.length} 个）
+          加载更早的输入（已显示最近 {snapshots.length} 个）
         </Btn>
       )}
       {err && <p className="text-[12px] text-stamp">{err}</p>}
@@ -615,7 +628,7 @@ function UploadInput({ projectId, kind, onCreated }: { projectId: string; kind: 
       {jiuli && <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="客户名称（可选，用于 P1 客户目录 / P2 客户）" aria-label="客户名称" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-1" />}
       <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="给这组输入起个名字（可选）" aria-label="输入名称" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-1" />
       <Btn tone="primary" disabled={busy || !files.length} onClick={upload}>
-        {busy ? "上传并读取中…" : `上传 ${files.length || ""} 个文件`}
+        {busy ? "上传并读取中…" : files.length ? `上传 ${files.length} 个文件` : "上传"}
       </Btn>
       {err && <p className="text-stamp">{err}</p>}
       {result && ws.uploadSnapshotId === result.snapshot_id && (
@@ -787,7 +800,7 @@ function JiuliImport({ projectId, capability, onCreated }: { projectId: string; 
                           disabled={!f.optional}
                           onChange={(e) => setExcluded((x) => (e.target.checked ? new Set([...x].filter((id) => id !== f.file_id)) : new Set([...x, f.file_id])))}
                           aria-label={`纳入文件 ${f.file_id}`}
-                          title={f.optional ? "取消勾选则不纳入快照、不发送给模型" : "由上方任务/批次决定；不需要请取消对应任务或批次"}
+                          title={f.optional ? "取消勾选则不纳入输入、不发送给模型" : "由上方任务/批次决定；不需要请取消对应任务或批次"}
                         />
                         <Badge tone={f.role === "SUPPORTING" ? "info" : "mute"}>{ROLE_LABEL[f.role]}</Badge>
                         <span className="min-w-0 flex-1 truncate" title={`${f.file_id} · ${f.file_name}`}>
@@ -802,14 +815,14 @@ function JiuliImport({ projectId, capability, onCreated }: { projectId: string; 
                 </div>
               )}
               <Btn tone="primary" disabled={busy || (!task && !picked.size)} onClick={create}>
-                {busy ? "读取中…" : "只读读取并创建隔离快照"}
+                {busy ? "读取中…" : "只读读取并保存为输入"}
               </Btn>
             </>
           )}
         </>
       )}
       {err && <p className="text-[12px] text-stamp">{err}</p>}
-      <p className="text-[11px] text-ink-400">运行时不会再隐式拉取新数据；需要更新时重新导入，生成新快照，旧快照与旧 Run 保留。</p>
+      <p className="text-[11px] text-ink-400">运行时不会再偷偷拉取新数据；需要更新时重新导入，生成新的输入，旧输入和旧运行记录保留。</p>
     </div>
   );
 }
@@ -928,18 +941,18 @@ function PreviewTab({ fixtures, isDraft, versionLabel }: { fixtures: FixtureSumm
     const why =
       ws.inputMode === "fixture"
         ? !ws.fixtureId
-          ? "请先在「输入 → 样本库」选择样本。"
+          ? "请先在「输入 → 示例」选择一个示例。"
           : !fixtures.find((f) => f.id === ws.fixtureId)?.hasRequest
-            ? "该样本没有请求上下文（无 ctx 标记），不能真实运行，只能「仅渲染」。"
-            : "正在准备样本快照…"
+            ? "这个示例没有附带输入（无 ctx 标记），不能真实运行，只能「仅渲染」。"
+            : "正在准备示例输入…"
         : ws.inputMode === "paste"
-          ? "粘贴的模型输出只用于「仅渲染」。要真实运行，请在「输入」页把请求上下文「存为快照」，或选择带 ctx 的样本、已有快照、从九立只读导入。"
+          ? "粘贴的模型输出只用于「仅渲染」。要真实运行，请上传文件，或把粘贴的请求「存为输入」。"
           : ws.inputMode === "upload"
-            ? "请先在「输入 → 上传文件」上传原件并创建快照。"
+            ? "请先在「输入 → 上传文件」上传文件。"
           : ws.inputMode === "jiuli"
-            ? "请先在「输入 → 从九立导入」创建快照。"
-            : "请先在「输入 → 已有快照」选择快照。";
-    return <Empty>{why}真实运行只使用快照数据。</Empty>;
+            ? "请先在「输入 → 更多 → 从九立导入」导入数据。"
+            : "请先在「输入 → 历史输入」选一个。";
+    return <Empty>{why}</Empty>;
   }
   if (err) return <p className="text-stamp">{err}</p>;
   if (!p) return <p className="text-ink-400">构造中…</p>;

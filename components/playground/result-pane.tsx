@@ -12,12 +12,14 @@ import { Badge, Btn, cx, Empty, runStatusView } from "@/components/ui";
 import { JsonTree, RawText } from "./json-tree";
 import { InputCoverage } from "./input-coverage";
 
+// 平时只看「结果」和「原始输出」；结构校验、运行信息、输入覆盖都收在「详情」
 const TABS: { id: ResultTab; label: string }[] = [
-  { id: "visual", label: "可视化" },
-  { id: "json", label: "原始 JSON" },
-  { id: "schema", label: "结构校验" },
-  { id: "meta", label: "运行信息" },
+  { id: "visual", label: "结果" },
+  { id: "json", label: "原始输出" },
+  { id: "details", label: "详情" },
 ];
+
+const MODE_LABEL: Record<string, string> = { RENDER_ONLY: "仅渲染", MODEL_RUN: "模型运行", REPLAY: "重新渲染" };
 
 function cellIndex(vm?: ViewModel | null) {
   const m = new Map<string, { tableId: string; rowId: string; fieldKey: string }>();
@@ -85,11 +87,6 @@ export function ResultPane({
   const evidenceOpen = useStudio((s) => s.evidenceOpen);
   const run = detail?.run;
   const vm = run?.view_model ?? undefined;
-  // 成功但没有业务视图（未登记 Schema，如通用 JSON）：打开时直接显示 JSON 树；只在换到另一条 Run 时切一次
-  const noViewRunId = run && run.status === "SUCCEEDED" && !vm ? run.run_id : null;
-  useEffect(() => {
-    if (noViewRunId && useStudio.getState().resultTab === "visual") setStore("resultTab", "json");
-  }, [noViewRunId, setStore]);
 
   return (
     <div className="relative flex h-full min-h-0 flex-col" data-testid="result-pane">
@@ -108,9 +105,9 @@ export function ResultPane({
         <div className="ml-auto flex items-center gap-2">
           {run && (
             <>
-              <Badge tone="mute">{run.mode}</Badge>
-              <Badge tone={runStatusView(run.status, run.schema_id).tone} title={run.status}>
-                {runStatusView(run.status, run.schema_id).label}
+              <Badge tone="mute" title={run.mode}>{MODE_LABEL[run.mode] ?? run.mode}</Badge>
+              <Badge tone={runStatusView(run.status, run.schema_id, run.prompt_kind).tone} title={run.status}>
+                {runStatusView(run.status, run.schema_id, run.prompt_kind).label}
               </Badge>
             </>
           )}
@@ -141,12 +138,12 @@ export function ResultPane({
       {dirty && run && <Banner tone="warn">当前结果来自上次运行（与未保存/未运行的编辑不同）。</Banner>}
       {run?.mode === "RENDER_ONLY" && (detail?.snapshot?.source_type === "FIXTURE" || run.label?.startsWith("样本")) && (
         <Banner tone="info">
-          <span data-testid="fixture-banner">这是样本（Fixture）的仅渲染结果，不是模型本次运行；{detail?.snapshot?.warnings.some((w) => w.includes("录制")) ? "录制输出不是 Gold。" : "不能用于宣称准确率。"}</span>
+          <span data-testid="fixture-banner">这是示例结果，不是模型本次运行；{detail?.snapshot?.warnings.some((w) => w.includes("录制")) ? "录制的模型输出不是标准答案。" : "不能用来说明准确率。"}</span>
         </Banner>
       )}
-      {run?.status === "PARSE_ERROR" && <Banner tone="bad">原始回复不是合法 JSON：不生成任何业务表格。请在「原始 JSON」查看原文与错误位置。</Banner>}
-      {run?.status === "SCHEMA_INVALID" && <Banner tone="warn">JSON 合法但 Schema 校验未通过（SCHEMA_INVALID）：下方为可安全理解部分的局部渲染，非完整结果。</Banner>}
-      {run?.status === "ADAPTER_ERROR" && <Banner tone="bad">适配器异常（ADAPTER_ERROR）：已保留原始 JSON 与校验结果，详见「结构校验」。</Banner>}
+      {run?.status === "PARSE_ERROR" && <Banner tone="bad">模型回答不是合法 JSON，没有生成表格。请在「原始输出」查看原文与出错位置。</Banner>}
+      {run?.status === "SCHEMA_INVALID" && <Banner tone="warn">模型回答的结构不完全符合约定：下方只显示能确定的部分，不是完整结果。具体问题见「详情」。</Banner>}
+      {run?.status === "ADAPTER_ERROR" && <Banner tone="bad">把结果整理成表格时出错：原始输出已保留，具体原因见「详情」。</Banner>}
       {run?.status === "MODEL_ERROR" && (
         <Banner tone="bad">
           <div data-testid="model-error">
@@ -154,7 +151,7 @@ export function ResultPane({
               模型调用失败：{explainModelError(run.error?.code).title}。{explainModelError(run.error?.code).advice}
             </div>
             <details className="mt-0.5 text-[11px] opacity-80">
-              <summary className="cursor-pointer">详情（已保存失败 Run，未回退为 Mock 结果）</summary>
+              <summary className="cursor-pointer">详情（失败记录已保存，没有用假结果代替）</summary>
               <div className="font-mono break-all">
                 {run.error?.code} — {run.error?.message}
               </div>
@@ -165,19 +162,19 @@ export function ResultPane({
       {run?.status === "CANCELLED" && <Banner tone="warn">这次运行已取消，没有取得模型结果（服务商可能已开始处理并计费）。</Banner>}
       {run && onRetry && run.mode === "MODEL_RUN" && (run.status === "MODEL_ERROR" || run.status === "CANCELLED") && (
         <div className="mx-3 mt-1 flex items-center gap-2 text-[11.5px] text-ink-400">
-          <Btn tone="outline" onClick={() => onRetry(run.run_id)} disabled={!run.prompt_source} data-testid="btn-retry" title={run.prompt_source ? "用同一快照、同一提示词原文和参数新建一次运行，原记录不变" : "这条记录没有保存提示词原文（v1.1 之前），无法原样重试"}>
+          <Btn tone="outline" onClick={() => onRetry(run.run_id)} disabled={!run.prompt_source} data-testid="btn-retry" title={run.prompt_source ? "用同一输入、同一提示词和参数再运行一次，原记录不变" : "这条记录没有保存提示词原文（v1.1 之前），无法原样重试"}>
             原样重试
           </Btn>
-          {run.prompt_source ? "同一快照、同一提示词原文与参数，新建 Run；原失败记录保留。" : "这条记录早于 v1.1，没有保存提示词原文，不能原样重试。"}
+          {run.prompt_source ? "用同一输入、同一提示词和参数再运行一次；原失败记录保留。" : "这条记录早于 v1.1，没有保存提示词原文，不能原样重试。"}
         </div>
       )}
       {run?.input_manifest && !run.input_manifest.complete && run.status !== "RUNNING" && (
         <Banner tone="bad">
-          <span data-testid="incomplete-input-banner">这次运行不是完整输入（{run.input_manifest.gaps[0]}）。结果不能作为完整材料识别评测，详见「运行信息 → 输入覆盖」。</span>
+          <span data-testid="incomplete-input-banner">这次发给模型的输入不完整（{run.input_manifest.gaps[0]}），结果不能当作完整识别来评判。详见「详情 → 输入覆盖」。</span>
         </Banner>
       )}
-      {run && !vm && run.status === "SUCCEEDED" && <Banner tone="info">未登记 Schema（UNKNOWN_SCHEMA）：不套用九立模板，请在「原始 JSON」查看 JSON 树，或选择正确的 Prompt/Schema。</Banner>}
-      {run?.rerender_note && <Banner tone="info">{run.rerender_note}（原始结果 Hash 未变：{run.raw_response_hash.slice(0, 12)}…）</Banner>}
+      {run && !vm && run.status === "SUCCEEDED" && run.prompt_kind !== "GENERIC_JSON" && <Banner tone="info">这个回答不符合九立预设的结构，没有套用九立表格，下方按 JSON 树显示。</Banner>}
+      {run?.rerender_note && <Banner tone="info">{run.rerender_note}（模型原始输出没有改动）</Banner>}
 
       <div className="flex min-h-0 flex-1">
       <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3" data-testid={`tab-${tab}`}>
@@ -190,21 +187,31 @@ export function ResultPane({
             <div className="mt-4 flex flex-col items-center gap-2" data-testid="empty-actions">
               {recentRun && onOpenRun && (
                 <Btn tone="outline" onClick={() => onOpenRun(recentRun.run_id)} data-testid="open-recent-run">
-                  打开最近一次运行：{recentRun.label || recentRun.run_id}（{recentRun.started_at.slice(5, 16).replace("T", " ")} · {runStatusView(recentRun.status, recentRun.schema_id).label}）
+                  打开最近一次运行：{recentRun.label || recentRun.run_id}（{recentRun.started_at.slice(5, 16).replace("T", " ")} · {runStatusView(recentRun.status, recentRun.schema_id, recentRun.prompt_kind).label}）
                 </Btn>
               )}
               {example && onOpenExample && (
-                <Btn onClick={() => onOpenExample(example.id)} data-testid="open-example" title="仅渲染一个样本，不调用模型；结果会标明是样本，不是本次运行">
-                  查看示例结果（样本 Fixture：{example.title}）
+                <Btn onClick={() => onOpenExample(example.id)} data-testid="open-example" title="直接显示一个示例，不调用模型；结果会标明是示例">
+                  查看示例结果（{example.title}）
                 </Btn>
               )}
             </div>
           </div>
         )}
-        {run && tab === "visual" && (vm && detail?.renderer ? <BusinessView vm={vm} cfg={detail.renderer} canPreview={canPreview} /> : <Empty>{run.status === "SUCCEEDED" ? "无业务视图（未登记 Schema）。" : "没有可展示的业务视图。"}</Empty>)}
+        {run && tab === "visual" && <ResultTab detail={detail!} canPreview={canPreview} />}
         {run && tab === "json" && <JsonTab detail={detail!} />}
-        {run && tab === "schema" && <SchemaTab detail={detail!} />}
-        {run && tab === "meta" && <MetaTab detail={detail!} />}
+        {run && tab === "details" && (
+          <div className="space-y-5">
+            <section>
+              <h3 className="mb-2 text-[13px] font-semibold">运行信息</h3>
+              <MetaTab detail={detail!} />
+            </section>
+            <section>
+              <h3 className="mb-2 text-[13px] font-semibold">结构校验</h3>
+              <SchemaTab detail={detail!} />
+            </section>
+          </div>
+        )}
       </div>
 
       {evidenceOpen && run && (
@@ -223,6 +230,26 @@ export function ResultPane({
         </aside>
       )}
       </div>
+    </div>
+  );
+}
+
+/** 「结果」：九立预设显示业务视图；其他情况按 JSON 树（回答是 JSON）或文本（回答是文字）显示 */
+function ResultTab({ detail, canPreview }: { detail: RunDetail; canPreview: boolean }) {
+  const run = detail.run;
+  const select = useStudio((s) => s.select);
+  if (run.view_model && detail.renderer) return <BusinessView vm={run.view_model} cfg={detail.renderer} canPreview={canPreview} />;
+  if (run.status !== "SUCCEEDED") return <Empty>没有可展示的结果，原因见上方提示。</Empty>;
+  if (run.parsed_json !== undefined) {
+    return (
+      <div className="rounded-lg border border-ink-700 bg-ink-950/70 p-2" data-testid="result-json">
+        <JsonTree value={run.parsed_json} onSelect={(p) => select({ jsonPointer: p })} />
+      </div>
+    );
+  }
+  return (
+    <div className="max-w-3xl rounded-lg border border-ink-700 bg-ink-900 p-4 text-[13px] leading-7 whitespace-pre-wrap" data-testid="result-text">
+      {run.raw_response}
     </div>
   );
 }
@@ -270,7 +297,7 @@ function JsonTab({ detail }: { detail: RunDetail }) {
             模型原始响应
           </button>
           <button onClick={() => setDoc("request")} disabled={!detail.request} className={cx("px-2.5 py-0.5 disabled:opacity-40", doc === "request" ? "rounded-md bg-ink-900 text-ink-100 shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-ink-400 hover:text-ink-100")}>
-            请求上下文（快照）
+            发给模型的输入
           </button>
         </div>
         <Btn onClick={() => navigator.clipboard?.writeText(run.raw_response)}>复制原文</Btn>
@@ -391,7 +418,7 @@ function MetaTab({ detail }: { detail: RunDetail }) {
         <Row k="构造输入 Hash" v={r.built_input_hash} />
         <Row k="输入构造器" v={r.input_builder_id} />
         <Row
-          k="输入快照"
+          k="输入记录"
           v={
             detail.snapshot
               ? `${detail.snapshot.label}（${detail.snapshot.snapshot_id}，${detail.snapshot.source_type}，hash ${detail.snapshot.content_hash.slice(0, 12)}…）`

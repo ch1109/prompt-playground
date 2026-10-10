@@ -22,25 +22,26 @@ test("新手指南第一次打开自动弹出，关闭后刷新不再弹出", as
 async function renderFixture(page: Page, prompt: string, fixtureId: string) {
   await page.goto("/projects/jiuli/playground");
   await page.click(`[data-prompt="${prompt}"]`);
+  await page.getByRole("button", { name: "示例", exact: true }).click();
   await page.click(`[data-fixture-id="${fixtureId}"]`);
   await page.click('[data-testid="btn-render"]');
-  await expect(page.locator('[data-testid="result-pane"] [role="tab"][aria-selected="true"]')).toHaveText(/可视化|原始 JSON/);
+  await expect(page.locator('[data-testid="result-pane"] [role="tab"][aria-selected="true"]')).toHaveText(/^(结果|原始输出)$/);
 }
 
 test("AT16 JSON 解析失败：显示原文与错误位置，没有虚构表格", async ({ page }) => {
   await renderFixture(page, "jiuli-p1", "constructed/invalid-json-truncated.txt");
-  await expect(page.getByText("原始回复不是合法 JSON")).toBeVisible();
+  await expect(page.getByText("模型回答不是合法 JSON")).toBeVisible();
   await expect(page.locator("[data-table-id]")).toHaveCount(0);
-  await page.getByRole("tab", { name: "原始 JSON" }).click();
+  await page.getByRole("tab", { name: "原始输出" }).click();
   await expect(page.getByText(/INVALID_JSON/)).toBeVisible();
   await expect(page.locator("[data-error-line]")).toHaveCount(1);
 });
 
 test("AT17 Schema 不合法：标明并可从诊断跳到 JSON 路径", async ({ page }) => {
   await renderFixture(page, "jiuli-p1", "constructed/p1-v3-schema-type-error.json");
-  await expect(page.getByText("SCHEMA_INVALID").first()).toBeVisible();
+  await expect(page.getByText("结构不符").first()).toBeVisible();
   await expect(page.locator('[data-table-id="orderRows"]')).toBeVisible();
-  await page.getByRole("tab", { name: "结构校验" }).click();
+  await page.getByRole("tab", { name: "详情" }).click();
   await page.locator('[data-testid="diag-pointer"]', { hasText: "/output/rows/0/values/quantity" }).click();
   await expect(page.locator('[data-pointer="/output/rows/0/values/quantity"]')).toHaveClass(/ring-accent/);
 });
@@ -50,13 +51,13 @@ test("AT18 单元格 / 问题 / 关系边 共享同一选择状态并跨标签�
   // 单元格 → JSON 高亮 + 来源
   await page.locator('[data-table-id="orderRows"] [data-row-id="row-1"] [data-field="model"]').click();
   await expect(page.locator('[data-testid="evidence-drawer"]')).toContainText("ABC-01");
-  await page.getByRole("tab", { name: "原始 JSON" }).click();
+  await page.getByRole("tab", { name: "原始输出" }).click();
   await expect(page.locator('[data-pointer="/output/rows/0/values/model"]')).toHaveClass(/ring-accent/);
   // JSON 节点 → 反查到单元格
   await page.locator('[data-pointer="/output/rows/1"]').click();
   await page.locator('[data-pointer="/output/rows/1/values"]').click();
   await page.locator('[data-pointer="/output/rows/1/values/brand"]').click();
-  await page.getByRole("tab", { name: "可视化" }).click();
+  await page.getByRole("tab", { name: "结果", exact: true }).click();
   await expect(page.locator('[data-table-id="orderRows"] [data-row-id="row-2"] [data-field="brand"]')).toHaveClass(/outline-accent/);
   // 问题 → 定位行/字段 + 证据
   await page.locator("[data-issue-id]", { hasText: "报关单价" }).click();
@@ -72,7 +73,7 @@ test("AT18 单元格 / 问题 / 关系边 共享同一选择状态并跨标签�
   await expect(edge).toBeVisible();
   await edge.click({ force: true });
   await expect(page.locator('[data-testid="evidence-drawer"]')).toContainText("E-I-B1-MODEL");
-  await page.getByRole("tab", { name: "原始 JSON" }).click();
+  await page.getByRole("tab", { name: "原始输出" }).click();
   await expect(page.locator('[data-pointer="/output/row_relations/0/selected_raw_row_ids"]')).toHaveClass(/ring-accent/);
 });
 
@@ -80,41 +81,42 @@ test("证据卡点「在 JSON 中定位」自动切到原始 JSON 并高亮来�
   await renderFixture(page, "jiuli-p1", "v3/SC-08-audit/P1");
   await page.locator('[data-table-id="orderRows"] [data-row-id="row-1"] [data-field="model"]').click();
   await page.getByTestId("evidence-drawer").getByRole("button", { name: "在 JSON 中定位" }).first().click();
-  await expect(page.locator('[data-testid="result-pane"] [role="tab"][aria-selected="true"]')).toHaveText("原始 JSON");
+  await expect(page.locator('[data-testid="result-pane"] [role="tab"][aria-selected="true"]')).toHaveText("原始输出");
   await expect(page.locator("[data-pointer].ring-accent")).toHaveCount(1);
 });
 
-test("没有业务视图（未登记 Schema）时自动显示原始 JSON；之后仍可手动切回可视化", async ({ page }) => {
+test("通用提示词的 JSON 回答在「结果」里直接显示为 JSON 树；九立预设显示业务表格", async ({ page }) => {
   await page.goto("/projects/jiuli/playground");
   await page.locator('[data-prompt="generic-json"]').click();
-  await page.getByRole("button", { name: "粘贴 / 文件 JSON" }).click();
+  await page.getByRole("button", { name: "粘贴 JSON", exact: true }).click();
   await page.getByLabel("原始输出", { exact: true }).fill('{"summary":"ok","items":[1,2]}');
   await page.click('[data-testid="btn-render"]');
   const selectedTab = page.locator('[data-testid="result-pane"] [role="tab"][aria-selected="true"]');
-  await expect(selectedTab).toHaveText("原始 JSON");
-  await expect(page.locator('[data-pointer="/summary"]')).toBeVisible();
-  await page.getByRole("tab", { name: "可视化" }).click();
-  await expect(selectedTab).toHaveText("可视化");
-  // 有业务视图的结果仍默认停在可视化
+  await expect(selectedTab).toHaveText("结果");
+  await expect(page.getByTestId("result-json").locator('[data-pointer="/summary"]')).toBeVisible();
+  await expect(page.getByTestId("result-pane")).toContainText("完成");
+  // 九立预设的结果在「结果」里显示业务表格
   await page.click('[data-prompt="jiuli-p1"]');
-  await page.getByRole("button", { name: "样本库" }).click();
+  await page.getByRole("button", { name: "示例", exact: true }).click();
   await page.click('[data-fixture-id="constructed/p1-v3-conflict.json"]');
   await page.click('[data-testid="btn-render"]');
   await expect(page.locator('[data-table-id="orderRows"]')).toBeVisible();
-  await expect(selectedTab).toHaveText("可视化");
+  await expect(selectedTab).toHaveText("结果");
 });
 
-test("空状态按情况引导：有样本的 Prompt 指向样本库，空白项目指向粘贴", async ({ page }) => {
+test("空状态按情况引导：默认引导上传文件，有示例的九立预设指向示例", async ({ page }) => {
   const created = await page.request.post("/api/projects", { data: { name: `空状态 ${Date.now()}`, template: "BLANK" } }).then((r) => r.json());
   await page.goto(`/projects/${created.data.project_id}/playground`);
   const pane = page.getByTestId("result-pane");
-  await expect(pane).toContainText("粘贴 / 文件 JSON");
-  await expect(pane).not.toContainText("选择样本");
+  await expect(pane).toContainText("上传文件（可以是整个文件夹）");
+  await expect(pane).toContainText("粘贴 JSON");
   await expect(pane).toContainText("模型未配置");
-  await expect(page.getByTestId("editor-pane")).toContainText("当前 Prompt 没有样本。可在「粘贴 / 文件 JSON」");
+  // 默认输入方式是上传文件
+  await expect(page.getByTestId("upload-drop")).toContainText("把文件或整个文件夹拖到这里");
   const p1 = await page.request.post("/api/projects", { data: { name: `空状态九立 ${Date.now()}`, template: "JIULI" } }).then((r) => r.json());
   await page.goto(`/projects/${p1.data.project_id}/playground`);
-  await expect(pane).toContainText("样本库");
+  await page.getByTestId("sidebar").locator("[data-prompt]").filter({ hasText: "委托材料识别" }).click();
+  await expect(pane).toContainText("在「示例」里选一个示例");
 });
 
 test("在 P3/P4 下打开上传文件时事先说明原件只能构造 P1/P2", async ({ page }) => {
@@ -167,8 +169,8 @@ test("运行信息与运行对比显示版本名称，而不只是版本 ID", as
     await r.fulfill({ response: res, json: body });
   });
   await page.reload();
-  await page.getByRole("tab", { name: "运行信息" }).click();
-  await expect(page.getByTestId("tab-meta")).toContainText("版本甲（pv_");
+  await page.getByRole("tab", { name: "详情" }).click();
+  await expect(page.getByTestId("tab-details")).toContainText("版本甲（pv_");
   await page.getByRole("button", { name: /运行历史/ }).click();
   await page.getByLabel(`对比 ${id1}`).check();
   await page.getByLabel(`对比 ${id2}`).check();
@@ -235,7 +237,7 @@ test("九立只读导入：选客户/任务/批次 → 隔离快照 → 请求�
   await page.getByRole("button", { name: /英堡科技/ }).click();
   await page.getByLabel("委托任务").selectOption({ index: 1 });
   await page.getByLabel(/选择批次/).first().check();
-  await page.getByRole("button", { name: "只读读取并创建隔离快照" }).click();
+  await page.getByRole("button", { name: "只读读取并保存为输入" }).click();
   await expect(page.getByTestId("snapshot-list")).toContainText("JIULI_READONLY");
   await page.getByRole("button", { name: "请求预览" }).click();
   await expect(page.getByTestId("request-preview")).toContainText("jiuli-demo-p3");
@@ -263,7 +265,7 @@ test("九立导入前列出将带上的文件；取消勾选的辅助材料不�
   // 主委托文件不能取消
   await expect(list.locator('input[type="checkbox"]').first()).toBeDisabled();
   await page.getByLabel("纳入文件 F-80d89610605b").uncheck();
-  await page.getByRole("button", { name: "只读读取并创建隔离快照" }).click();
+  await page.getByRole("button", { name: "只读读取并保存为输入" }).click();
   const selected = page.getByTestId("snapshot-list").locator("[data-snapshot-id].ring-1");
   await expect(selected).toContainText("JIULI_READONLY");
   const id = await selected.getAttribute("data-snapshot-id");
@@ -274,7 +276,7 @@ test("九立导入前列出将带上的文件；取消勾选的辅助材料不�
   await expect(page.getByTestId("request-preview")).not.toContainText("F-80d89610605b");
   // 刷新快照沿用同样的排除
   await page.getByRole("button", { name: "输入", exact: true }).click();
-  await page.getByRole("button", { name: `刷新快照 ${id}` }).click();
+  await page.getByRole("button", { name: `刷新输入 ${id}` }).click();
   await expect(page.getByTestId("snapshot-list")).toContainText(`刷新自 ${id}`);
   const newId = await page.getByTestId("snapshot-list").locator("[data-snapshot-id].ring-1").getAttribute("data-snapshot-id");
   const refreshed = await page.request.get(`/api/snapshots/${newId}`).then((r) => r.json());
@@ -288,10 +290,10 @@ test("请求预览与真实运行使用同一份输入：切换输入来源后�
   await page.getByRole("button", { name: "从九立导入" }).click();
   await page.getByRole("button", { name: /上海浦壹/ }).click();
   await page.getByLabel("委托任务").selectOption({ index: 1 });
-  await page.getByRole("button", { name: "只读读取并创建隔离快照" }).click();
+  await page.getByRole("button", { name: "只读读取并保存为输入" }).click();
   await expect(page.getByTestId("snapshot-list")).toContainText("JIULI_READONLY");
   // 再切到样本库选录制样本：预览必须是样本自带的请求，而不是刚才的九立快照
-  await page.getByRole("button", { name: "样本库" }).click();
+  await page.getByRole("button", { name: "示例", exact: true }).click();
   await page.click('[data-fixture-id="v3/SC-08-audit/P1"]');
   await page.getByRole("button", { name: "请求预览" }).click();
   await expect(page.getByTestId("request-preview")).toContainText("passthrough-snapshot-request");
@@ -300,11 +302,11 @@ test("请求预览与真实运行使用同一份输入：切换输入来源后�
   await page.getByRole("button", { name: "输入", exact: true }).click();
   await page.click('[data-fixture-id="v2/p1-original-output-example.json"]');
   await page.getByRole("button", { name: "请求预览" }).click();
-  await expect(page.getByTestId("editor-pane")).toContainText("没有请求上下文");
+  await expect(page.getByTestId("editor-pane")).toContainText("没有附带输入");
   await expect(page.getByTestId("request-preview")).toHaveCount(0);
   // 粘贴模式只用于仅渲染：同样不沿用旧快照
   await page.getByRole("button", { name: "输入", exact: true }).click();
-  await page.getByRole("button", { name: "粘贴 / 文件 JSON" }).click();
+  await page.getByRole("button", { name: "粘贴 JSON", exact: true }).click();
   await page.getByRole("button", { name: "请求预览" }).click();
   await expect(page.getByTestId("request-preview")).toHaveCount(0);
 });
@@ -357,7 +359,7 @@ test("模型运行中显示已等待秒数；刷新页面后仍接着等待并�
   finished = true;
   await expect(page.getByTestId("running-banner")).toHaveCount(0, { timeout: 10000 });
   await expect(page.getByText("被截断（finish_reason=length）")).toBeVisible();
-  await page.getByRole("tab", { name: "运行信息" }).click();
+  await page.getByRole("tab", { name: "详情" }).click();
   await expect(page.getByText("达到 max_tokens 被截断")).toBeVisible();
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
@@ -390,6 +392,7 @@ test("模型运行开始前的错误直接显示在顶栏，不出现运行中�
   );
   await page.goto("/projects/jiuli/playground");
   await page.click('[data-prompt="jiuli-p1"]');
+  await page.getByRole("button", { name: "示例", exact: true }).click();
   await page.click('[data-fixture-id="v3/SC-08-audit/P1"]');
   await page.route("**/api/runs", (r) =>
     r.request().method() === "POST" ? r.fulfill({ status: 400, json: { ok: false, error: { code: "FILE_INPUT_UNSUPPORTED", message: "模拟阻断" }, request_id: "x" } }) : r.continue(),
@@ -405,23 +408,23 @@ test("AT26 快照刷新生成新快照（记录来源），快照列表按 Promp
   await page.getByRole("button", { name: "从九立导入" }).click();
   await page.getByRole("button", { name: /上海浦壹/ }).click();
   await page.getByLabel("委托任务").selectOption({ index: 1 });
-  await page.getByRole("button", { name: "只读读取并创建隔离快照" }).click();
+  await page.getByRole("button", { name: "只读读取并保存为输入" }).click();
   const list = page.getByTestId("snapshot-list");
   // 等列表刷新出刚创建并选中的九立快照，再取它的 ID
   const created = list.locator("[data-snapshot-id].ring-1");
   await expect(created).toContainText("JIULI_READONLY");
   const oldId = await created.getAttribute("data-snapshot-id");
-  await page.getByRole("button", { name: `刷新快照 ${oldId}` }).click();
+  await page.getByRole("button", { name: `刷新输入 ${oldId}` }).click();
   await expect(list).toContainText(`刷新自 ${oldId}`);
   const selected = list.locator("[data-snapshot-id].ring-1");
   await expect(selected).not.toHaveAttribute("data-snapshot-id", oldId!);
   await expect(selected).toContainText(`刷新自 ${oldId}`);
   // P4 无法从九立快照构造输入：默认隐藏，显示全部时标为不适用且不可选
   await page.click('[data-prompt="jiuli-p4"]');
-  await page.getByRole("button", { name: "已有快照" }).click();
+  await page.getByRole("button", { name: "历史输入", exact: true }).click();
   await expect(list).toContainText("不适用");
   await expect(list.locator(`[data-snapshot-id="${oldId}"]`)).toHaveCount(0);
-  await page.getByLabel("显示全部快照").check();
+  await page.getByLabel("显示全部输入").check();
   await expect(list.locator(`[data-snapshot-id="${oldId}"]`)).toBeDisabled();
 });
 
@@ -433,6 +436,7 @@ test("窄屏（<1280px）编辑区与结果区改为可切换页签，运行后�
   await expect(page.getByTestId("editor-pane")).toBeVisible();
   await expect(page.getByTestId("result-pane")).toHaveCount(0);
   await page.click('[data-prompt="jiuli-p1"]');
+  await page.getByRole("button", { name: "示例", exact: true }).click();
   await page.click('[data-fixture-id="constructed/p1-v3-conflict.json"]');
   await page.click('[data-testid="btn-render"]');
   await expect(page.getByTestId("result-pane")).toBeVisible();
@@ -450,18 +454,18 @@ test("窄屏（<1280px）编辑区与结果区改为可切换页签，运行后�
 
 test("快照可设置保留期限、可删除；历史 Run 保留并标明快照已删除", async ({ page }) => {
   await renderFixture(page, "jiuli-p1", "v3/SC-08-audit/P1");
-  await page.getByRole("button", { name: "已有快照" }).click();
+  await page.getByRole("button", { name: "历史输入", exact: true }).click();
   const item = page.getByTestId("snapshot-list").locator("li", { hasText: "样本 · SC-08-audit · P1" }).first();
   const id = await item.locator("[data-snapshot-id]").getAttribute("data-snapshot-id");
   await page.getByLabel(`保留期限 ${id}`).selectOption("30");
   await expect(page.getByLabel(`保留期限 ${id}`)).toContainText("至 ");
   page.once("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: `删除快照 ${id}` }).click();
+  await page.getByRole("button", { name: `删除输入 ${id}` }).click();
   await expect(page.locator(`[data-snapshot-id="${id}"]`)).toHaveCount(0);
   await page.getByRole("button", { name: /运行历史/ }).click();
   await page.getByTestId("history").getByRole("button", { name: "回放" }).first().click();
-  await page.getByRole("tab", { name: "运行信息" }).click();
-  await expect(page.getByTestId("tab-meta")).toContainText("已删除或到期");
+  await page.getByRole("tab", { name: "详情" }).click();
+  await expect(page.getByTestId("tab-details")).toContainText("已删除或到期");
 });
 
 test("多项目：新建项目、切换项目，运行按项目隔离；不存在的项目有明确提示", async ({ page }) => {
@@ -475,6 +479,7 @@ test("多项目：新建项目、切换项目，运行按项目隔离；不存�
   await expect(page.locator("header")).toContainText(name);
   await expect(page.getByTestId("sidebar").locator("[data-prompt]")).toHaveCount(5);
   await page.getByTestId("sidebar").locator("[data-prompt]").filter({ hasText: "委托材料识别" }).click();
+  await page.getByRole("button", { name: "示例", exact: true }).click();
   await page.click('[data-fixture-id="constructed/p1-v3-conflict.json"]');
   await page.click('[data-testid="btn-render"]');
   await expect(page.locator('[data-table-id="orderRows"]')).toBeVisible();
@@ -601,7 +606,7 @@ test("请求预览可展开 system 全文，并能复制全部发送内容", asy
   const system = await page.getByLabel("System 提示词").inputValue();
   const tail = system.trim().slice(-30);
   await page.getByRole("button", { name: "输入", exact: true }).click();
-  await page.getByRole("button", { name: "样本库" }).click();
+  await page.getByRole("button", { name: "示例", exact: true }).click();
   await page.click('[data-fixture-id="v3/SC-08-audit/P1"]');
   await page.getByRole("button", { name: "请求预览" }).click();
   const text = page.getByTestId("preview-text");
@@ -624,33 +629,33 @@ test("切换 Prompt 时带上可用的快照；不适用或已有选择时不带
   await page.getByRole("button", { name: /上海浦壹/ }).click();
   await page.getByLabel("委托任务").selectOption({ index: 1 });
   await page.getByLabel(/选择批次/).first().check();
-  await page.getByRole("button", { name: "只读读取并创建隔离快照" }).click();
+  await page.getByRole("button", { name: "只读读取并保存为输入" }).click();
   const selected = page.getByTestId("snapshot-list").locator("[data-snapshot-id].ring-1");
   await expect(selected).toContainText("JIULI_READONLY");
-  const snapId = await selected.getAttribute("data-snapshot-id");
   const sidebar = page.getByTestId("sidebar").locator("[data-prompt]");
   // P3 可用：自动带上，预览直接是九立 P3 构造
   await sidebar.filter({ hasText: "商品对应关系" }).click();
-  await expect(page.getByTestId("editor-pane")).toContainText(`快照 ${snapId}`);
+  await expect(page.getByTestId("editor-pane")).toContainText("已选历史输入");
   await page.getByRole("button", { name: "请求预览" }).click();
   await expect(page.getByTestId("request-preview")).toContainText("jiuli-demo-p3");
   // P4 不适用：不带
   await sidebar.filter({ hasText: "字段核验" }).click();
-  await expect(page.getByTestId("editor-pane")).not.toContainText(`快照 ${snapId}`);
+  await expect(page.getByTestId("editor-pane")).not.toContainText("已选历史输入");
   // P2 先选了样本：不覆盖
   await sidebar.filter({ hasText: "查货材料识别" }).click();
   await page.getByRole("button", { name: "输入", exact: true }).click();
+  await page.getByRole("button", { name: "示例", exact: true }).click();
   await page.click('[data-fixture-id="constructed/p2-v3-no-warehouse.json"]');
   await sidebar.filter({ hasText: "商品对应关系" }).click();
   await sidebar.filter({ hasText: "查货材料识别" }).click();
-  await expect(page.getByTestId("editor-pane")).toContainText("样本 constructed/p2-v3-no-warehouse.json");
+  await expect(page.getByTestId("editor-pane")).toContainText("示例 constructed/p2-v3-no-warehouse.json");
 });
 
 test("粘贴的请求可一键存为快照并选中，直接用于真实运行的预览", async ({ page }) => {
   await page.goto("/projects/jiuli/playground");
   await page.locator('[data-prompt="generic-json"]').click();
-  await page.getByRole("button", { name: "粘贴 / 文件 JSON" }).click();
-  const btn = page.getByRole("button", { name: "请求存为快照（用于真实运行）" });
+  await page.getByRole("button", { name: "粘贴 JSON", exact: true }).click();
+  const btn = page.getByRole("button", { name: "把请求存为输入（用于真实运行）" });
   await expect(btn).toBeDisabled();
   const marker = `请总结-${Date.now()}`;
   await page.getByLabel("请求上下文", { exact: true }).fill(JSON.stringify({ text: marker }));
@@ -660,9 +665,9 @@ test("粘贴的请求可一键存为快照并选中，直接用于真实运行�
   await expect(page.getByTestId("request-preview")).toContainText(marker);
   // 不合法的 JSON 明确报错
   await page.getByRole("button", { name: "输入", exact: true }).click();
-  await page.getByRole("button", { name: "粘贴 / 文件 JSON" }).click();
+  await page.getByRole("button", { name: "粘贴 JSON", exact: true }).click();
   await page.getByLabel("请求上下文", { exact: true }).fill("{不是 JSON");
-  await page.getByRole("button", { name: "请求存为快照（用于真实运行）" }).click();
+  await page.getByRole("button", { name: "把请求存为输入（用于真实运行）" }).click();
   await expect(page.getByTestId("editor-pane")).toContainText("INVALID_JSON");
 });
 
@@ -674,8 +679,9 @@ test("运行历史只列当前 Prompt，超过 100 条可加载更多；没有�
     await page.request.post("/api/runs", { data: { mode: "RENDER_ONLY", projectId: pid, promptId: `${pid}-p1`, raw: raw.data.raw, label: `批量 ${i}` } });
   }
   await page.goto(`/projects/${pid}/playground`);
-  // 进入项目默认落在 P1，而不是通用 JSON
-  await expect(page.locator("header")).toContainText("P1 委托材料识别");
+  // 进入项目默认落在通用提示词；切到 P1 看它的历史
+  await expect(page.locator("header")).toContainText("通用提示词");
+  await page.getByTestId("sidebar").locator("[data-prompt]").filter({ hasText: "委托材料识别" }).click();
   await page.getByRole("button", { name: "运行历史（100+）" }).click();
   const rows = page.getByTestId("history").locator("tbody tr");
   await expect(rows).toHaveCount(100);
@@ -692,11 +698,11 @@ test("运行历史只列当前 Prompt，超过 100 条可加载更多；没有�
 test("未登记 Schema 的结果不显示「解析成功」，结果区与历史均标为未校验", async ({ page }) => {
   await renderFixture(page, "jiuli-p1", "constructed/unknown-schema-version.json");
   const pane = page.getByTestId("result-pane");
-  await expect(pane).toContainText("未校验（未登记 Schema）");
+  await expect(pane).toContainText("未校验（不符合预设结构）");
   await expect(pane).not.toContainText("解析成功");
   await page.getByRole("button", { name: /运行历史/ }).click();
   const row = page.getByTestId("history").locator("tr", { hasText: "未登记 schema_version" }).first();
-  await expect(row).toContainText("未校验（未登记 Schema）");
+  await expect(row).toContainText("未校验（不符合预设结构）");
   await expect(row).not.toContainText("解析成功");
 });
 
@@ -794,7 +800,7 @@ test("标注独立保存，不改原始输出", async ({ page }) => {
   const csv = await page.request.get("/api/annotations/export?project=jiuli&format=csv").then((r) => r.text());
   expect(csv.startsWith("﻿")).toBe(true);
   expect(csv).toContain("模型应选箱单 GW");
-  await page.getByRole("tab", { name: "运行信息" }).click();
+  await page.getByRole("tab", { name: "详情" }).click();
   const hash = await page.locator("dd", { hasText: /^[0-9a-f]{64}$/ }).last().textContent();
   const raw = await page.request.get("/api/fixtures/item?id=constructed/p4-v3-conflict.json").then((r) => r.json());
   const crypto = await import("node:crypto");
@@ -866,7 +872,8 @@ test("9.1 性能：100 行 × 25 字段（记录实测，不预设达标）", as
   }));
   const doc = { schema_version: "jiuli-ai-v3", prompt: "P1", request_id: "PERF", output: { processing_status: "SUCCESS", customer_resolution: { status: "UNRESOLVED", customer_id: null, recognized_name: "", candidate_customer_ids: [], sources: [] }, read_status: [], rows, scope_records: [], unlinked_records: [], issues: [] } };
   await page.goto("/projects/jiuli/playground");
-  await page.getByRole("button", { name: "粘贴 / 文件 JSON" }).click();
+  await page.click('[data-prompt="jiuli-p1"]');
+  await page.getByRole("button", { name: "粘贴 JSON", exact: true }).click();
   await page.getByLabel("原始输出", { exact: true }).fill(JSON.stringify(doc));
   const t0 = Date.now();
   await page.click('[data-testid="btn-render"]');

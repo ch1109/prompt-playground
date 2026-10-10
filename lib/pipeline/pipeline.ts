@@ -22,6 +22,11 @@ export function runPipeline({ raw, promptKind, context }: PipelineInput): Pipeli
   const diagnostics: Diagnostic[] = [...parse.diagnostics];
 
   if (!parse.ok) {
+    // 通用提示词允许纯文本回答：不是 JSON 也算成功，按文本显示；看起来像 JSON 却解析失败的仍报错
+    if (promptKind === "GENERIC_JSON" && diagnostics.some((d) => d.code === "NOT_PURE_JSON")) {
+      const text = diagnostics.map((d) => (d.code === "NOT_PURE_JSON" ? { ...d, level: "INFO" as const, code: "TEXT_ANSWER", message: "回答是文本（不是 JSON），按文本显示。" } : d));
+      return { parse, validation: { status: "NOT_RUN", errors: [] }, partial: false, status: "SUCCEEDED", diagnostics: text };
+    }
     return { parse, validation: { status: "NOT_RUN", errors: [] }, partial: false, status: "PARSE_ERROR", diagnostics };
   }
 
@@ -37,7 +42,7 @@ export function runPipeline({ raw, promptKind, context }: PipelineInput): Pipeli
       code: "UNKNOWN_SCHEMA",
       message:
         promptKind === "GENERIC_JSON"
-          ? "通用 JSON：未登记 Schema，仅展示 JSON 树。"
+          ? "通用提示词：按 JSON 树展示。"
           : `未登记 (${promptKind}, ${validation.schemaVersion ?? "无 schema_version"}) 的 Schema，不套用九立模板，仅展示 JSON 树。`,
     });
     return { parse, validation, partial: false, status: "SUCCEEDED", diagnostics };

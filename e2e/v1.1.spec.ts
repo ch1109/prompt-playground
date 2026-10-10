@@ -8,6 +8,7 @@ test.beforeEach(async ({ context }) => {
 async function renderFixture(page: Page, prompt: string, fixtureId: string) {
   await page.goto("/projects/jiuli/playground");
   await page.click(`[data-prompt="${prompt}"]`);
+  await page.getByRole("button", { name: "示例", exact: true }).click();
   await page.click(`[data-fixture-id="${fixtureId}"]`);
   await page.click('[data-testid="btn-render"]');
   await expect(page.getByTestId("tab-visual")).toBeVisible();
@@ -49,6 +50,7 @@ test("P4 委托行 × 25 字段矩阵：锁定与未核验字段如实显示", a
 test("AT-26 请求预览：显示输入覆盖；模板有未登记变量时明确阻止", async ({ page }) => {
   await page.goto("/projects/jiuli/playground");
   await page.click('[data-prompt="jiuli-p1"]');
+  await page.getByRole("button", { name: "示例", exact: true }).click();
   await page.click('[data-fixture-id="v3/SC-08/P1"]');
   await page.getByRole("button", { name: "请求预览" }).click();
   await expect(page.getByTestId("input-coverage")).toBeVisible();
@@ -72,10 +74,11 @@ test("模型页列出能力声明，未声明的如实显示", async ({ page }) 
 test("R-01 样本库：搜索与来源筛选，选中后显示详情", async ({ page }) => {
   await page.goto("/projects/jiuli/playground");
   await page.click('[data-prompt="jiuli-p3"]');
+  await page.getByRole("button", { name: "示例", exact: true }).click();
   await page.getByLabel("搜索样本").fill("AT09");
   await expect(page.locator("[data-fixture-id]")).toHaveCount(1);
   await page.getByLabel("搜索样本").fill("");
-  await page.getByLabel("样本来源").selectOption("RECORDED_MODEL_OUTPUT");
+  await page.getByLabel("示例来源").selectOption("RECORDED_MODEL_OUTPUT");
   await expect(page.locator('[data-fixture-id^="constructed/"]')).toHaveCount(0);
   await page.click('[data-fixture-id="v3/SC-08/P3"]');
   await expect(page.getByTestId("fixture-detail")).toContainText("无 Gold");

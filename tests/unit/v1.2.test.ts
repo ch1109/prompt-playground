@@ -1,8 +1,22 @@
 // v1.2：看图默认附带、页数上限可配、文件夹上传、通用提示词。所有模型调用都用本地假服务。
-import { describe, expect, it } from "vitest";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { beforeAll, describe, expect, it } from "vitest";
+import * as XLSX from "xlsx";
 import type { InputSnapshot } from "@/lib/contracts/snapshot";
+import { buildInput } from "@/lib/input-builders";
+import { createFileSnapshot } from "@/lib/materials/store";
+import { OpenAICompatibleProvider, setProviderForTests } from "@/lib/models/openai-compatible";
+import { runPipeline } from "@/lib/pipeline/pipeline";
+import { resetDbForTests } from "@/lib/repositories/db";
 import { maxPages } from "@/lib/runs/page-images";
-import { effectiveAttachImages } from "@/lib/runs/service";
+import { effectiveAttachImages, modelRun } from "@/lib/runs/service";
+
+beforeAll(() => {
+  resetDbForTests(":memory:");
+  process.env.STUDIO_MATERIALS_DIR = mkdtempSync(join(tmpdir(), "studio-v12-mat-"));
+});
 
 const caps = (images: boolean | null) => ({ images, nativePdf: false as const, jsonMode: null, thinking: null, streaming: false as const, maxOutputTokens: null });
 const snap = (media: Record<string, string>) => ({ materials: Object.entries(media).map(([file_id, media_type]) => ({ file_id, media_type })) }) as unknown as InputSnapshot;
@@ -59,5 +73,45 @@ describe("文件夹上传", () => {
     expect(safeRelativeName("../../etc/a.pdf")).toBe("etc/a.pdf");
     expect(safeRelativeName("C:\\Users\\x\\a.pdf")).toBe("C:/Users/x/a.pdf");
     expect(safeRelativeName("/abs/a.pdf")).toBe("abs/a.pdf");
+  });
+});
+
+describe("通用提示词", () => {
+  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("fake-image")]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["型号"], ["GEN-01"]]), "S1");
+  const xlsx = Buffer.from(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }));
+
+  it("上传的全部文件放进 input.files（不分材料类型），模型支持看图时自动附带图片；纯文本回答算成功", async () => {
+    const snap = await createFileSnapshot({ projectId: "jiuli", files: [{ name: "资料/图片.png", buffer: png, materialType: "ORDER" }, { name: "资料/表.xlsx", buffer: xlsx, materialType: "INSPECTION" }] });
+    const built = buildInput("GENERIC_JSON", snap);
+    expect(built.ok && built.builderId).toBe("file-import-generic");
+    const files = (built.ok ? built.request : {}) as { input?: { files: { file_name: string; content: unknown }[] } };
+    expect(files.input!.files.map((f) => f.file_name)).toEqual(["资料/图片.png", "资料/表.xlsx"]);
+    expect(JSON.stringify(files.input!.files[1].content)).toContain("GEN-01");
+
+    let images = -1;
+    setProviderForTests(
+      new OpenAICompatibleProvider(
+        { baseUrl: "https://model.invalid/v1", model: "fake", apiKey: "sk-x", timeoutMs: 2000, capabilities: caps(true) },
+        (async (_u: string, init?: RequestInit) => {
+          const body = JSON.parse(String(init?.body));
+          images = Array.isArray(body.messages[1].content) ? body.messages[1].content.length - 1 : 0;
+          return Response.json({ choices: [{ message: { content: "图里写的是 GEN-01。" }, finish_reason: "stop" }] });
+        }) as unknown as typeof fetch,
+      ),
+    );
+    const run = await modelRun({ projectId: "jiuli", promptId: "generic-json", snapshotId: snap.snapshot_id, system: "描述文件内容", userTemplate: "{{input_json}}", params: {} });
+    setProviderForTests(undefined);
+    expect(images).toBe(1);
+    expect(run.status).toBe("SUCCEEDED");
+    expect(run.parse_diagnostics.map((d) => d.code)).toContain("TEXT_ANSWER");
+  });
+
+  it("纯文本只在通用提示词下算成功；九立预设仍报解析错误；像 JSON 但坏掉的仍报错", () => {
+    const ctx = { runId: "r", snapshot: null } as never;
+    expect(runPipeline({ raw: "这是一段说明", promptKind: "GENERIC_JSON", context: ctx }).status).toBe("SUCCEEDED");
+    expect(runPipeline({ raw: "这是一段说明", promptKind: "JIULI_P1", context: ctx }).status).toBe("PARSE_ERROR");
+    expect(runPipeline({ raw: '{"a": ', promptKind: "GENERIC_JSON", context: ctx }).status).toBe("PARSE_ERROR");
   });
 });

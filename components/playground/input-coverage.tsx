@@ -86,10 +86,10 @@ export function InputCoverage({ manifest, planned }: { manifest: InputManifest; 
           </tbody>
         </table>
       ) : (
-        <p className="text-ink-400">请求不含原件材料（上游 JSON 输入，来自快照 {m.snapshot_id}，{m.snapshot_source_type}）。</p>
+        <p className="text-ink-400">请求不含原件材料（上游 JSON 输入，来自输入记录 {m.snapshot_id}，{m.snapshot_source_type}）。</p>
       )}
       <p className="mt-1 text-[10.5px] text-ink-400">
-        {m.input_builder} · 快照 {m.snapshot_id}（hash {m.snapshot_hash.slice(0, 10)}…）· {m.version}
+        {m.input_builder} · 输入记录 {m.snapshot_id}（hash {m.snapshot_hash.slice(0, 10)}…）· {m.version}
       </p>
     </div>
   );

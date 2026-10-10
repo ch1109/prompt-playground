@@ -44,3 +44,22 @@ test("选择文件夹：读取子文件夹，跳过不支持的文件，材料�
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("结果区只有「结果 / 原始输出 / 详情」三页；通用提示词的文字回答按文本显示", async ({ page }) => {
+  await page.goto("/projects/jiuli/playground");
+  // 默认进入通用提示词，侧栏把 P1~P4 归在「九立预设」下
+  await expect(page.getByTestId("sidebar").locator('[data-prompt="generic-json"][aria-current="true"]')).toBeVisible();
+  await expect(page.getByTestId("sidebar")).toContainText("九立预设");
+  await page.getByRole("button", { name: "粘贴 JSON", exact: true }).click();
+  await page.getByLabel("原始输出", { exact: true }).fill("合同里的买方是海川贸易，金额 USD 12.75。");
+  await page.click('[data-testid="btn-render"]');
+  const tabs = page.getByTestId("result-pane").getByRole("tab");
+  await expect(tabs).toHaveText(["结果", "原始输出", "详情"]);
+  await expect(page.getByTestId("result-text")).toContainText("合同里的买方是海川贸易");
+  await expect(page.getByTestId("result-pane")).toContainText("完成");
+  await expect(page.getByTestId("result-pane")).not.toContainText("JSON 解析失败");
+  // 技术信息都在「详情」
+  await page.getByRole("tab", { name: "详情" }).click();
+  await expect(page.getByTestId("tab-details")).toContainText("运行信息");
+  await expect(page.getByTestId("tab-details")).toContainText("TEXT_ANSWER");
+});

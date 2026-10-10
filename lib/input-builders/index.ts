@@ -6,7 +6,7 @@ import { FIELD_LABELS } from "@/lib/schemas/common";
 // 构造是纯函数，只使用快照中的数据，不隐式拉取业务数据。
 
 // 1.1.0：P1 按单证分段纳入发票 / 箱单辅助材料；1.2.0：支持上传文件快照（P1/P2）
-export const INPUT_BUILDER_VERSION = "1.2.0";
+export const INPUT_BUILDER_VERSION = "1.3.0";
 
 export type BuildResult =
   | { ok: true; request: Record<string, unknown>; builderId: string; warnings: string[]; requiresFiles: string[] }
@@ -48,6 +48,7 @@ export function buildInput(kind: PromptKind, snapshot: InputSnapshot): BuildResu
   if (recorded) return { ok: true, request: recorded, builderId: "passthrough-snapshot-request", warnings: [], requiresFiles: [] };
 
   if (kind === "GENERIC_JSON") {
+    if (snapshot.source_type === "FILE_IMPORT") return buildFromUpload(kind, snapshot);
     return { ok: true, request: payload, builderId: "generic-snapshot-payload", warnings: [], requiresFiles: [] };
   }
 
@@ -182,11 +183,12 @@ interface UploadMeta {
   file_id: string;
   file_name: string;
   material_type: string;
+  media_type: string;
   segments: string[];
   has_text: boolean;
 }
 
-/** 上传文件快照 → P1（委托/发票/箱单）或 P2（查货文件）输入；P3/P4 需要上游结构化结果，不能由原始文件构造 */
+/** 上传文件快照 → 通用提示词（全部文件）、P1（委托/发票/箱单）或 P2（查货文件）输入；P3/P4 需要上游结构化结果，不能由原始文件构造 */
 function buildFromUpload(kind: PromptKind, snapshot: InputSnapshot): BuildResult {
   const payload = snapshot.normalized_payload as Rec;
   const fi = (payload.file_import as { customer_name: string | null; materials: UploadMeta[] } | undefined) ?? { customer_name: null, materials: [] };
@@ -223,7 +225,16 @@ function buildFromUpload(kind: PromptKind, snapshot: InputSnapshot): BuildResult
       request: envelope(kind, snapshot, { customer_id: customerId, normalization: {} }, { files: ms.map((m) => ({ file_id: m.file_id, segments: m.segments, content: extracted[m.file_id] ?? null })) }),
     };
   }
-  if (kind === "GENERIC_JSON") return { ok: true, request: payload, builderId: "generic-snapshot-payload", warnings: [], requiresFiles: [] };
+  if (kind === "GENERIC_JSON") {
+    // 通用提示词：所有文件原样列出（不分材料类型），放在 input.files 下，附带原件图片时据此找到原件
+    return {
+      ok: true,
+      builderId: "file-import-generic",
+      warnings,
+      requiresFiles: noText(fi.materials),
+      request: { input: { files: fi.materials.map((m) => ({ file_id: m.file_id, file_name: m.file_name, media_type: m.media_type, content: extracted[m.file_id] ?? null })) } },
+    };
+  }
   return { ok: false, code: "NO_INPUT_FOR_KIND", message: `${PCODE[kind]} 需要上游结构化结果（委托行、查货行或已确定关系），不能直接由上传的原始文件构造` };
 }
 
