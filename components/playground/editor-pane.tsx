@@ -65,7 +65,7 @@ export function EditorPane(props: {
         {tab === "preview" && <PreviewTab fixtures={props.fixtures} />}
       </div>
       <div className="border-t border-ink-700 px-3 py-1 text-[11px] text-ink-400">
-        输入：{ws.inputMode === "fixture" ? `样本 ${ws.fixtureId ?? "未选"}` : ws.inputMode === "paste" ? "粘贴 JSON（仅渲染）" : ws.inputMode === "jiuli" ? "九立导入（创建快照后使用）" : ws.inputMode === "upload" ? `上传文件 ${ws.uploadSnapshotId ?? "（未上传）"}` : `快照 ${ws.snapshotId ?? "未选"}`}
+        输入：{ws.inputMode === "fixture" ? (ws.fixtureId ? `样本 ${ws.fixtureId}` : "还没选样本，请点上方列表里的一项") :ws.inputMode === "paste" ? "粘贴 JSON（仅渲染）" : ws.inputMode === "jiuli" ? "九立导入（创建快照后使用）" : ws.inputMode === "upload" ? `上传文件 ${ws.uploadSnapshotId ?? "（未上传）"}` : `快照 ${ws.snapshotId ?? "未选"}`}
         {runSnapshotId(ws) && ws.inputMode === "fixture" && ` · 快照 ${runSnapshotId(ws)}`}
       </div>
     </div>
