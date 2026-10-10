@@ -68,3 +68,41 @@ test("模型页列出能力声明，未声明的如实显示", async ({ page }) 
   await expect(page.getByTestId("capability-table")).toContainText("图片输入");
   await expect(page.getByTestId("capability-table")).toContainText("未声明");
 });
+
+test("R-01 样本库：搜索与来源筛选，选中后显示详情", async ({ page }) => {
+  await page.goto("/projects/jiuli/playground");
+  await page.click('[data-prompt="jiuli-p3"]');
+  await page.getByLabel("搜索样本").fill("AT09");
+  await expect(page.locator("[data-fixture-id]")).toHaveCount(1);
+  await page.getByLabel("搜索样本").fill("");
+  await page.getByLabel("样本来源").selectOption("RECORDED_MODEL_OUTPUT");
+  await expect(page.locator('[data-fixture-id^="constructed/"]')).toHaveCount(0);
+  await page.click('[data-fixture-id="v3/SC-08/P3"]');
+  await expect(page.getByTestId("fixture-detail")).toContainText("无 Gold");
+  await expect(page.getByTestId("fixture-detail")).toContainText("上游");
+});
+
+test("R-06 提示词编辑：搜索计数、规则目录跳转、行号与变量检查", async ({ page }) => {
+  await page.goto("/projects/jiuli/playground");
+  await page.click('[data-prompt="jiuli-p2"]');
+  await page.getByRole("button", { name: /^提示词/ }).click();
+  const text = ["一、任务", "识别查货事实。", "二、产地", "手写 COD 单独记录。", "印刷 COD 也记录。", "三、输出", "只输出 JSON。"].join("\n");
+  await page.getByLabel("System 提示词").fill(text);
+  await page.getByLabel("搜索提示词").fill("cod");
+  await page.getByLabel("搜索提示词").press("Enter");
+  await expect(page.getByTestId("search-count")).toHaveText("1/2 处 · 第 4 行");
+  await page.getByRole("button", { name: "下一个匹配" }).click();
+  await expect(page.getByTestId("search-count")).toHaveText("2/2 处 · 第 5 行");
+  await page.getByRole("navigation", { name: "规则目录" }).getByText("三、输出").click();
+  await expect(page.getByTestId("cursor-line")).toContainText("第 6 行 / 共 7 行");
+  await expect(page.getByTestId("variable-check")).toContainText("变量检查通过");
+  await expect(page.getByLabel("System 提示词")).toHaveValue(text);
+});
+
+test("R-15 空状态：可打开标明为样本的示例结果", async ({ page }) => {
+  await page.goto("/projects/jiuli/playground");
+  await page.click('[data-prompt="jiuli-p4"]');
+  // 新浏览器上下文里当前 Prompt 没有打开的 Run
+  await page.getByTestId("open-example").click();
+  await expect(page.getByTestId("fixture-banner")).toContainText("不是模型本次运行");
+});

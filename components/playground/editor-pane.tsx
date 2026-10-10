@@ -7,6 +7,7 @@ import { runSnapshotId, useStudio, useWorkspace, type InputMode } from "@/lib/st
 import { Badge, Btn, cx, Empty } from "@/components/ui";
 import type { InputManifest, ModelParams } from "@/lib/contracts/run";
 import { InputCoverage } from "./input-coverage";
+import { PromptEditor } from "./prompt-editor";
 
 type EditorTab = "prompt" | "input" | "model" | "preview";
 
@@ -20,7 +21,7 @@ export function EditorPane(props: {
   snapshots: SnapshotListItem[];
   provider: ProviderInfoDTO | null;
   capability: CapabilityDTO | null;
-  onSaveVersion: (label: string) => Promise<boolean>;
+  onSaveVersion: (label: string, changeNote: string) => Promise<boolean>;
   onPickFixture: (fixtureId: string) => void;
   onSnapshotsChanged: () => void;
   /** 还有更早的快照未加载时提供 */
@@ -74,9 +75,11 @@ export function EditorPane(props: {
   );
 }
 
-function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]; isDraft: boolean; onSave: (label: string) => Promise<boolean> }) {
+function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]; isDraft: boolean; onSave: (label: string, changeNote: string) => Promise<boolean> }) {
   const [ws, patch] = useWorkspace();
   const [label, setLabel] = useState("");
+  const [note, setNote] = useState("");
+  const current = versions.find((v) => v.version_id === ws.versionId);
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
@@ -99,14 +102,15 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
         </select>
         {isDraft ? <Badge tone="warn">未保存草稿</Badge> : <Badge tone="ok">与版本一致</Badge>}
       </div>
+      {current && (
+        <p className="text-[11px] text-ink-400" data-testid="version-meta">
+          {current.parent_version_id ? `父版本 ${versions.find((v) => v.version_id === current.parent_version_id)?.label ?? current.parent_version_id}` : "无父版本"}
+          {" · "}创建于 {current.created_at.slice(0, 19).replace("T", " ")}
+          {current.change_note ? ` · 变更说明：${current.change_note}` : ""}
+        </p>
+      )}
       <label className="block text-[11px] text-ink-400">System（提示词正文）</label>
-      <textarea
-        value={ws.system}
-        onChange={(e) => patch({ system: e.target.value })}
-        aria-label="System 提示词"
-        spellCheck={false}
-        className="h-[38vh] w-full resize-y rounded-lg border border-ink-700 bg-ink-900 p-2 font-mono text-[12px] leading-5 outline-none focus:border-ink-400"
-      />
+      <PromptEditor system={ws.system} userTemplate={ws.userTemplate} onSystem={(v) => patch({ system: v })} />
       <label className="block text-[11px] text-ink-400">
         User 模板（变量 <code className="text-info">{"{{input_json}}"}</code> = 由快照显式构造的请求 JSON）
       </label>
@@ -118,13 +122,17 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
         className="h-24 w-full resize-y rounded-lg border border-ink-700 bg-ink-900 p-2 font-mono text-[12px] outline-none focus:border-ink-400"
       />
       <div className="flex items-center gap-2">
-        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="新版本名称" aria-label="新版本名称" className="flex-1 rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-[12px]" />
+        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="新版本名称" aria-label="新版本名称" className="w-40 rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-[12px]" />
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="变更说明：改了哪条规则、影响哪些字段" aria-label="变更说明" className="flex-1 rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-[12px]" />
         <Btn
           tone="outline"
           disabled={!isDraft}
           onClick={async () => {
             // 保存失败时保留名称，错误显示在顶栏
-            if (await onSave(label || `版本 ${new Date().toLocaleString("zh-CN")}`)) setLabel("");
+            if (await onSave(label || `版本 ${new Date().toLocaleString("zh-CN")}`, note)) {
+              setLabel("");
+              setNote("");
+            }
           }}
         >
           保存为新版本
@@ -162,21 +170,66 @@ function InputTab({ projectId, kind, fixtures, snapshots, capability, onPickFixt
   );
 }
 
+const ORIGIN_GROUP = { RECORDED_MODEL_OUTPUT: "真实运行录制（非 Gold）", CONSTRUCTED: "人工构造异常样本", STRUCTURE_EXAMPLE: "结构 Fixture（规格示例）" } as const;
+
+/** 样本库（R-01）：按来源分组，支持搜索与来源 / Gold / Schema 版本筛选；选中后显示详情 */
 function FixtureList({ kind, fixtures, onPick }: { kind: PromptKind; fixtures: FixtureSummary[]; onPick: (fixtureId: string) => void }) {
   const [ws] = useWorkspace();
-  const list = fixtures.filter((f) => f.promptKind === kind);
-  const groups = useMemo(() => [...new Set(list.map((f) => f.group))], [list]);
-  if (!list.length) return <Empty>当前 Prompt 没有样本。可在「粘贴 / 文件 JSON」粘贴模型输出或请求上下文，或从九立导入 / 上传文件创建快照。</Empty>;
+  const [q, setQ] = useState("");
+  const [origin, setOrigin] = useState<"" | FixtureSummary["origin"]>("");
+  const [gold, setGold] = useState(false);
+  const [schema, setSchema] = useState("");
+  const all = fixtures.filter((f) => f.promptKind === kind);
+  const schemas = useMemo(() => [...new Set(all.map((f) => f.schemaVersion ?? "（无）"))], [all]);
+  const needle = q.trim().toLowerCase();
+  const list = all.filter(
+    (f) =>
+      (!origin || f.origin === origin) &&
+      (!gold || f.hasGold) &&
+      (!schema || (f.schemaVersion ?? "（无）") === schema) &&
+      (!needle || [f.title, f.id, f.group, ...f.tags].some((x) => x.toLowerCase().includes(needle))),
+  );
+  const picked = all.find((f) => f.id === ws.fixtureId);
+  if (!all.length) return <Empty>当前 Prompt 没有样本。可在「粘贴 / 文件 JSON」粘贴模型输出或请求上下文，或从九立导入 / 上传文件创建快照。</Empty>;
   return (
     <div className="space-y-2" data-testid="fixture-list">
-      <p className="text-[11px] text-ink-400">样本来源已标注：规格结构示例 / 真实录制模型输出（非 Gold）/ 人工构造。均不能用于宣称准确率。</p>
-      {groups.map((g) => (
-        <div key={g}>
-          <div className="mb-0.5 text-[11px] font-semibold text-ink-400">{g}</div>
-          <ul className="space-y-px">
-            {list
-              .filter((f) => f.group === g)
-              .map((f) => (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索样本名、样本号、验收项（如 AT09）…" aria-label="搜索样本" className="min-w-40 flex-1 rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-[12px] outline-none focus:border-ink-400" />
+        <select value={origin} onChange={(e) => setOrigin(e.target.value as typeof origin)} aria-label="样本来源" className="rounded-lg border border-ink-700 bg-ink-900 px-1 py-1 text-[11.5px]">
+          <option value="">全部来源</option>
+          {Object.entries(ORIGIN_GROUP).map(([k, v]) => (
+            <option key={k} value={k}>
+              {v}
+            </option>
+          ))}
+        </select>
+        <select value={schema} onChange={(e) => setSchema(e.target.value)} aria-label="Schema 版本" className="rounded-lg border border-ink-700 bg-ink-900 px-1 py-1 text-[11.5px]">
+          <option value="">全部 Schema</option>
+          {schemas.map((v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ))}
+        </select>
+        <label className="flex items-center gap-1 text-[11.5px] text-ink-300">
+          <input type="checkbox" checked={gold} onChange={(e) => setGold(e.target.checked)} aria-label="只看有 Gold" />
+          只看有 Gold
+        </label>
+      </div>
+      {picked && <FixtureDetailCard f={picked} />}
+      <p className="text-[11px] text-ink-400">
+        {list.length}/{all.length} 个样本。录制输出不是 Gold，构造样本不是真实单证，都不能用于宣称准确率。
+      </p>
+      {(Object.keys(ORIGIN_GROUP) as FixtureSummary["origin"][]).map((o) => {
+        const items = list.filter((f) => f.origin === o);
+        if (!items.length) return null;
+        return (
+          <div key={o}>
+            <div className="mb-0.5 text-[11px] font-semibold text-ink-400">
+              {ORIGIN_GROUP[o]} · {items.length}
+            </div>
+            <ul className="space-y-px">
+              {items.map((f) => (
                 <li key={f.id}>
                   <button
                     data-fixture-id={f.id}
@@ -184,15 +237,40 @@ function FixtureList({ kind, fixtures, onPick }: { kind: PromptKind; fixtures: F
                     className={cx("flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-[12px] hover:bg-ink-800", ws.fixtureId === f.id && "bg-accent/[0.07] ring-1 ring-accent/40")}
                   >
                     <span className="min-w-0 flex-1 truncate">{f.title}</span>
-                    {f.hasRequest && <Badge title="带请求上下文（可解析 evidence_key / 当前值）">ctx</Badge>}
+                    {f.hasRequest ? <Badge title="带请求上下文：可真实运行，也可解析 evidence_key / 当前值">ctx</Badge> : <Badge tone="mute" title="没有请求上下文：只能仅渲染">仅渲染</Badge>}
+                    {f.hasGold && <Badge tone="ok">Gold</Badge>}
                     {f.covers?.length ? <Badge tone="mute">{f.covers.join(" ")}</Badge> : null}
                     <Badge tone={ORIGIN_TONE[f.origin]}>{ORIGIN_SHORT[f.origin]}</Badge>
                   </button>
                 </li>
               ))}
-          </ul>
+            </ul>
+          </div>
+        );
+      })}
+      {!list.length && <Empty>没有符合条件的样本</Empty>}
+    </div>
+  );
+}
+
+function FixtureDetailCard({ f }: { f: FixtureSummary }) {
+  return (
+    <div className="rounded-lg border border-ink-700 bg-ink-900 p-2 text-[11.5px]" data-testid="fixture-detail">
+      <div className="mb-0.5 flex flex-wrap items-center gap-1.5">
+        <span className="font-semibold text-ink-100">{f.title}</span>
+        <Badge tone={ORIGIN_TONE[f.origin]}>{ORIGIN_GROUP[f.origin]}</Badge>
+        <Badge tone={f.hasGold ? "ok" : "mute"}>{f.hasGold ? "有独立 Gold" : "无 Gold"}</Badge>
+        <Badge>{f.schemaVersion ?? "无 schema_version"}</Badge>
+        <Badge tone={f.detail.runnable ? "info" : "warn"}>{f.detail.runnable ? "可真实运行 / 仅渲染" : "只能仅渲染"}</Badge>
+      </div>
+      {f.detail.provenance && <div className="text-ink-400">{f.detail.provenance}</div>}
+      {f.detail.materials.length > 0 && (
+        <div className="text-ink-400">
+          素材：{f.detail.materials.map((m) => `${m.file_id}${m.type ? `（${m.type}）` : ""}${m.segments.length ? ` ${m.segments.join(",")}` : ""}`).join("；")}
         </div>
-      ))}
+      )}
+      {f.detail.upstream && <div className="text-ink-400">上游：{f.detail.upstream}</div>}
+      {f.tags.length > 0 && <div className="text-ink-400">标签：{f.tags.join("、")}</div>}
     </div>
   );
 }

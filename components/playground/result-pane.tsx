@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/client/api";
-import type { AnnotationDTO, RunDetail } from "@/lib/client/types";
+import type { AnnotationDTO, FixtureSummary, RunDetail, RunListItem } from "@/lib/client/types";
 import type { ViewModel } from "@/lib/contracts/view-model";
 import { explainModelError } from "@/lib/models/error-hints";
 import { getByPointer } from "@/lib/pipeline/json-pointer";
@@ -58,6 +58,10 @@ export function ResultPane({
   onCancel,
   onRetry,
   emptyHint,
+  recentRun,
+  onOpenRun,
+  example,
+  onOpenExample,
 }: {
   detail?: RunDetail;
   dirty: boolean;
@@ -68,6 +72,12 @@ export function ResultPane({
   onRetry?: (runId: string) => void;
   /** 还没有结果时的引导（按当前 Prompt 是否有样本、模型是否已配置给出） */
   emptyHint: string;
+  /** 当前 Prompt 最近一次 Run（空状态入口） */
+  recentRun?: RunListItem;
+  onOpenRun?: (runId: string) => void;
+  /** 空状态示例样本（明确标为 Fixture） */
+  example?: FixtureSummary;
+  onOpenExample?: (fixtureId: string) => void;
 }) {
   const tab = useStudio((s) => s.resultTab);
   const setStore = useStudio((s) => s.set);
@@ -129,6 +139,11 @@ export function ResultPane({
         <Banner tone="bad">模型输出达到 max_tokens 上限被截断（finish_reason=length）。请在「模型」页调大 max_tokens 后重跑。</Banner>
       )}
       {dirty && run && <Banner tone="warn">当前结果来自上次运行（与未保存/未运行的编辑不同）。</Banner>}
+      {run?.mode === "RENDER_ONLY" && (detail?.snapshot?.source_type === "FIXTURE" || run.label?.startsWith("样本")) && (
+        <Banner tone="info">
+          <span data-testid="fixture-banner">这是样本（Fixture）的仅渲染结果，不是模型本次运行；{detail?.snapshot?.warnings.some((w) => w.includes("录制")) ? "录制输出不是 Gold。" : "不能用于宣称准确率。"}</span>
+        </Banner>
+      )}
       {run?.status === "PARSE_ERROR" && <Banner tone="bad">原始回复不是合法 JSON：不生成任何业务表格。请在「原始 JSON」查看原文与错误位置。</Banner>}
       {run?.status === "SCHEMA_INVALID" && <Banner tone="warn">JSON 合法但 Schema 校验未通过（SCHEMA_INVALID）：下方为可安全理解部分的局部渲染，非完整结果。</Banner>}
       {run?.status === "ADAPTER_ERROR" && <Banner tone="bad">适配器异常（ADAPTER_ERROR）：已保留原始 JSON 与校验结果，详见「结构校验」。</Banner>}
@@ -172,6 +187,18 @@ export function ResultPane({
             <div className="mx-auto mb-4 grid h-11 w-11 place-items-center rounded-2xl border border-ink-700 bg-ink-900 font-mono text-[15px] text-ink-400 shadow-sm">{"{ }"}</div>
             <div className="mb-1.5 text-[15px] font-semibold text-ink-100">还没有运行结果</div>
             <p className="text-[12.5px] leading-6 text-ink-400">{emptyHint}</p>
+            <div className="mt-4 flex flex-col items-center gap-2" data-testid="empty-actions">
+              {recentRun && onOpenRun && (
+                <Btn tone="outline" onClick={() => onOpenRun(recentRun.run_id)} data-testid="open-recent-run">
+                  打开最近一次运行：{recentRun.label || recentRun.run_id}（{recentRun.started_at.slice(5, 16).replace("T", " ")} · {runStatusView(recentRun.status, recentRun.schema_id).label}）
+                </Btn>
+              )}
+              {example && onOpenExample && (
+                <Btn onClick={() => onOpenExample(example.id)} data-testid="open-example" title="仅渲染一个样本，不调用模型；结果会标明是样本，不是本次运行">
+                  查看示例结果（样本 Fixture：{example.title}）
+                </Btn>
+              )}
+            </div>
           </div>
         )}
         {run && tab === "visual" && (vm && detail?.renderer ? <BusinessView vm={vm} cfg={detail.renderer} canPreview={canPreview} /> : <Empty>{run.status === "SUCCEEDED" ? "无业务视图（未登记 Schema）。" : "没有可展示的业务视图。"}</Empty>)}

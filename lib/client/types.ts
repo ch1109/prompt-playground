@@ -18,6 +18,8 @@ export interface PromptVersionDTO {
   content_hash: string;
   created_at: string;
   source: string | null;
+  parent_version_id?: string | null;
+  change_note?: string | null;
 }
 
 export interface FixtureSummary {
@@ -28,6 +30,10 @@ export interface FixtureSummary {
   group: string;
   covers?: string[];
   hasRequest: boolean;
+  hasGold: boolean;
+  schemaVersion: string | null;
+  tags: string[];
+  detail: { materials: { file_id: string; type: string | null; segments: string[] }[]; provenance: string | null; upstream: string | null; runnable: boolean };
 }
 
 export interface AnnotationDTO {

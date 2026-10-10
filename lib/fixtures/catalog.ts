@@ -19,9 +19,22 @@ export interface FixtureSummary {
   group: string;
   covers?: string[];
   hasRequest: boolean;
+  /** 是否带独立 Gold（人工标准答案）；录制输出永远不是 Gold */
+  hasGold: boolean;
+  /** 原始输出自报的 schema_version；不是 JSON 或没有时为 null */
+  schemaVersion: string | null;
+  /** 检索与快速筛选用的问题标签（覆盖的验收项、场景、样本号） */
+  tags: string[];
+  /** 详情：素材、来源、上游依赖、能否真实运行 */
+  detail: {
+    materials: { file_id: string; type: string | null; segments: string[] }[];
+    provenance: string | null;
+    upstream: string | null;
+    runnable: boolean;
+  };
 }
 
-export interface FixtureDetail extends FixtureSummary {
+export interface FixtureDetail extends Omit<FixtureSummary, "hasGold" | "schemaVersion" | "tags" | "detail"> {
   raw: string;
   request?: unknown;
   gold?: { expectedRowCount?: number };
@@ -111,6 +124,41 @@ export function getFixture(id: string): FixtureDetail | undefined {
   return listFixtures().find((f) => f.id === id);
 }
 
+const UPSTREAM: Partial<Record<PromptKind, string>> = {
+  JIULI_P3: "依赖 P1 委托行与 P2 查货行（请求里已包含，不需要另跑上游）",
+  JIULI_P4: "依赖已确定的 P3 MATCHED 关系与当前草稿（请求里已包含）",
+};
+
+function schemaOf(raw: string): string | null {
+  try {
+    const v = (JSON.parse(raw) as { schema_version?: unknown }).schema_version;
+    return typeof v === "string" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
 export function summarize(f: FixtureDetail): FixtureSummary {
-  return { id: f.id, title: f.title, origin: f.origin, promptKind: f.promptKind, group: f.group, covers: f.covers, hasRequest: f.hasRequest };
+  const input = ((f.request as { input?: Record<string, unknown> } | undefined)?.input ?? {}) as Record<string, unknown>;
+  const files = ["materials", "files"].flatMap((k) => (Array.isArray(input[k]) ? (input[k] as Record<string, unknown>[]) : []));
+  const prov = f.provenance as { model?: string; created_at?: string; scenario?: string; sample_id?: string } | undefined;
+  const tags = [...(f.covers ?? []), ...(prov?.scenario ? [prov.scenario] : []), ...(prov?.sample_id ? [prov.sample_id] : [])];
+  return {
+    id: f.id,
+    title: f.title,
+    origin: f.origin,
+    promptKind: f.promptKind,
+    group: f.group,
+    covers: f.covers,
+    hasRequest: f.hasRequest,
+    hasGold: !!f.gold,
+    schemaVersion: schemaOf(f.raw),
+    tags,
+    detail: {
+      materials: files.map((m) => ({ file_id: String(m.file_id ?? ""), type: typeof m.material_type === "string" ? m.material_type : null, segments: Array.isArray(m.segments) ? m.segments.map(String) : [] })),
+      provenance: prov ? [prov.model && `录制模型 ${prov.model}`, prov.created_at && `录制于 ${prov.created_at.slice(0, 10)}`, prov.sample_id && `九立样本 ${prov.sample_id}`].filter(Boolean).join(" · ") : null,
+      upstream: UPSTREAM[f.promptKind] ?? null,
+      runnable: f.hasRequest,
+    },
+  };
 }

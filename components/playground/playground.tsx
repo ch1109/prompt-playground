@@ -89,6 +89,9 @@ export function Playground({ projectId }: { projectId: string }) {
   const detail = ws.runId ? s.runs[ws.runId] : undefined;
   const lastMode = s.lastMode[promptId];
   const hasFixtures = !!prompt && fixtures.some((f) => f.promptKind === prompt.prompt_kind);
+  // 空状态示例：优先带请求上下文的人工构造样本（覆盖异常场景），其次录制样本
+  const kindFixtures = prompt ? fixtures.filter((f) => f.promptKind === prompt.prompt_kind) : [];
+  const exampleFixture = kindFixtures.find((f) => f.origin === "CONSTRUCTED" && f.hasRequest && f.schemaVersion) ?? kindFixtures.find((f) => f.origin === "RECORDED_MODEL_OUTPUT") ?? kindFixtures[0];
   const emptyHint =
     (hasFixtures
       ? "在「输入 → 样本库」选择样本后点「仅渲染」；或选择带 ctx 的样本 / 已有快照后点「运行模型」。"
@@ -352,10 +355,10 @@ export function Playground({ projectId }: { projectId: string }) {
   const report = (e: unknown) => setError(e instanceof ApiError ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : String(e));
 
   /** 返回是否保存成功；失败时在顶栏显示错误 */
-  async function saveVersion(label: string): Promise<boolean> {
+  async function saveVersion(label: string, changeNote: string): Promise<boolean> {
     setError(null);
     try {
-      const v = await api<PromptVersionDTO>(`/api/prompts/${promptId}/versions`, { json: { label, system_prompt: ws.system, user_prompt_template: ws.userTemplate, parent_version_id: ws.versionId } });
+      const v = await api<PromptVersionDTO>(`/api/prompts/${promptId}/versions`, { json: { label, change_note: changeNote, system_prompt: ws.system, user_prompt_template: ws.userTemplate, parent_version_id: ws.versionId } });
       setVersions((cur) => ({ ...cur, [promptId]: [v, ...(cur[promptId] ?? [])] }));
       s.patchWorkspace(promptId, { versionId: v.version_id, versionHash: v.content_hash });
       return true;
@@ -373,6 +376,23 @@ export function Playground({ projectId }: { projectId: string }) {
       loadRuns();
     } catch (e) {
       report(e);
+    }
+  }
+
+  /** 空状态里的「打开示例」：仅渲染一个样本（Fixture），结果明确标为样本，不是本次运行 */
+  async function openExample(fixtureId: string) {
+    setError(null);
+    setBusy(true);
+    try {
+      await pickFixture(fixtureId);
+      s.patchWorkspace(promptId, { inputMode: "fixture" });
+      const run = await api<{ run_id: string }>("/api/runs", { json: { mode: "RENDER_ONLY", projectId, promptId, fixtureId } });
+      await openRun(run.run_id, { sig: inputSignature({ ...useStudio.getState().workspaces[promptId], inputMode: "fixture", fixtureId }, "RENDER_ONLY"), mode: "RENDER_ONLY" });
+      loadRuns();
+    } catch (e) {
+      report(e);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -713,7 +733,7 @@ export function Playground({ projectId }: { projectId: string }) {
                   该项目不存在或没有提示词。请在左侧切换或新建项目。
                 </p>
               ) : (
-                <ResultPane detail={detail} dirty={dirty} canPreview={capability?.status === "CONNECTED_DEMO_FILES"} loading={busy} onCancel={cancelRun} onRetry={retryRun} emptyHint={emptyHint} />
+                <ResultPane detail={detail} dirty={dirty} canPreview={capability?.status === "CONNECTED_DEMO_FILES"} loading={busy} onCancel={cancelRun} onRetry={retryRun} emptyHint={emptyHint} recentRun={runs[0]} onOpenRun={replay} example={exampleFixture} onOpenExample={openExample} />
               )}
             </div>
           )}

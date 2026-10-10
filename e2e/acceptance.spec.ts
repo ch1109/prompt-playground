@@ -273,7 +273,7 @@ test("九立导入前列出将带上的文件；取消勾选的辅助材料不�
   await page.getByRole("button", { name: "请求预览" }).click();
   await expect(page.getByTestId("request-preview")).not.toContainText("F-80d89610605b");
   // 刷新快照沿用同样的排除
-  await page.getByRole("button", { name: "输入" }).click();
+  await page.getByRole("button", { name: "输入", exact: true }).click();
   await page.getByRole("button", { name: `刷新快照 ${id}` }).click();
   await expect(page.getByTestId("snapshot-list")).toContainText(`刷新自 ${id}`);
   const newId = await page.getByTestId("snapshot-list").locator("[data-snapshot-id].ring-1").getAttribute("data-snapshot-id");
@@ -297,13 +297,13 @@ test("请求预览与真实运行使用同一份输入：切换输入来源后�
   await expect(page.getByTestId("request-preview")).toContainText("passthrough-snapshot-request");
   await expect(page.getByTestId("request-preview")).not.toContainText("jiuli-demo-p1");
   // 没有请求上下文的样本：明确说明不能真实运行，不显示其他快照的预览
-  await page.getByRole("button", { name: "输入" }).click();
+  await page.getByRole("button", { name: "输入", exact: true }).click();
   await page.click('[data-fixture-id="v2/p1-original-output-example.json"]');
   await page.getByRole("button", { name: "请求预览" }).click();
   await expect(page.getByTestId("editor-pane")).toContainText("没有请求上下文");
   await expect(page.getByTestId("request-preview")).toHaveCount(0);
   // 粘贴模式只用于仅渲染：同样不沿用旧快照
-  await page.getByRole("button", { name: "输入" }).click();
+  await page.getByRole("button", { name: "输入", exact: true }).click();
   await page.getByRole("button", { name: "粘贴 / 文件 JSON" }).click();
   await page.getByRole("button", { name: "请求预览" }).click();
   await expect(page.getByTestId("request-preview")).toHaveCount(0);
@@ -324,7 +324,7 @@ test("刷新页面不丢工作区：草稿、输入选择、当前结果都恢�
   await page.getByRole("button", { name: /^提示词/ }).click();
   await expect(page.getByLabel("System 提示词")).toHaveValue("刷新前的草稿");
   await expect(page.getByTestId("editor-pane").getByText("未保存草稿")).toBeVisible();
-  await page.getByRole("button", { name: "输入" }).click();
+  await page.getByRole("button", { name: "输入", exact: true }).click();
   await expect(page.locator('[data-fixture-id="constructed/p3-v3-multi-candidate.json"]')).toHaveClass(/ring-accent/);
   expect(consoleErrors).toEqual([]);
 });
@@ -598,7 +598,7 @@ test("请求预览可展开 system 全文，并能复制全部发送内容", asy
   await expect(page.getByText("与版本一致")).toBeVisible();
   const system = await page.getByLabel("System 提示词").inputValue();
   const tail = system.trim().slice(-30);
-  await page.getByRole("button", { name: "输入" }).click();
+  await page.getByRole("button", { name: "输入", exact: true }).click();
   await page.getByRole("button", { name: "样本库" }).click();
   await page.click('[data-fixture-id="v3/SC-08-audit/P1"]');
   await page.getByRole("button", { name: "请求预览" }).click();
@@ -637,7 +637,7 @@ test("切换 Prompt 时带上可用的快照；不适用或已有选择时不带
   await expect(page.getByTestId("editor-pane")).not.toContainText(`快照 ${snapId}`);
   // P2 先选了样本：不覆盖
   await sidebar.filter({ hasText: "查货材料识别" }).click();
-  await page.getByRole("button", { name: "输入" }).click();
+  await page.getByRole("button", { name: "输入", exact: true }).click();
   await page.click('[data-fixture-id="constructed/p2-v3-no-warehouse.json"]');
   await sidebar.filter({ hasText: "商品对应关系" }).click();
   await sidebar.filter({ hasText: "查货材料识别" }).click();
@@ -657,7 +657,7 @@ test("粘贴的请求可一键存为快照并选中，直接用于真实运行�
   await page.getByRole("button", { name: "请求预览" }).click();
   await expect(page.getByTestId("request-preview")).toContainText(marker);
   // 不合法的 JSON 明确报错
-  await page.getByRole("button", { name: "输入" }).click();
+  await page.getByRole("button", { name: "输入", exact: true }).click();
   await page.getByRole("button", { name: "粘贴 / 文件 JSON" }).click();
   await page.getByLabel("请求上下文", { exact: true }).fill("{不是 JSON");
   await page.getByRole("button", { name: "请求存为快照（用于真实运行）" }).click();
