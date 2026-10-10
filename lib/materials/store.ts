@@ -11,12 +11,19 @@ import { materialsDir, uploadedPath } from "./dir";
 import { preprocessFile } from "./preprocess";
 
 export const MAX_FILE_BYTES = 30 * 1024 * 1024;
-export const MAX_FILES = 20;
+export const MAX_FILES = 100;
+export const MAX_TOTAL_BYTES = 300 * 1024 * 1024;
 /** P1 材料类型 + P2 查货文件 */
 export const UPLOAD_MATERIAL_TYPES = ["ORDER", "INVOICE", "PACKING_LIST", "INSPECTION"] as const;
 export type UploadMaterialType = (typeof UPLOAD_MATERIAL_TYPES)[number];
 
 export class UploadError extends Error {}
+
+/** 文件夹上传时保留子文件夹相对路径（如「发票/INV-1.pdf」），去掉盘符、绝对路径与 .. */
+export function safeRelativeName(name: string): string {
+  const parts = name.replace(/\\/g, "/").split("/").filter((p) => p && p !== "." && p !== "..");
+  return parts.join("/") || basename(name);
+}
 
 /** 上传原件 → 预处理 → 存入私有目录 → 创建 FILE_IMPORT 快照（原件不修改，记录 Hash 与预处理版本） */
 export async function createFileSnapshot(input: {
@@ -27,13 +34,14 @@ export async function createFileSnapshot(input: {
 }): Promise<InputSnapshot> {
   if (!input.files.length) throw new UploadError("请至少选择一个文件");
   if (input.files.length > MAX_FILES) throw new UploadError(`一次最多上传 ${MAX_FILES} 个文件`);
+  if (input.files.reduce((n, f) => n + f.buffer.length, 0) > MAX_TOTAL_BYTES) throw new UploadError(`一次上传的文件合计不能超过 ${MAX_TOTAL_BYTES / 1024 / 1024}MB`);
   mkdirSync(materialsDir(), { recursive: true });
   const materials: SnapshotMaterial[] = [];
   const meta: Record<string, unknown>[] = [];
   const extracted: Record<string, unknown> = {};
   const warnings: string[] = [];
   for (const f of input.files) {
-    const name = basename(f.name);
+    const name = safeRelativeName(f.name);
     if (!UPLOAD_MATERIAL_TYPES.includes(f.materialType)) throw new UploadError(`文件「${name}」的材料类型无效`);
     if (f.buffer.length > MAX_FILE_BYTES) throw new UploadError(`文件「${name}」超过 ${MAX_FILE_BYTES / 1024 / 1024}MB`);
     let pre;

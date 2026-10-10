@@ -6,6 +6,7 @@ import type { PromptKind } from "@/lib/contracts/run";
 import { runSnapshotId, useStudio, useWorkspace, type InputMode } from "@/lib/state/studio-store";
 import { Badge, Btn, cx, Empty } from "@/components/ui";
 import type { InputManifest, ModelParams } from "@/lib/contracts/run";
+import { guessMaterialType, skipReason, UPLOAD_EXTS } from "@/lib/materials/guess-type";
 import { InputCoverage } from "./input-coverage";
 import { PromptEditor } from "./prompt-editor";
 
@@ -451,16 +452,62 @@ const UPLOAD_TYPES: [string, string][] = [
   ["INSPECTION", "查货文件（P2）"],
 ];
 
-/** 上传原件（PDF / Excel / 图片）：每个文件指定材料类型，服务端预处理后创建隔离快照 */
+interface PickedFile {
+  file: File;
+  /** 文件夹内相对路径；单独选的文件就是文件名 */
+  path: string;
+  type: string;
+}
+
+/** 递归读取拖入的文件夹（webkitGetAsEntry），返回 [相对路径, File] */
+async function readEntry(entry: FileSystemEntry, prefix = ""): Promise<[string, File][]> {
+  if (entry.isFile) {
+    const file = await new Promise<File>((res, rej) => (entry as FileSystemFileEntry).file(res, rej));
+    return [[prefix + entry.name, file]];
+  }
+  const reader = (entry as FileSystemDirectoryEntry).createReader();
+  const out: [string, File][] = [];
+  // readEntries 每次最多返回 100 项，读到空为止
+  for (;;) {
+    const batch = await new Promise<FileSystemEntry[]>((res, rej) => reader.readEntries(res, rej));
+    if (!batch.length) break;
+    for (const e of batch) out.push(...(await readEntry(e, `${prefix}${entry.name}/`)));
+  }
+  return out;
+}
+
+/** 上传原件（PDF / Excel / 图片），可拖入整个文件夹；材料类型按文件名自动判断，需要时可改 */
 function UploadInput({ projectId, kind, onCreated }: { projectId: string; kind: PromptKind; onCreated: () => void }) {
   const [ws, patch] = useWorkspace();
-  const [files, setFiles] = useState<{ file: File; type: string }[]>([]);
+  const [files, setFiles] = useState<PickedFile[]>([]);
+  const [skipped, setSkipped] = useState<{ path: string; reason: string }[]>([]);
   const [customerName, setCustomerName] = useState("");
   const [label, setLabel] = useState("");
   const [busy, setBusy] = useState(false);
+  const [over, setOver] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<{ snapshot_id: string; label: string; warnings: string[] } | null>(null);
-  const defaultType = kind === "JIULI_P2" ? "INSPECTION" : "ORDER";
+  const jiuli = kind !== "GENERIC_JSON";
+
+  function add(list: [string, File][]) {
+    const ok: PickedFile[] = [];
+    const skip: { path: string; reason: string }[] = [];
+    for (const [path, file] of list) {
+      const reason = skipReason(path);
+      if (reason) skip.push({ path, reason });
+      else if (!files.some((f) => f.path === path)) ok.push({ file, path, type: guessMaterialType(path, kind) });
+    }
+    setFiles([...files, ...ok]);
+    setSkipped(skip);
+    setResult(null);
+  }
+
+  async function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setOver(false);
+    const entries = [...e.dataTransfer.items].map((i) => i.webkitGetAsEntry()).filter((x): x is FileSystemEntry => !!x);
+    add(entries.length ? (await Promise.all(entries.map((x) => readEntry(x)))).flat() : [...e.dataTransfer.files].map((f) => [f.name, f]));
+  }
 
   async function upload() {
     setBusy(true);
@@ -472,12 +519,14 @@ function UploadInput({ projectId, kind, onCreated }: { projectId: string; kind: 
       fd.set("customerName", customerName);
       for (const f of files) {
         fd.append("files", f.file);
+        fd.append("paths", f.path);
         fd.append("types", f.type);
       }
       const s = await api<{ snapshot_id: string; label: string; warnings: string[] }>("/api/snapshots/files", { method: "POST", body: fd });
       setResult(s);
       patch({ uploadSnapshotId: s.snapshot_id });
       setFiles([]);
+      setSkipped([]);
       onCreated();
     } catch (e) {
       setErr(e instanceof ApiError ? `${e.code}: ${e.message}` : String(e));
@@ -490,63 +539,96 @@ function UploadInput({ projectId, kind, onCreated }: { projectId: string; kind: 
     <div className="space-y-2 text-[12px]" data-testid="upload-input">
       {(kind === "JIULI_P3" || kind === "JIULI_P4") && (
         <p className="rounded-lg border border-risk/40 bg-risk/10 px-2 py-1 text-risk" data-testid="upload-kind-note">
-          原件只能构造 P1（委托单/发票/箱单）和 P2（查货文件）的输入；{kind === "JIULI_P3" ? "P3" : "P4"} 需要上游的结构化结果，不能直接由原件构造。仍可上传，建好的快照可切到 P1 / P2 使用。
+          原件只能构造 P1（委托单/发票/箱单）和 P2（查货文件）的输入；{kind === "JIULI_P3" ? "P3" : "P4"} 需要上游的结构化结果，不能直接由原件构造。仍可上传，建好的输入可切到 P1 / P2 或通用提示词使用。
         </p>
       )}
-      <p className="text-[11px] text-ink-400">
-        支持 PDF、Excel（xlsx/xls）、PNG、JPG，单个最大 30MB。文字型 PDF 与 Excel 会抽取文本；扫描件和图片没有文本，需在「模型」页勾选「附带原件图片」。原件只保存在 Studio 私有目录，不写回九立。
-      </p>
-      <input
-        type="file"
-        multiple
-        accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg"
-        aria-label="选择原件文件"
-        onChange={(e) => setFiles([...files, ...[...(e.target.files ?? [])].map((file) => ({ file, type: defaultType }))])}
-        className="text-[11px] text-ink-400"
-      />
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setOver(true);
+        }}
+        onDragLeave={() => setOver(false)}
+        onDrop={onDrop}
+        data-testid="upload-drop"
+        className={cx("rounded-xl border-2 border-dashed p-4 text-center", over ? "border-info bg-info/5" : "border-ink-700")}
+      >
+        <p className="text-ink-300">把文件或整个文件夹拖到这里</p>
+        <p className="mt-0.5 text-[11px] text-ink-400">支持 PDF、Excel、PNG、JPG；文件夹里的子文件夹也会读取，其他格式自动跳过</p>
+        <div className="mt-2 flex justify-center gap-2">
+          <label className="cursor-pointer rounded-lg border border-ink-700 px-2 py-1 hover:bg-ink-850">
+            选择文件
+            <input type="file" multiple accept={UPLOAD_EXTS.join(",")} aria-label="选择原件文件" className="hidden" onChange={(e) => (add([...(e.target.files ?? [])].map((f) => [f.name, f])), (e.target.value = ""))} />
+          </label>
+          <label className="cursor-pointer rounded-lg border border-ink-700 px-2 py-1 hover:bg-ink-850">
+            选择文件夹
+            <input
+              type="file"
+              aria-label="选择文件夹"
+              className="hidden"
+              ref={(el) => el?.setAttribute("webkitdirectory", "")}
+              onChange={(e) => (add([...(e.target.files ?? [])].map((f) => [f.webkitRelativePath || f.name, f])), (e.target.value = ""))}
+            />
+          </label>
+        </div>
+      </div>
       {files.length > 0 && (
-        <ul className="space-y-1">
+        <ul className="max-h-64 space-y-1 overflow-auto" data-testid="upload-files">
+          <li className="text-ink-400">
+            共 {files.length} 个文件{jiuli ? "，材料类型已按文件名自动判断，不对可以改" : ""}
+          </li>
           {files.map((f, i) => (
-            <li key={`${f.file.name}-${i}`} className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate">{f.file.name}</span>
-              <select
-                value={f.type}
-                onChange={(e) => setFiles(files.map((x, j) => (j === i ? { ...x, type: e.target.value } : x)))}
-                aria-label={`材料类型 ${f.file.name}`}
-                className="rounded-lg border border-ink-700 bg-ink-900 px-1 py-0.5"
-              >
-                {UPLOAD_TYPES.map(([v, l]) => (
-                  <option key={v} value={v}>
-                    {l}
-                  </option>
-                ))}
-              </select>
-              <button onClick={() => setFiles(files.filter((_, j) => j !== i))} className="text-ink-400 hover:text-stamp" aria-label={`移除 ${f.file.name}`}>
+            <li key={f.path} className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate" title={f.path}>
+                {f.path}
+              </span>
+              {jiuli && (
+                <select
+                  value={f.type}
+                  onChange={(e) => setFiles(files.map((x, j) => (j === i ? { ...x, type: e.target.value } : x)))}
+                  aria-label={`材料类型 ${f.path}`}
+                  className="rounded-lg border border-ink-700 bg-ink-900 px-1 py-0.5"
+                >
+                  {UPLOAD_TYPES.map(([v, l]) => (
+                    <option key={v} value={v}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <button onClick={() => setFiles(files.filter((_, j) => j !== i))} className="text-ink-400 hover:text-stamp" aria-label={`移除 ${f.path}`}>
                 ✕
               </button>
             </li>
           ))}
         </ul>
       )}
-      <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="客户名称（可选，用于 P1 客户目录 / P2 客户）" aria-label="客户名称" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-1" />
-      <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="快照名称（可选）" aria-label="快照名称" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-1" />
+      {skipped.length > 0 && (
+        <details className="text-ink-400" data-testid="upload-skipped">
+          <summary>已跳过 {skipped.length} 个文件</summary>
+          {skipped.map((x) => (
+            <div key={x.path} className="truncate">
+              {x.path}：{x.reason}
+            </div>
+          ))}
+        </details>
+      )}
+      {jiuli && <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="客户名称（可选，用于 P1 客户目录 / P2 客户）" aria-label="客户名称" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-1" />}
+      <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="给这组输入起个名字（可选）" aria-label="输入名称" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-1" />
       <Btn tone="primary" disabled={busy || !files.length} onClick={upload}>
-        {busy ? "上传并预处理中…" : "上传并创建隔离快照"}
+        {busy ? "上传并读取中…" : `上传 ${files.length || ""} 个文件`}
       </Btn>
       {err && <p className="text-stamp">{err}</p>}
       {result && ws.uploadSnapshotId === result.snapshot_id && (
         <div className="rounded-lg border border-verify/40 bg-verify/5 p-2" data-testid="upload-result">
-          <div>
-            已创建快照 <span className="font-mono">{result.snapshot_id}</span> · {result.label}
-          </div>
+          <div>✓ 已上传：{result.label}，可以直接运行</div>
           {result.warnings.map((w) => (
             <div key={w} className="text-risk">
               ⚠ {w}
             </div>
           ))}
-          <div className="text-ink-400">可到「请求预览」确认实际发送内容。</div>
         </div>
       )}
+      <p className="text-[11px] text-ink-400">文字型 PDF 和 Excel 会抽取文字；扫描件和图片靠模型看图（模型支持看图时自动附带）。原件只保存在本机，不写回九立。</p>
     </div>
   );
 }

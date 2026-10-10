@@ -364,8 +364,8 @@ test("模型运行中显示已等待秒数；刷新页面后仍接着等待并�
 
 test("模型调用失败时先给中文原因与建议，服务商原文收在详情里", async ({ page }) => {
   await renderFixture(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
-  const runs = await page.request.get("/api/runs?project=jiuli&promptId=jiuli-p1").then((r) => r.json());
-  const runId: string = runs.data[0].run_id;
+  // 取页面当前显示的 Run（历史列表的排序在同一时刻有多条时不稳定）
+  const runId: string = await page.evaluate(() => JSON.parse(localStorage.getItem("prompt-studio:workspace")!).state.workspaces["jiuli-p1"].runId);
   await page.route(`**/api/runs/${runId}`, async (r) => {
     const res = await r.fetch();
     const body = await res.json();
@@ -494,14 +494,14 @@ test("上传原件：伪装文件被拒绝；Excel 委托单建快照后可预�
   await page.getByRole("button", { name: "上传文件" }).click();
   // 伪装成 PDF 的文本文件
   await page.getByLabel("选择原件文件").setInputFiles({ name: "fake.pdf", mimeType: "application/pdf", buffer: Buffer.from("not a pdf") });
-  await page.getByRole("button", { name: "上传并创建隔离快照" }).click();
+  await page.getByRole("button", { name: /^上传 \d+ 个文件$/ }).click();
   await expect(page.getByTestId("upload-input")).toContainText("内容与扩展名不符");
   await page.getByRole("button", { name: "移除 fake.pdf" }).click();
   await page.getByLabel("选择原件文件").setInputFiles({ name: "委托.xlsx", mimeType: "application/octet-stream", buffer: xlsx });
   await expect(page.getByLabel("材料类型 委托.xlsx")).toHaveValue("ORDER");
   await page.getByLabel("客户名称").fill("上传测试客户");
-  await page.getByRole("button", { name: "上传并创建隔离快照" }).click();
-  await expect(page.getByTestId("upload-result")).toContainText("已创建快照");
+  await page.getByRole("button", { name: /^上传 \d+ 个文件$/ }).click();
+  await expect(page.getByTestId("upload-result")).toContainText("已上传");
   await page.getByRole("button", { name: "请求预览" }).click();
   await expect(page.getByTestId("request-preview")).toContainText("file-import-p1");
   await expect(page.getByTestId("request-preview")).toContainText("UPLOAD-01");

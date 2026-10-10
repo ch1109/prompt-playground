@@ -33,3 +33,31 @@ describe("页图上限可配", () => {
     expect(maxPages({ MODEL_MAX_IMAGE_PAGES: "0" })).toBe(20);
   });
 });
+
+describe("文件夹上传", () => {
+  it("按文件名猜材料类型，猜不出按提示词默认", async () => {
+    const { guessMaterialType } = await import("@/lib/materials/guess-type");
+    expect(guessMaterialType("单据/发票-INV001.pdf")).toBe("INVOICE");
+    expect(guessMaterialType("Packing List 0923.xlsx")).toBe("PACKING_LIST");
+    expect(guessMaterialType("PO-7788.pdf")).toBe("ORDER");
+    expect(guessMaterialType("查货/A仓-手写.jpg")).toBe("INSPECTION");
+    expect(guessMaterialType("发票/scan01.pdf")).toBe("INVOICE");
+    expect(guessMaterialType("scan01.pdf", "JIULI_P2")).toBe("INSPECTION");
+    expect(guessMaterialType("scan01.pdf")).toBe("ORDER");
+  });
+  it("隐藏文件、系统文件、不支持的格式被跳过并说明原因", async () => {
+    const { skipReason } = await import("@/lib/materials/guess-type");
+    expect(skipReason("资料/.DS_Store")).toMatch(/隐藏/);
+    expect(skipReason("__MACOSX/资料/a.pdf")).toMatch(/隐藏/);
+    expect(skipReason("资料/~$委托.xlsx")).toMatch(/隐藏/);
+    expect(skipReason("资料/说明.docx")).toMatch(/不支持的格式 \.docx/);
+    expect(skipReason("资料/子目录/委托.PDF")).toBeNull();
+  });
+  it("保留子文件夹相对路径，去掉绝对路径与 ..", async () => {
+    const { safeRelativeName } = await import("@/lib/materials/store");
+    expect(safeRelativeName("资料/发票/a.pdf")).toBe("资料/发票/a.pdf");
+    expect(safeRelativeName("../../etc/a.pdf")).toBe("etc/a.pdf");
+    expect(safeRelativeName("C:\\Users\\x\\a.pdf")).toBe("C:/Users/x/a.pdf");
+    expect(safeRelativeName("/abs/a.pdf")).toBe("abs/a.pdf");
+  });
+});
