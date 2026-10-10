@@ -364,8 +364,10 @@ test("模型运行中显示已等待秒数；刷新页面后仍接着等待并�
 
 test("模型调用失败时先给中文原因与建议，服务商原文收在详情里", async ({ page }) => {
   await renderFixture(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
-  // 取页面当前显示的 Run（历史列表的排序在同一时刻有多条时不稳定）
-  const runId: string = await page.evaluate(() => JSON.parse(localStorage.getItem("prompt-studio:workspace")!).state.workspaces["jiuli-p1"].runId);
+  // 取页面当前显示的 Run（历史列表的排序在同一时刻有多条时不稳定）；等工作区写入后再读
+  const currentRun = () => page.evaluate(() => JSON.parse(localStorage.getItem("prompt-studio:workspace") ?? "{}").state?.workspaces?.["jiuli-p1"]?.runId ?? null);
+  await expect.poll(currentRun).not.toBeNull();
+  const runId: string = await currentRun();
   await page.route(`**/api/runs/${runId}`, async (r) => {
     const res = await r.fetch();
     const body = await res.json();
