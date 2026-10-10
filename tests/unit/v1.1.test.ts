@@ -90,7 +90,7 @@ describe("R-02 输入覆盖清单", () => {
     const { createFileSnapshot } = await import("@/lib/materials/store");
     const snap = await createFileSnapshot({ projectId: "jiuli", customerName: "测试客户", files: [{ name: "手写查货.pdf", buffer: makePdf(2), materialType: "INSPECTION" }] });
     setProviderForTests(okProvider(fx("v3/SC-08/P2").raw));
-    const run = await modelRun({ projectId: "jiuli", promptId: "jiuli-p2", snapshotId: snap.snapshot_id, system: "S", userTemplate: "{{input_json}}", params: {} });
+    const run = await modelRun({ projectId: "jiuli", promptId: "jiuli-p2", snapshotId: snap.snapshot_id, system: "S", userTemplate: "{{input_json}}", params: {}, attachImages: false });
     setProviderForTests(undefined);
     expect(run.input_manifest!.visual_evidence).toBe("NOT_SENT");
     expect(run.input_manifest!.sent_image_count).toBe(0);

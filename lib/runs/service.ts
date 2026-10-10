@@ -139,6 +139,16 @@ function blockedFiles(requiresFiles: string[], snapshot: InputSnapshot, attachIm
   return requiresFiles.filter((id) => !(media.get(id) === "application/pdf" || media.get(id)?.startsWith("image/")));
 }
 
+/**
+ * 是否附带原件图片：调用方明确传了就照办；没传时，模型声明支持看图且输入引用了 PDF / 图片就自动附带。
+ */
+export function effectiveAttachImages(explicit: boolean | undefined, caps: ProviderCapabilities, request: Record<string, unknown>, snapshot: InputSnapshot): boolean {
+  if (typeof explicit === "boolean") return explicit;
+  if (caps.images !== true) return false;
+  const media = new Map(snapshot.materials.map((m) => [m.file_id, m.media_type ?? ""]));
+  return referencedFileIds(request).some((id) => media.get(id) === "application/pdf" || !!media.get(id)?.startsWith("image/"));
+}
+
 const PARAM_KEYS = new Set(["temperature", "max_tokens", "top_p"]);
 
 /** 运行前就能确定的阻断原因（R-03 / R-04）：悬空变量、参数不合法、模型能力不满足 */
@@ -191,25 +201,27 @@ export async function previewModelRun(input: { promptId: string; snapshotId: str
   const info = getProvider().info();
   if (!built.ok) return { ok: false as const, code: built.code, message: built.message, provider: info };
   const user = renderUserTemplate(input.userTemplate, built.request);
-  // 只列出将附带的原件并按 20 页上限规划页数，不在预览时转换 PDF
-  const ids = input.attachImages ? referencedFileIds(built.request) : [];
+  const attach = effectiveAttachImages(input.attachImages, info.capabilities, built.request, snapshot);
+  // 只列出将附带的原件并按页数上限规划，不在预览时转换 PDF
+  const ids = attach ? referencedFileIds(built.request) : [];
   const attachFiles = ids.length ? await materialInfo(ids) : [];
-  const coverage = input.attachImages ? await planPageImages(ids) : null;
+  const coverage = attach ? await planPageImages(ids) : null;
   const params = input.params ?? {};
   return {
     ok: true as const,
-    attachFiles: input.attachImages ? attachFiles : null,
+    attachImages: attach,
+    attachFiles: attach ? attachFiles : null,
     provider: info,
     builderId: built.builderId,
     warnings: built.warnings,
-    requiresFiles: blockedFiles(built.requiresFiles, snapshot, input.attachImages),
+    requiresFiles: blockedFiles(built.requiresFiles, snapshot, attach),
     request: built.request,
     system: redactSecrets(input.system),
     user: redactSecrets(user),
     params,
     tokenEstimate: estimateTokens(input.system) + estimateTokens(user),
     blockers: runBlockers({ ...input, params }, info.capabilities),
-    manifest: await manifestFor(built.request, snapshot, built, !!input.attachImages, coverage, input.system, user, info.capabilities),
+    manifest: await manifestFor(built.request, snapshot, built, attach, coverage, input.system, user, info.capabilities),
     actualPromptHash: contentHash(input.system, user),
     builtInputHash: sha256(stableStringify(built.request)),
   };
@@ -248,8 +260,9 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
   if (blockers.length) throw new RunServiceError(blockers[0].code, blockers.map((b) => b.message).join("；"), 400);
   const built = buildInput(prompt.prompt_kind, snapshot);
   if (!built.ok) throw new RunServiceError(built.code, built.message, 400);
+  const attach = effectiveAttachImages(input.attachImages, info.capabilities, built.request, snapshot);
   // AT27：模型不支持文件且材料没有预处理文本 → 明确阻断，不会只发文件名
-  const blocked = blockedFiles(built.requiresFiles, snapshot, input.attachImages);
+  const blocked = blockedFiles(built.requiresFiles, snapshot, attach);
   if (blocked.length && !info.supportsFileInput) {
     throw new RunServiceError(
       "FILE_INPUT_UNSUPPORTED",
@@ -317,8 +330,8 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
   async function finishModelRun(): Promise<Run> {
     try {
       const t0 = Date.now();
-      const pages = input.attachImages ? await buildPageImages(referencedFileIds(request)) : null;
-      const manifest = await manifestFor(request, snapshot, builtOk, !!input.attachImages, pages?.coverage ?? null, input.system, user, info.capabilities);
+      const pages = attach ? await buildPageImages(referencedFileIds(request)) : null;
+      const manifest = await manifestFor(request, snapshot, builtOk, attach, pages?.coverage ?? null, input.system, user, info.capabilities);
       const preprocessMs = pages ? Date.now() - t0 : null;
       if (abort.signal.aborted) return cancelled();
       const images = pages?.images.map((i) => ({ mediaType: i.media_type, base64: i.base64 }));

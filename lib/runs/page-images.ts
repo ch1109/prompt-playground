@@ -9,7 +9,11 @@ import { sha256 } from "@/lib/hash";
 // 把构造输入引用的原件（PDF / 图片）转成页面图片，随请求发给视觉模型。
 // 原件按授权读取（九立只读连接器或 Studio 上传原件）；PDF 转图写到系统临时目录，用完即删，不改原件。
 
-export const MAX_PAGES = 20;
+/** 一次运行最多附带的页图数：MODEL_MAX_IMAGE_PAGES，默认 20 */
+export function maxPages(env: Record<string, string | undefined> = process.env): number {
+  const n = Number(env.MODEL_MAX_IMAGE_PAGES);
+  return Number.isInteger(n) && n > 0 ? n : 20;
+}
 const exec = promisify(execFile);
 
 export interface PageImage {
@@ -32,11 +36,11 @@ export function referencedFileIds(request: Record<string, unknown>): string[] {
   return [...ids];
 }
 
-async function pdfPages(path: string, maxPages: number): Promise<{ page: number; buf: Buffer }[]> {
+async function pdfPages(path: string, limit: number): Promise<{ page: number; buf: Buffer }[]> {
   const dir = await mkdtemp(join(tmpdir(), "studio-pages-"));
   try {
-    // 长边 2000px 的 JPEG；只转前 maxPages 页
-    await exec("pdftoppm", ["-jpeg", "-scale-to", "2000", "-l", String(maxPages), path, join(dir, "p")], { timeout: 120000 });
+    // 长边 2000px 的 JPEG；只转前 limit 页
+    await exec("pdftoppm", ["-jpeg", "-scale-to", "2000", "-l", String(limit), path, join(dir, "p")], { timeout: 120000 });
     const files = (await readdir(dir)).sort();
     return Promise.all(files.map(async (f) => ({ page: Number(/-(\d+)\.jpg$/.exec(f)?.[1]), buf: await readFile(join(dir, f)) })));
   } finally {
@@ -64,7 +68,7 @@ export interface PageImageCoverage {
   skipped_reason: string | null;
 }
 
-/** 只规划不转换（请求预览用）：按与运行时相同的 20 页上限，算出每个原件将发送哪些页 */
+/** 只规划不转换（请求预览用）：按与运行时相同的页数上限，算出每个原件将发送哪些页 */
 export async function planPageImages(fileIds: string[]): Promise<PageImageCoverage[]> {
   return (await collect(fileIds, false)).coverage;
 }
@@ -78,6 +82,7 @@ async function collect(fileIds: string[], convert: boolean): Promise<{ images: P
   const images: PageImage[] = [];
   const coverage: PageImageCoverage[] = [];
   if (!fileIds.length) return { images, warnings: ["构造输入没有引用原件文件，未附带图片"], coverage };
+  const MAX_PAGES = maxPages();
   let used = 0;
   for (const id of fileIds) {
     const left = MAX_PAGES - used;

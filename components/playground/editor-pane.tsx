@@ -751,10 +751,18 @@ function ModelTab({ provider }: { provider: ProviderInfoDTO | null }) {
       </div>
       {provider?.capabilities && <CapabilityTable caps={provider.capabilities} />}
       <label className="flex items-start gap-2">
-        <input type="checkbox" checked={ws.attachImages} onChange={(e) => patch({ attachImages: e.target.checked })} aria-label="附带原件图片" className="mt-0.5" />
+        <input type="checkbox" checked={ws.attachImages ?? provider?.capabilities?.images === true} onChange={(e) => patch({ attachImages: e.target.checked })} aria-label="附带原件图片" className="mt-0.5" />
         <span>
           附带原件图片
-          <span className="block text-ink-400">把输入引用的 PDF / 图片原件逐页转成图片，和文字一起发送（最多 20 页）。需要模型支持看图；Excel 不转图。</span>
+          <span className="block text-ink-400">
+            把输入里的 PDF / 图片原件逐页转成图片，和文字一起发送（默认最多 20 页，可用 MODEL_MAX_IMAGE_PAGES 调整）。Excel 不转图。
+            {ws.attachImages === null ? "当前跟随模型能力：模型支持看图时，有 PDF / 图片就自动附带。" : ""}
+          </span>
+          {ws.attachImages !== null && (
+            <button type="button" onClick={() => patch({ attachImages: null })} className="text-info hover:underline">
+              恢复默认（跟随模型能力）
+            </button>
+          )}
         </span>
       </label>
       <label className="flex items-center gap-2">
@@ -830,7 +838,7 @@ function PreviewTab({ fixtures, isDraft, versionLabel }: { fixtures: FixtureSumm
     setP(null);
     setErr(null);
     if (!snapshotId) return;
-    api<PreviewDTO>("/api/runs/preview", { json: { promptId, snapshotId, system: ws.system, userTemplate: ws.userTemplate, attachImages: ws.attachImages, params: ws.params } })
+    api<PreviewDTO>("/api/runs/preview", { json: { promptId, snapshotId, system: ws.system, userTemplate: ws.userTemplate, attachImages: ws.attachImages ?? undefined, params: ws.params } })
       .then(setP)
       .catch((e) => setErr(e.message));
   }, [snapshotId, ws.system, ws.userTemplate, ws.attachImages, ws.params, promptId]);

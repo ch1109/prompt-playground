@@ -25,8 +25,8 @@ export interface Workspace {
   /** 「上传文件」创建的快照 */
   uploadSnapshotId: string | null;
   params: { temperature: number; max_tokens: number };
-  /** 是否随请求附带原件页面图片（视觉模型） */
-  attachImages: boolean;
+  /** 是否随请求附带原件页面图片；null = 跟随模型能力（支持看图且输入有 PDF / 图片时自动附带） */
+  attachImages: boolean | null;
   runId: string | null;
   /** 产生当前 Run 时的输入签名；与当前编辑签名不同 → DIRTY */
   runInputSig: string | null;
@@ -46,7 +46,7 @@ export const emptyWorkspace = (): Workspace => ({
   uploadSnapshotId: null,
   // 2026-10-09 批量实测：16000 时 22 次中 4 次截断（含推理输出），默认提高到 32000
   params: { temperature: 0, max_tokens: 32000 },
-  attachImages: false,
+  attachImages: null,
   runId: null,
   runInputSig: null,
 });
@@ -68,7 +68,7 @@ export function inputSignature(w: Workspace, mode: "RENDER_ONLY" | "MODEL_RUN"):
     mode === "RENDER_ONLY"
       ? { inputMode: w.inputMode, raw: w.inputMode === "paste" ? w.pasteRaw : null, req: w.inputMode === "paste" ? w.pasteRequest : null, fixture: w.inputMode === "fixture" ? w.fixtureId : null }
       : { snapshot: runSnapshotId(w) };
-  return JSON.stringify({ mode, input, system: w.system, user: w.userTemplate, params: w.params, attachImages: mode === "MODEL_RUN" && w.attachImages });
+  return JSON.stringify({ mode, input, system: w.system, user: w.userTemplate, params: w.params, attachImages: mode === "MODEL_RUN" ? w.attachImages : null });
 }
 
 interface StudioState {
@@ -124,7 +124,13 @@ export const useStudio = create<StudioState>()(
     }),
     {
       name: "prompt-studio:workspace",
-      version: 1,
+      version: 2,
+      // v2：附带图片改为默认跟随模型能力，旧数据里的默认 false 重置为 null
+      migrate: (p, v) => {
+        const s = (p ?? {}) as Partial<StudioState>;
+        if (v < 2 && s.workspaces) for (const w of Object.values(s.workspaces)) w.attachImages = null;
+        return s as StudioState;
+      },
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
       partialize: (s) => ({ activePromptId: s.activePromptId, workspaces: s.workspaces, lastMode: s.lastMode, editorPct: s.editorPct, sidebarCollapsed: s.sidebarCollapsed }),
