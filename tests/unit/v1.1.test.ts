@@ -317,3 +317,12 @@ describe("R-07 同样本双 Run 比较", () => {
     expect(strictConditions(a, pre).reasons).toEqual(["预处理版本不同"]);
   });
 });
+
+describe("R-07 真实运行发现的对齐问题", () => {
+  it("Excel 来源一次填 page=1、一次填 null：仍按 Sheet + 行对齐为同一行，只报 page 变化", async () => {
+    const { diffSummary } = await import("@/components/playground/run-compare");
+    const row = (page: number | null) => ({ row_no: 1, source: { file_id: "F1", sheet: "S", page, row: 7, column: "B" }, values: { model: "A" } });
+    const d = diffSummary({ output: { rows: [row(1)] } }, { output: { rows: [row(null)] } });
+    expect(d.rows).toEqual([{ pointer: "/output/rows/[原文位置=F1:S:-:7]/source/page", kind: "CHANGED", a: "1", b: "null" }]);
+  });
+});

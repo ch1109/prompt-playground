@@ -43,7 +43,9 @@ const ROW_KEYS: [string, (o: Obj) => string | null][] = [
     (o) => {
       const s = o.source as Obj | undefined;
       if (!s || typeof s !== "object" || (s.row == null && s.page == null)) return null;
-      return [s.file_id, s.sheet, s.page, s.row].map((x) => (x == null || x === "" ? "-" : String(x))).join(":");
+      // Excel 用 Sheet + 行定位，页码对 Excel 没有意义（模型时填 1、时填 null），不参与对齐
+      const hasSheet = s.sheet != null && s.sheet !== "";
+      return [s.file_id, hasSheet ? s.sheet : "-", hasSheet ? "-" : s.page, s.row].map((x) => (x == null || x === "" ? "-" : String(x))).join(":");
     },
   ],
   ["record_no", (o) => str(o.record_no)],
