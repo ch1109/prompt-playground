@@ -707,10 +707,11 @@ describe("运行对比：输出差异按业务行对齐", () => {
     b.output.row_patches[0].field_decisions[0].decision = "CONFLICT";
     expect(diffJson(doc(["R1", "R2"]), b)).toEqual([{ pointer: "/output/row_patches/[order_row_id=R2]/field_decisions/[field=origin]/decision", kind: "CHANGED", a: '"UPDATE"', b: '"CONFLICT"' }]);
   });
-  it("没有可靠业务键时按位置比较；非 JSON 原文整体比较", async () => {
+  it("没有可靠业务键时：标量数组按位置比较，对象数组标为无法对齐；非 JSON 原文整体比较", async () => {
     const { diffJson } = await import("@/components/playground/run-compare");
     expect(diffJson({ xs: [1, 2] }, { xs: [1, 3] })).toEqual([{ pointer: "/xs/1", kind: "CHANGED", a: "2", b: "3" }]);
-    expect(diffJson({ xs: [{ v: 1 }, { v: 1 }] }, { xs: [{ v: 1 }, { v: 2 }] })).toEqual([{ pointer: "/xs/1/v", kind: "CHANGED", a: "1", b: "2" }]);
+    // v1.1 R-07：对象数组没有可靠业务键时不按行号硬配，整体标为无法对齐
+    expect(diffJson({ xs: [{ v: 1 }, { v: 1 }] }, { xs: [{ v: 1 }, { v: 2 }] })).toEqual([expect.objectContaining({ pointer: "/xs", kind: "UNALIGNED" })]);
     expect(diffJson("abc", "abd")).toEqual([{ pointer: "", kind: "CHANGED", a: '"abc"', b: '"abd"' }]);
   });
 });

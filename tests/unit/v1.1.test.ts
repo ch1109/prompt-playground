@@ -283,3 +283,37 @@ describe("R-14 独立人工纠错标注", () => {
     expect(ok.json.data.category_confirmed).toBe(true);
   });
 });
+
+describe("R-07 同样本双 Run 比较", () => {
+  const twoRuns = async (rawB: string, attachB = false) => {
+    const f = fx("v3/SC-08/P1");
+    const snap = snapshotForFixture("jiuli", f)!;
+    setProviderForTests(okProvider(f.raw));
+    const a = await modelRun({ projectId: "jiuli", promptId: "jiuli-p1", snapshotId: snap.snapshot_id, system: "S", userTemplate: "{{input_json}}", params: { temperature: 0 } });
+    setProviderForTests(okProvider(rawB));
+    const b = await modelRun({ projectId: "jiuli", promptId: "jiuli-p1", snapshotId: snap.snapshot_id, system: "S2", userTemplate: "{{input_json}}", params: { temperature: 0 } });
+    setProviderForTests(undefined);
+    return { a, b: attachB ? { ...b, attached_images: [{ file_id: "F-x", page: 1, media_type: "image/jpeg", sha256: "abcdef0123" }] } : b };
+  };
+
+  it("AT-33 两次 Run 输入条件一致：判定为严格同条件，并准确列出字段差异", async () => {
+    const { compareRuns, diffSummary } = await import("@/components/playground/run-compare");
+    const raw = JSON.parse(fx("v3/SC-08/P1").raw);
+    raw.output.rows[0].values.origin = "马来西亚（改）";
+    const { a, b } = await twoRuns(JSON.stringify(raw));
+    expect(compareRuns(a, b).strict).toEqual({ applicable: true, strict: true, reasons: [] });
+    const d = diffSummary(a.parsed_json, b.parsed_json);
+    expect(d.rows.filter((r) => r.kind === "CHANGED").map((r) => r.pointer)).toEqual([expect.stringMatching(/\/output\/rows\/\[.*\]\/values\/origin$/)]);
+    expect(d.same).toBeGreaterThan(20);
+  });
+
+  it("AT-34 预处理版本 / 附带图片不同：不满足严格同条件，不直接算退化", async () => {
+    const { strictConditions } = await import("@/components/playground/run-compare");
+    const { a, b } = await twoRuns(fx("v3/SC-08/P1").raw, true);
+    // 构造输入 Hash 相同，但一边附带了图片：审计发现的误导场景
+    expect(a.built_input_hash).toBe(b.built_input_hash);
+    expect(strictConditions(a, b)).toMatchObject({ strict: false, reasons: ["附带原件图片不同"] });
+    const pre = { ...b, attached_images: a.attached_images, input_manifest: { ...b.input_manifest!, files: [{ ...b.input_manifest!.files[0], preprocessor_version: "file-import@2.0.0" }] } };
+    expect(strictConditions(a, pre).reasons).toEqual(["预处理版本不同"]);
+  });
+});

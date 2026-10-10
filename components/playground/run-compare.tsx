@@ -21,7 +21,9 @@ export function flatten(v: unknown, p = "", out = new Map<string, string>()): Ma
 }
 
 type Obj = Record<string, unknown>;
-type DiffRow = { pointer: string; kind: "ADDED" | "REMOVED" | "CHANGED"; a?: string; b?: string };
+/** UNALIGNED = 对象数组找不到可靠业务键，无法确定哪两项是同一业务对象（不按行号硬配） */
+type DiffRow = { pointer: string; kind: "ADDED" | "REMOVED" | "CHANGED" | "UNALIGNED"; a?: string; b?: string };
+type Stats = { same: number };
 
 const str = (v: unknown) => (v === null || v === undefined || v === "" ? null : String(v));
 
@@ -62,31 +64,37 @@ function pickKey(a: unknown[], b: unknown[]) {
   return null;
 }
 
-function diffValue(a: unknown, b: unknown, p: string, rows: DiffRow[]) {
+function diffValue(a: unknown, b: unknown, p: string, rows: DiffRow[], st: Stats) {
   if (Array.isArray(a) && Array.isArray(b)) {
     const key = pickKey(a, b);
     if (key) {
       const seg = (k: string) => `${p}/[${key.name}=${k}]`;
       const ib = new Map(key.kb.map((k, i) => [k, i]));
-      key.ka.forEach((k, i) => (ib.has(k) ? diffValue(a[i], b[ib.get(k)!], seg(k), rows) : leaves(a[i], seg(k), "REMOVED", rows)));
+      key.ka.forEach((k, i) => (ib.has(k) ? diffValue(a[i], b[ib.get(k)!], seg(k), rows, st) : leaves(a[i], seg(k), "REMOVED", rows)));
       const ia = new Set(key.ka);
       key.kb.forEach((k, i) => !ia.has(k) && leaves(b[i], seg(k), "ADDED", rows));
       return;
     }
     if (!a.length || !b.length) {
       if (a.length !== b.length) rows.push({ pointer: p, kind: "CHANGED", a: a.length ? `[${a.length} 项]` : "[]", b: b.length ? `[${b.length} 项]` : "[]" });
+      else st.same++;
+      return;
+    }
+    // 对象数组没有可靠业务键：不凭位置认定是同一对象，整体标为无法对齐
+    if ((a.some(isObj) || b.some(isObj)) && JSON.stringify(a) !== JSON.stringify(b)) {
+      rows.push({ pointer: p, kind: "UNALIGNED", a: `[${a.length} 项] ${JSON.stringify(a).slice(0, 300)}`, b: `[${b.length} 项] ${JSON.stringify(b).slice(0, 300)}` });
       return;
     }
     for (let i = 0; i < Math.max(a.length, b.length); i++) {
       if (i >= b.length) leaves(a[i], `${p}/${i}`, "REMOVED", rows);
       else if (i >= a.length) leaves(b[i], `${p}/${i}`, "ADDED", rows);
-      else diffValue(a[i], b[i], `${p}/${i}`, rows);
+      else diffValue(a[i], b[i], `${p}/${i}`, rows, st);
     }
     return;
   }
   if (isObj(a) && isObj(b)) {
     for (const k of Object.keys(a)) {
-      if (k in b) diffValue(a[k], b[k], `${p}/${escapeToken(k)}`, rows);
+      if (k in b) diffValue(a[k], b[k], `${p}/${escapeToken(k)}`, rows, st);
       else leaves(a[k], `${p}/${escapeToken(k)}`, "REMOVED", rows);
     }
     for (const k of Object.keys(b)) if (!(k in a)) leaves(b[k], `${p}/${escapeToken(k)}`, "ADDED", rows);
@@ -95,6 +103,7 @@ function diffValue(a: unknown, b: unknown, p: string, rows: DiffRow[]) {
   // 标量或类型不同：作为整体比较（容器按展平后的文本比较）
   const fa = JSON.stringify(a);
   const fb = JSON.stringify(b);
+  if (fa === fb) st.same += flatten(a).size;
   if (fa !== fb) {
     if (isObj(a) || Array.isArray(a) || isObj(b) || Array.isArray(b)) {
       leaves(a, p, "REMOVED", rows);
@@ -107,12 +116,22 @@ function leaves(v: unknown, p: string, kind: "ADDED" | "REMOVED", rows: DiffRow[
   for (const [k, val] of flatten(v, p)) rows.push(kind === "ADDED" ? { pointer: k, kind, b: val } : { pointer: k, kind, a: val });
 }
 
-/** 两次输出的差异：对象数组按业务键对齐（见 ROW_KEYS），找不到可靠键时按位置；路径中的 [键=值] 表示按业务键定位 */
-export function diffJson(a: unknown, b: unknown): DiffRow[] {
+/**
+ * 两次输出的差异：对象数组按业务键对齐（见 ROW_KEYS），路径中的 [键=值] 表示按业务键定位；
+ * 对象数组找不到可靠键时标为 UNALIGNED（无法对齐），不按行号硬配；标量数组按位置比较。
+ */
+export function diffSummary(a: unknown, b: unknown): { rows: DiffRow[]; same: number } {
   const rows: DiffRow[] = [];
-  diffValue(a, b, "", rows);
-  return rows.sort((x, y) => x.pointer.localeCompare(y.pointer));
+  const st: Stats = { same: 0 };
+  diffValue(a, b, "", rows, st);
+  return { rows: rows.sort((x, y) => x.pointer.localeCompare(y.pointer)), same: st.same };
 }
+
+export function diffJson(a: unknown, b: unknown): DiffRow[] {
+  return diffSummary(a, b).rows;
+}
+
+const KIND_LABEL: Record<DiffRow["kind"], string> = { ADDED: "新增", REMOVED: "删除", CHANGED: "变化", UNALIGNED: "无法对齐" };
 
 const dash = (v: unknown) => (v === null || v === undefined || v === "" ? "—" : String(v));
 
@@ -130,6 +149,29 @@ function versionText(r: Run, label?: string | null) {
   return r.is_unsaved_draft ? `${name}（基于此版本的未保存草稿）` : name;
 }
 
+const imagesText = (r: Run) => (r.attached_images === null || r.attached_images === undefined ? "未开启" : `${r.attached_images.length} 张 ${r.attached_images.map((i) => i.sha256.slice(0, 6)).join(",")}`);
+const preprocessText = (r: Run) => (r.input_manifest ? [...new Set(r.input_manifest.files.map((f) => f.preprocessor_version ?? "未知"))].join("；") || "无原件" : "未记录（v1.1 之前）");
+
+/**
+ * 严格同条件判定（R-07）：同一构造输入、同一附带图片、同一预处理版本、同一输入构造器、同一模型与参数。
+ * 只有两边都是真实模型运行才适用；判不出（缺记录）的项也算不满足，不默认相同。
+ */
+export function strictConditions(a: Run, b: Run): { applicable: boolean; strict: boolean; reasons: string[] } {
+  if (a.mode !== "MODEL_RUN" || b.mode !== "MODEL_RUN") return { applicable: false, strict: false, reasons: ["至少一方不是真实模型运行（仅渲染 / 回放没有请求），只能比较输出"] };
+  const reasons: string[] = [];
+  const same = (name: string, x: unknown, y: unknown) => {
+    if (x === undefined || x === null || y === undefined || y === null) reasons.push(`${name}：至少一方未记录`);
+    else if (JSON.stringify(x) !== JSON.stringify(y)) reasons.push(`${name}不同`);
+  };
+  same("构造输入 Hash", a.built_input_hash, b.built_input_hash);
+  same("模型", `${a.model_provider}/${a.model_name}`, `${b.model_provider}/${b.model_name}`);
+  same("模型参数", a.model_params ? Object.entries(a.model_params).sort() : null, b.model_params ? Object.entries(b.model_params).sort() : null);
+  if (imagesText(a) !== imagesText(b)) reasons.push("附带原件图片不同");
+  same("输入构造器", (a as Run & { input_builder_id?: string }).input_builder_id, (b as Run & { input_builder_id?: string }).input_builder_id);
+  same("预处理版本", a.input_manifest ? preprocessText(a) : null, b.input_manifest ? preprocessText(b) : null);
+  return { applicable: true, strict: reasons.length === 0, reasons };
+}
+
 export function compareRuns(a: Run, b: Run, versionLabels: [string | null | undefined, string | null | undefined] = [undefined, undefined]) {
   const schemaErrors = (r: Run) => String(r.schema_diagnostics.filter((d) => d.level === "ERROR").length);
   const rows: [string, (r: Run) => string][] = [
@@ -140,6 +182,10 @@ export function compareRuns(a: Run, b: Run, versionLabels: [string | null | unde
     ["实际提示词 Hash", (r) => dash(r.actual_prompt_hash?.slice(0, 12))],
     ["构造输入 Hash", (r) => dash(r.built_input_hash?.slice(0, 12))],
     ["输入快照", (r) => dash(r.input_snapshot_id)],
+    ["输入构造器", (r) => dash((r as Run & { input_builder_id?: string }).input_builder_id)],
+    ["附带原件图片", imagesText],
+    ["预处理版本", preprocessText],
+    ["输入覆盖", (r) => (r.input_manifest ? `${r.input_manifest.complete ? "完整" : "不完整"} · 文本 ${r.input_manifest.sent_text_chars} 字 · 图片 ${r.input_manifest.sent_image_count}` : "未记录")],
     ["模型参数", (r) => (r.model_params ? JSON.stringify(r.model_params) : "—")],
     ["输入 Token", (r) => dash(r.token_usage?.prompt_tokens)],
     ["输出 Token", (r) => dash(r.token_usage?.completion_tokens)],
@@ -149,6 +195,7 @@ export function compareRuns(a: Run, b: Run, versionLabels: [string | null | unde
     ["原始响应 Hash", (r) => dash(r.raw_response_hash?.slice(0, 12))],
   ];
   return {
+    strict: strictConditions(a, b),
     metrics: rows.map(([key, f]) => ({ key, a: f(a), b: f(b), differs: f(a) !== f(b) })),
     system: textHunks(a.actual_prompt?.system, b.actual_prompt?.system),
     user: textHunks(a.actual_prompt?.user, b.actual_prompt?.user),
@@ -189,7 +236,9 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
     api<RunDetail>(`/api/runs/${ids[0]}`).then(setA);
     api<RunDetail>(`/api/runs/${ids[1]}`).then(setB);
   }, [ids]);
-  const rows = useMemo(() => (a && b ? diffJson(a.run.parsed_json ?? a.run.raw_response, b.run.parsed_json ?? b.run.raw_response) : []), [a, b]);
+  const diff = useMemo(() => (a && b ? diffSummary(a.run.parsed_json ?? a.run.raw_response, b.run.parsed_json ?? b.run.raw_response) : { rows: [], same: 0 }), [a, b]);
+  const rows = diff.rows;
+  const count = (k: DiffRow["kind"]) => rows.filter((r) => r.kind === k).length;
   const cmp = useMemo(() => (a && b ? compareRuns(a.run, b.run, [a.prompt_version_label, b.prompt_version_label]) : null), [a, b]);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-100/25 p-8 backdrop-blur-[2px]" role="dialog" aria-label="对比两次运行">
@@ -205,6 +254,18 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
         <div className="overflow-auto px-5 py-4">
           {cmp && (
             <>
+              <div
+                data-testid="strict-verdict"
+                className={cx("mb-3 rounded-lg border px-3 py-2 text-[12px]", !cmp.strict.applicable ? "border-ink-700 text-ink-300" : cmp.strict.strict ? "border-verify/40 bg-verify/[0.06] text-verify" : "border-risk/40 bg-risk/[0.07] text-risk")}
+              >
+                <div className="font-semibold">
+                  {!cmp.strict.applicable ? "不适用严格同条件对比" : cmp.strict.strict ? "✓ 满足严格同条件：同一输入、图片、预处理、构造器、模型与参数" : "✗ 不满足严格同条件对比：输出差异不能只归因于提示词"}
+                </div>
+                {cmp.strict.reasons.map((r) => (
+                  <div key={r}>· {r}</div>
+                ))}
+                <div className="mt-1 text-[11px] text-ink-400">差异数 ≠ 错误数。没有 Gold 标准答案时只展示差异，不计算正确率、修复或退化。</div>
+              </div>
               <table className="mb-5 w-full text-[12px]" data-testid="compare-metrics">
                 <thead className="text-ink-400">
                   <tr>
@@ -226,7 +287,14 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
               <Hunks title="System 提示词差异" hunks={cmp.system} />
               <Hunks title="User 消息差异（含构造输入）" hunks={cmp.user} />
               <h4 className="mb-1.5 text-[12.5px] font-semibold text-ink-100">输出 JSON 差异</h4>
-              <p className="mb-1 text-[11px] text-ink-400">行按业务键对齐（委托行 ID、字段名、原文位置等，路径中显示为 [键=值]），找不到可靠的键时才按位置比较。</p>
+              <p className="mb-1 text-[11px] text-ink-400">行按业务键对齐（委托行 ID、字段名、原文位置等，路径中显示为 [键=值]）；对象数组找不到可靠的键时标为「无法对齐」，不按行号硬配。</p>
+              <div className="mb-2 flex flex-wrap gap-1.5 text-[11.5px]" data-testid="diff-counts">
+                <Badge tone="ok">新增 {count("ADDED")}</Badge>
+                <Badge tone="bad">删除 {count("REMOVED")}</Badge>
+                <Badge tone="warn">变化 {count("CHANGED")}</Badge>
+                <Badge>一致 {diff.same}</Badge>
+                <Badge tone="info">无法对齐 {count("UNALIGNED")}</Badge>
+              </div>
             </>
           )}
           {!a || !b ? (
@@ -239,7 +307,7 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
                 {rows.map((r) => (
                   <tr key={r.pointer + r.kind} className="border-b border-ink-800">
                     <td className="w-20 py-1">
-                      <Badge tone={r.kind === "ADDED" ? "ok" : r.kind === "REMOVED" ? "bad" : "warn"}>{r.kind}</Badge>
+                      <Badge tone={r.kind === "ADDED" ? "ok" : r.kind === "REMOVED" ? "bad" : r.kind === "UNALIGNED" ? "info" : "warn"}>{KIND_LABEL[r.kind]}</Badge>
                     </td>
                     <td className="w-[38%] py-1 pr-3 break-all text-ink-300">{r.pointer}</td>
                     <td className={cx("py-1 pr-3 break-all", r.a !== undefined && "text-stamp")}>{r.a ?? ""}</td>
