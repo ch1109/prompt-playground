@@ -45,11 +45,27 @@ const CAND_COLS: TableColumn[] = [
 
 const KIND_LABEL = { SELECTED: "选中", CANDIDATE: "候选组", WEAK: "弱候选" } as const;
 
+const POOL_COLS: TableColumn[] = [
+  { key: "raw_row_id", title: "查货原始行", fixed: true },
+  { key: "mention", title: "模型是否提及", kind: "state" },
+  { key: "selected_by", title: "被选中（委托行）" },
+  { key: "candidate_of", title: "列为候选（委托行）" },
+  { key: "weak_of", title: "弱候选（委托行）" },
+  { key: "occupied_by", title: "已被占用（请求给定）" },
+  { key: "warehouse_no", title: "入仓号" },
+  { key: "model", title: "查货型号" },
+  { key: "brand", title: "品牌" },
+  { key: "quantity", title: "数量" },
+  { key: "logical_inspection_id", title: "逻辑查货单" },
+  { key: "merged_product_id", title: "合并产品" },
+];
+
 // ---------------- v3：row_relations[{selected_raw_row_ids, coverage, evidence_keys, candidate_groups, weak_candidates, issues}] ----------------
 
 export const jiuliP3V3: BusinessAdapter = {
   adapterId: "jiuli-p3-v3",
-  adapterVersion: "1.0.0",
+  // 1.1.0：请求候选池（召回诊断）与 4 条契约一致性检查
+  adapterVersion: "1.1.0",
   promptKind: "JIULI_P3",
   schemaVersion: "jiuli-ai-v3",
   rendererId: "jiuli-p3-v3",
@@ -177,6 +193,66 @@ export const jiuliP3V3: BusinessAdapter = {
       });
     });
 
+    // 契约一致性（P3 提示词「三、8」「四」）：只检查输出自相矛盾之处，不替模型重新裁决
+    const matchedBy = new Map<string, string[]>();
+    relations.forEach((r0, i) => {
+      const r = obj(r0);
+      const base = ptr("output", "row_relations", i);
+      const orderId = strOrUndef(r.order_row_id) ?? `#${i + 1}`;
+      const cov = obj(r.coverage);
+      if (r.match_status === "MULTIPLE_CANDIDATES" && arr(r.candidate_groups).length < 2)
+        b.diag("WARNING", "MULTIPLE_CANDIDATES_LT_2", `${orderId} 为 MULTIPLE_CANDIDATES，但 candidate_groups 只有 ${arr(r.candidate_groups).length} 组（契约要求至少两组）`, join(base, "candidate_groups"));
+      if (cov.status === "COMPLETE" && cov.overlap !== "DISJOINT") b.diag("WARNING", "COMPLETE_NOT_DISJOINT", `${orderId} 覆盖为 COMPLETE，但 overlap=${display(cov.overlap) || "空"}（契约要求 COMPLETE 必须 DISJOINT）`, join(base, "coverage", "overlap"));
+      if (r.match_status === "MATCHED")
+        arr(r.selected_raw_row_ids).forEach((x, k) => {
+          const raw = String(x);
+          matchedBy.set(raw, [...(matchedBy.get(raw) ?? []), orderId]);
+          const occ = candidates.get(raw)?.occupied_by_order_row_id;
+          if (occ !== undefined && occ !== null && String(occ) !== orderId)
+            b.diag("WARNING", "SELECTED_ROW_OCCUPIED", `${orderId} 选中的 ${raw} 在输入中已被 ${display(occ)} 占用（契约：不擅自改配）`, join(base, "selected_raw_row_ids", k));
+        });
+    });
+    for (const [raw, orders] of matchedBy) if (orders.length > 1) b.diag("WARNING", "RAW_ROW_MATCHED_TWICE", `原始行 ${raw} 被 ${orders.join("、")} 同时 MATCHED 选中（契约：同一 raw_row_id 不能被两个 MATCHED 行选中）`, ptr("output", "row_relations"));
+
+    // 请求候选池（召回诊断）：InputBuilder 实际传给模型的全部候选，逐条标出模型是否提及。
+    // 正确的行不在池里 → 候选召回 / 输入构造问题；在池里但没被选 → 模型裁决问题。
+    const mentions = new Map<string, { SELECTED: string[]; CANDIDATE: string[]; WEAK: string[] }>();
+    for (const rel of b.out.relations) {
+      if (!rel.kind) continue;
+      for (const raw of rel.toIds) {
+        const m = mentions.get(raw) ?? { SELECTED: [], CANDIDATE: [], WEAK: [] };
+        const order = orderRows.find((o) => o.id === rel.fromId)?.cells.order_row_id?.value;
+        m[rel.kind].push(String(order ?? rel.fromId));
+        mentions.set(raw, m);
+      }
+    }
+    const poolRows: TableRow[] = [...candidates.entries()].map(([raw, c]) => {
+      const p = candPtr.get(raw)!;
+      const m = mentions.get(raw);
+      const id = `pool|${raw}`;
+      const rp = (...f: string[]) => "req:" + join(p, ...f);
+      const ci = obj(c.identity);
+      const uniq = (xs: string[]) => [...new Set(xs)].join("、");
+      return {
+        id,
+        meta: { mentioned: !!m },
+        cells: {
+          raw_row_id: makeCell(id, "raw_row_id", raw, rp("raw_row_id")),
+          mention: makeCell(id, "mention", !m ? "未被任何委托行提及" : m.SELECTED.length ? "选中" : m.CANDIDATE.length ? "候选" : "弱候选", rp("raw_row_id")),
+          selected_by: makeCell(id, "selected_by", uniq(m?.SELECTED ?? []), rp("raw_row_id")),
+          candidate_of: makeCell(id, "candidate_of", uniq(m?.CANDIDATE ?? []), rp("raw_row_id")),
+          weak_of: makeCell(id, "weak_of", uniq(m?.WEAK ?? []), rp("raw_row_id")),
+          occupied_by: makeCell(id, "occupied_by", c.occupied_by_order_row_id ?? "", rp("occupied_by_order_row_id")),
+          warehouse_no: makeCell(id, "warehouse_no", c.warehouse_no, rp("warehouse_no")),
+          model: makeCell(id, "model", ci.model, rp("identity", "model")),
+          brand: makeCell(id, "brand", ci.brand, rp("identity", "brand")),
+          quantity: makeCell(id, "quantity", ci.quantity, rp("identity", "quantity")),
+          logical_inspection_id: makeCell(id, "logical_inspection_id", c.logical_inspection_id, rp("logical_inspection_id")),
+          merged_product_id: makeCell(id, "merged_product_id", c.merged_product_id, rp("merged_product_id")),
+        },
+      };
+    });
+
     // INVALID_INPUT 时契约要求 row_relations=[]，不算缺项
     if (req && out.processing_status !== "INVALID_INPUT") {
       for (const [id] of orderIdentity) {
@@ -193,6 +269,7 @@ export const jiuliP3V3: BusinessAdapter = {
       { id: "orderRows", title: "委托商品关系摘要", columns: [...ORDER_COLS, ...optional.map((f) => ({ key: f, title: f }))], rows: orderRows },
       { id: "candidateGroups", title: "选中组 / 候选组 / 弱候选（按模型原顺序）", columns: CAND_COLS, rows: candRows },
     );
+    if (req) b.out.tables.push({ id: "requestCandidates", title: `请求候选池（InputBuilder 传给模型的全部 ${poolRows.length} 条候选）`, columns: POOL_COLS, rows: poolRows });
 
     const count = (s: string) => orderRows.filter((r) => r.meta?.status === s).length;
     const retrieval = obj(obj(ctx.request).context).retrieval_complete;
@@ -204,8 +281,10 @@ export const jiuliP3V3: BusinessAdapter = {
         { label: "多候选", value: count("MULTIPLE_CANDIDATES") },
         { label: "UNMATCHED", value: count("UNMATCHED") },
         { label: "检索完整（系统给定）", value: retrieval === undefined ? "未知" : String(retrieval) },
+        ...(req ? [{ label: "请求候选 / 未被提及", value: `${poolRows.length} / ${poolRows.filter((r) => !r.meta?.mentioned).length}` }] : []),
       ],
       notes: [
+        "请求候选池列出 InputBuilder 实际传入的全部候选：正确的查货行不在池中是「候选召回 / 输入构造」问题，在池中却未被选中才是模型裁决问题。Studio 的构造器不做过滤，没有「被排除候选」记录。",
         "UNMATCHED 原样展示：是否「查货尚未到达」需快照上下文独立提供，不从关系状态推断。",
         "关系成立 ≠ 可自动应用；此处标注仅用于评测，不改九立占用与核销。",
       ],

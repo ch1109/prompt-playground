@@ -7,6 +7,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { getFixture } from "@/lib/fixtures/catalog";
 import { snapshotForFixture } from "@/lib/fixtures/snapshot";
 import { OpenAICompatibleProvider, setProviderForTests } from "@/lib/models/openai-compatible";
+import { runPipeline } from "@/lib/pipeline/pipeline";
 import { resetDbForTests } from "@/lib/repositories/db";
 import { getRun } from "@/lib/repositories/runs";
 import { modelRun, previewModelRun, retryRun } from "@/lib/runs/service";
@@ -181,5 +182,69 @@ describe("R-04 / R-05 运行诊断、重试", () => {
     expect(retried.actual_prompt_hash).toBe(failed.actual_prompt_hash);
     expect(retried.model_params).toEqual({ temperature: 0 });
     expect(getRun(failed.run_id)!.status).toBe("MODEL_ERROR");
+  });
+});
+
+describe("R-08 ~ R-11 视图补齐", () => {
+  const pipe = (id: string, mutate?: (doc: any) => void) => {
+    const f = fx(id);
+    const doc = JSON.parse(f.raw);
+    mutate?.(doc);
+    return runPipeline({ raw: JSON.stringify(doc), promptKind: f.promptKind, context: { runId: "t", request: f.request, gold: f.gold, baseDraft: f.baseDraft } });
+  };
+  const codes = (r: ReturnType<typeof pipe>) => r.viewModel!.diagnostics.map((d) => d.code);
+
+  it("AT-11 P3 请求候选池：列出模型收到的全部候选，未被提及的标出；召回缺失可从池中看出", () => {
+    const r = pipe("constructed/p3-v3-multi-candidate.json", (d) => {
+      d.output.row_relations[1].candidate_groups.pop(); // 去掉 IR_C3 → 池中仍有但未被提及
+    });
+    const pool = r.viewModel!.tables.find((t) => t.id === "requestCandidates")!;
+    expect(pool.rows.map((x) => x.cells.raw_row_id.value)).toEqual(["IR_A1", "IR_B1", "IR_C1", "IR_C2", "IR_C3", "IR_D1"]);
+    const c3 = pool.rows.find((x) => x.cells.raw_row_id.value === "IR_C3")!;
+    expect(c3.cells.mention.value).toBe("未被任何委托行提及");
+    expect(c3.cells.model.jsonPointer).toMatch(/^req:\/input\/inspection_candidates\/4\/identity\/model$/);
+    expect(pool.rows.find((x) => x.cells.raw_row_id.value === "IR_A1")!.cells.selected_by.value).toBe("OR_001");
+    // OR_003（NEW-77）UNMATCHED：池中没有同型号候选 → 属于召回 / 输入构造问题，而不是模型裁决
+    expect(pool.rows.some((x) => x.cells.model.value === "NEW-77")).toBe(false);
+  });
+
+  it("P3 契约一致性：多候选不足两组、同一原始行被两个 MATCHED 选中、COMPLETE 非 DISJOINT", () => {
+    const r = pipe("constructed/p3-v3-multi-candidate.json", (d) => {
+      d.output.row_relations[1].candidate_groups = [d.output.row_relations[1].candidate_groups[0]];
+      d.output.row_relations[3].selected_raw_row_ids = ["IR_A1"];
+      d.output.row_relations[0].coverage.overlap = "UNKNOWN";
+    });
+    expect(codes(r)).toEqual(expect.arrayContaining(["MULTIPLE_CANDIDATES_LT_2", "RAW_ROW_MATCHED_TWICE", "COMPLETE_NOT_DISJOINT"]));
+  });
+
+  it("AT-07 P2 v3 范围 PARTIAL / UNCERTAIN 进入问题区，不伪造入仓号", () => {
+    const r = pipe("v3/SC-08/P2", (d) => (d.output.logical_inspections[0].range_status = "PARTIAL"));
+    const issue = r.viewModel!.issues.find((i) => i.type === "RANGE_PARTIAL")!;
+    expect(issue.target).toMatchObject({ tableId: "logicalInspections", fieldKey: "range_status", jsonPointer: "/output/logical_inspections/0/range_status" });
+  });
+
+  it("AT-14 / AT-16 P4 矩阵：未核验字段不当作空，锁定字段标出；决策附中文说明", () => {
+    const r = pipe("constructed/p4-v3-conflict.json");
+    const m = r.viewModel!.tables.find((t) => t.id === "fieldMatrix")!;
+    expect(m.columns).toHaveLength(26);
+    const values = m.rows.flatMap((row) => Object.values(row.cells).map((c) => String(c.value)));
+    expect(values.some((v) => v.startsWith("本轮未核验"))).toBe(true);
+    expect(values.some((v) => v.includes("【锁定】"))).toBe(true);
+    const dec = r.viewModel!.tables.find((t) => t.id === "fieldDecisions")!;
+    expect(dec.rows.map((x) => String(x.cells.verification_status.value))).toContain("NO_EVIDENCE（未取得证据）");
+    // 锁定字段不进入可模拟应用集合
+    const locked = dec.rows.find((x) => x.meta?.locked)!;
+    expect(r.viewModel!.changes.find((c) => c.id === locked.id)!.simulation!.applicable).toBe(false);
+    expect(locked.cells.write_policy.jsonPointer.startsWith("req:")).toBe(true);
+  });
+});
+
+describe("R-13 Excel 来源定位", () => {
+  it("证据卡从快照预处理文本取出该行单元格，不按文件名找原件", async () => {
+    const { excelRowExcerpt } = await import("@/components/renderers/evidence-viewer");
+    const req = fx("v3/SC-08/P1").request;
+    const cells = excelRowExcerpt(req, { fileId: "F-3c3cc10bd26b", sheet: "12-10-2", row: 7 });
+    expect(cells?.find((c) => c.column === "D")?.value).toBe("H25G9TCXXCX702A#9");
+    expect(excelRowExcerpt(req, { fileId: "F-不存在", sheet: "12-10-2", row: 7 })).toBeNull();
   });
 });

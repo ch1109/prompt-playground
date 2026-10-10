@@ -20,6 +20,10 @@ export function IssueList({ issues }: { issues: IssueView[] }) {
   const [origin, setOrigin] = useState<string>("ALL");
   const origins = useMemo(() => [...new Set(issues.map((i) => i.origin))], [issues]);
   const shown = issues.filter((i) => origin === "ALL" || i.origin === origin);
+  const pick = (i: IssueView) => {
+    select({ issueId: i.id, tableId: i.target?.tableId, rowId: i.target?.rowId, fieldKey: i.target?.fieldKey, jsonPointer: i.target?.jsonPointer, sourceRefId: i.sourceRefIds[0] });
+    setStore("evidenceOpen", true);
+  };
 
   return (
     <div data-region="issues">
@@ -38,20 +42,10 @@ export function IssueList({ issues }: { issues: IssueView[] }) {
       ) : (
         <ul className="max-h-72 divide-y divide-ink-800 overflow-auto">
           {shown.map((i) => (
-            <li key={i.id}>
+            <li key={i.id} className="group relative">
               <button
                 data-issue-id={i.id}
-                onClick={() => {
-                  select({
-                    issueId: i.id,
-                    tableId: i.target?.tableId,
-                    rowId: i.target?.rowId,
-                    fieldKey: i.target?.fieldKey,
-                    jsonPointer: i.target?.jsonPointer,
-                    sourceRefId: i.sourceRefIds[0],
-                  });
-                  setStore("evidenceOpen", true);
-                }}
+                onClick={() => pick(i)}
                 className={cx("flex w-full items-start gap-2 px-3 py-1.5 text-left hover:bg-ink-800/60", sel.issueId === i.id && "bg-accent/[0.07]")}
               >
                 <Badge tone={SEV_TONE[i.severity ?? "UNKNOWN"]} title="严重度：模型未给出时为 UNKNOWN">
@@ -66,6 +60,16 @@ export function IssueList({ issues }: { issues: IssueView[] }) {
                   </span>
                 </span>
               </button>
+              <span className="absolute top-1 right-2 hidden gap-1 group-hover:flex">
+                {i.target?.jsonPointer !== undefined && (
+                  <button onClick={() => (pick(i), setStore("resultTab", "json"))} className="rounded bg-ink-900 px-1.5 text-[10.5px] text-info shadow-sm hover:underline">
+                    查看 JSON 位置
+                  </button>
+                )}
+                <button onClick={() => pick(i)} className="rounded bg-ink-900 px-1.5 text-[10.5px] text-info shadow-sm hover:underline">
+                  查看来源
+                </button>
+              </span>
             </li>
           ))}
         </ul>

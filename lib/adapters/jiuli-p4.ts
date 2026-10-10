@@ -1,4 +1,4 @@
-import type { ChangeView, PatchSimulation, TableColumn, TableRow } from "@/lib/contracts/view-model";
+import type { ChangeView, PatchSimulation, TableColumn, TableRow, TableView } from "@/lib/contracts/view-model";
 import { FIELD_LABELS, P1_VALUE_KEYS } from "@/lib/schemas/common";
 import { join, ptr } from "@/lib/pipeline/json-pointer";
 import { arr, display, indexEvidenceKeys, makeCell, obj, type Obj, reportKeyConflicts, resolveEvidenceKeys, strOrUndef, VMBuilder } from "./helpers";
@@ -12,6 +12,18 @@ export const VERIFICATION_LABEL: Record<string, string> = {
   NO_EVIDENCE: "未取得证据",
   NOT_CHECKED: "本轮未核验",
 };
+
+export const DECISION_LABEL: Record<string, string> = {
+  KEEP: "保持",
+  FILL: "补空",
+  UPDATE: "更新",
+  CONFLICT: "冲突",
+  MISSING: "缺失",
+  NO_ACTION: "不处理",
+};
+const WRITE_POLICY_LABEL: Record<string, string> = { AUTO: "可自动", REVIEW_ONLY: "仅复核", LOCKED: "人工锁定", UNSPECIFIED: "未指定" };
+/** 显示用：英文枚举保留（便于对照 JSON），附中文说明 */
+const withLabel = (v: string, labels: Record<string, string>) => (v && labels[v] ? `${v}（${labels[v]}）` : v);
 
 const RISK_DECISIONS = new Set(["CONFLICT", "MISSING"]);
 const WRITE_DECISIONS = new Set(["FILL", "UPDATE"]);
@@ -105,6 +117,38 @@ function fullDraftTable(b: VMBuilder, ctx: AdapterContext, changes: ChangeView[]
   });
 }
 
+/**
+ * 委托行 × 25 字段矩阵：每格显示本轮决策与结果值。
+ * 未在 evaluated_fields 中的字段显示「本轮未核验」——契约规定请求只带受影响字段，不能把缺席当作空值。
+ */
+function fieldMatrix(targets: Map<string, { row: Obj; pointer: string }>, changes: ChangeView[], patches: unknown[]): TableView {
+  const orderIds = [...new Set([...targets.keys(), ...patches.map((p) => strOrUndef(obj(p).order_row_id)).filter((x): x is string => !!x)])];
+  const rows: TableRow[] = orderIds.map((orderId) => {
+    const id = `matrix:${orderId}`;
+    const t = targets.get(orderId);
+    const fields = obj(t?.row.fields);
+    const cells: TableRow["cells"] = { order_row_id: makeCell(id, "order_row_id", orderId, t ? "req:" + join(t.pointer, "order_row_id") : "") };
+    let locked = 0;
+    for (const k of P1_VALUE_KEYS) {
+      const ch = changes.find((c) => c.rowId === orderId && c.field === k);
+      const rf = obj(fields[k]);
+      const lock = rf.write_policy === "LOCKED";
+      if (lock) locked++;
+      const tag = lock ? "【锁定】" : "";
+      if (ch) cells[k] = makeCell(id, k, `${tag}${DECISION_LABEL[ch.action] ?? ch.action}：${display(ch.after) || "（空）"}`, ch.jsonPointer, ch.sourceRefIds);
+      else if (Object.prototype.hasOwnProperty.call(fields, k)) cells[k] = makeCell(id, k, `${tag}本轮未核验（当前 ${display(rf.current_value) || "空"}）`, "req:" + join(t!.pointer, "fields", k));
+      else cells[k] = makeCell(id, k, "本轮未核验", t ? "req:" + join(t.pointer, "fields") : "");
+    }
+    return { id, cells, meta: { locked } };
+  });
+  return {
+    id: "fieldMatrix",
+    title: "委托行 × 25 字段（本轮决策一览）",
+    columns: [{ key: "order_row_id", title: "委托行", fixed: true }, ...P1_VALUE_KEYS.map((k) => ({ key: k, title: FIELD_LABELS[k] }))],
+    rows,
+  };
+}
+
 function summary(b: VMBuilder, out: Obj, changes: ChangeView[]): AdapterOutput["metadata"] {
   const by = (d: string) => changes.filter((c) => c.action === d).length;
   return {
@@ -124,7 +168,8 @@ function summary(b: VMBuilder, out: Obj, changes: ChangeView[]): AdapterOutput["
 
 export const jiuliP4V3: BusinessAdapter = {
   adapterId: "jiuli-p4-v3",
-  adapterVersion: "1.0.0",
+  // 1.1.0：中文标签、锁定标识、精确指针、委托行 × 25 字段矩阵
+  adapterVersion: "1.1.0",
   promptKind: "JIULI_P4",
   schemaVersion: "jiuli-ai-v3",
   rendererId: "jiuli-p4-v3",
@@ -185,6 +230,7 @@ export const jiuliP4V3: BusinessAdapter = {
           hasConflictValues: cands.length > 0,
         });
         const id = `${orderId}:${field}`;
+        const reqField = (k: string) => (target ? "req:" + join(target.pointer, "fields", field, k) : dp);
         const change: ChangeView = {
           id,
           rowId: orderId,
@@ -204,17 +250,17 @@ export const jiuliP4V3: BusinessAdapter = {
         rowsOut.push({
           id,
           sourceRefIds: evIds,
-          meta: { orderRowId: orderId, decision, status, changed: WRITE_DECISIONS.has(decision), risk: RISK_DECISIONS.has(decision) || status === "NO_EVIDENCE" || d.missing_required === true },
+          meta: { orderRowId: orderId, decision, status, locked: rf.write_policy === "LOCKED", changed: WRITE_DECISIONS.has(decision), risk: RISK_DECISIONS.has(decision) || status === "NO_EVIDENCE" || d.missing_required === true },
           cells: {
             order_row_id: makeCell(id, "order_row_id", orderId, join(base, "order_row_id")),
             field: makeCell(id, "field", FIELD_LABELS[field] ? `${FIELD_LABELS[field]}（${field}）` : field, join(dp, "field")),
             current_value: makeCell(id, "current_value", hasBase ? before : "（未提供基准）", target ? "req:" + join(target.pointer, "fields", field, "current_value") : dp, [], hasBase ? undefined : "NOT_DETECTED"),
             base_value: makeCell(id, "base_value", rf.base_value, target ? "req:" + join(target.pointer, "fields", field, "base_value") : dp),
-            value_origin: makeCell(id, "value_origin", rf.value_origin, dp),
-            write_policy: makeCell(id, "write_policy", rf.write_policy, dp),
+            value_origin: makeCell(id, "value_origin", rf.value_origin, reqField("value_origin")),
+            write_policy: makeCell(id, "write_policy", withLabel(strOrUndef(rf.write_policy) ?? "", WRITE_POLICY_LABEL), reqField("write_policy")),
             result_value: makeCell(id, "result_value", d.result_value, join(dp, "result_value"), evIds),
-            decision: makeCell(id, "decision", decision, join(dp, "decision"), evIds),
-            verification_status: makeCell(id, "verification_status", status, join(dp, "verification_status"), evIds),
+            decision: makeCell(id, "decision", withLabel(decision, DECISION_LABEL), join(dp, "decision"), evIds),
+            verification_status: makeCell(id, "verification_status", withLabel(status, VERIFICATION_LABEL), join(dp, "verification_status"), evIds),
             missing_required: makeCell(id, "missing_required", d.missing_required, join(dp, "missing_required")),
             candidate_values: makeCell(id, "candidate_values", cands.length ? cands.map((c) => display(obj(c).value)).join(" / ") : "", join(dp, "candidate_values")),
             referenced_issue_ids: makeCell(id, "referenced_issue_ids", arr(d.referenced_issue_ids).join(", "), join(dp, "referenced_issue_ids")),
@@ -281,7 +327,9 @@ export const jiuliP4V3: BusinessAdapter = {
     });
     b.out.changes = changes;
     b.out.metadata = summary(b, out, changes);
+    // v3 契约没有 base_draft_version（草稿版本由系统按 request_id 绑定），这里不做版本比对
     fullDraftTable(b, ctx, changes, undefined);
+    b.out.tables.push(fieldMatrix(targets, changes, arr(out.row_patches)));
     return b.out;
   },
 };
@@ -349,8 +397,8 @@ export const jiuliP4V2: BusinessAdapter = {
             field: makeCell(id, "field", FIELD_LABELS[field] ? `${FIELD_LABELS[field]}（${field}）` : field, join(dp, "field")),
             current_value: makeCell(id, "current_value", d.current_value, join(dp, "current_value")),
             result_value: makeCell(id, "result_value", d.result_value, join(dp, "result_value"), evIds),
-            decision: makeCell(id, "decision", decision, join(dp, "decision"), evIds),
-            verification_status: makeCell(id, "verification_status", status, join(dp, "verification_status"), evIds),
+            decision: makeCell(id, "decision", withLabel(decision, DECISION_LABEL), join(dp, "decision"), evIds),
+            verification_status: makeCell(id, "verification_status", withLabel(status, VERIFICATION_LABEL), join(dp, "verification_status"), evIds),
             rule_id: makeCell(id, "rule_id", d.rule_id, join(dp, "rule_id")),
             source_refs: makeCell(id, "source_refs", arr(d.source_refs).join(", "), join(dp, "source_refs"), evIds),
             conflict_values: makeCell(id, "conflict_values", conflicts.length ? conflicts : "", join(dp, "conflict_values")),

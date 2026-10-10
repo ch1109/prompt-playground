@@ -4,7 +4,7 @@ import type { RendererConfig, RendererRegion } from "@/lib/contracts/renderer-co
 import type { ChangeView, TableRow, TableView, ViewModel } from "@/lib/contracts/view-model";
 import { UNRESOLVED_GROUP } from "@/lib/adapters/jiuli-p2";
 import { useStudio } from "@/lib/state/studio-store";
-import { DataTable, type DataTableOptions } from "@/components/renderers/data-table";
+import { DataTable, IssuesContext, type DataTableOptions } from "@/components/renderers/data-table";
 import { FieldDiff } from "@/components/renderers/field-diff";
 import { IssueList } from "@/components/renderers/issue-list";
 import { RelationCanvas } from "@/components/renderers/relation-canvas";
@@ -196,6 +196,7 @@ function CandidateLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
   const regions = byId(cfg);
   const orders = vm.tables.find((t) => t.id === "orderRows");
   const cands = vm.tables.find((t) => t.id === "candidateGroups");
+  const pool = regions.has("pool") ? vm.tables.find((t) => t.id === "requestCandidates") : undefined;
   const sel = useStudio((s) => s.selection);
   const showGraphDefault = Boolean((regions.get("relations")?.options as { defaultVisible?: boolean } | undefined)?.defaultVisible);
   const [mode, setMode] = useState<"table" | "graph">(showGraphDefault ? "graph" : "table");
@@ -243,6 +244,11 @@ function CandidateLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
           </Section>
         </div>
       </div>
+      {pool && (
+        <Section title="请求候选池（召回诊断：模型实际收到的全部候选）" className="overflow-hidden">
+          <DataTable table={pool} options={{ hideTitle: true, maxHeight: 320, highlightRowIds: new Set(pool.rows.filter((r) => !r.meta?.mentioned).map((r) => r.id)) }} />
+        </Section>
+      )}
       {cfg.regions.filter((r) => r.component === "issue-list").map((r) => <Region key={r.id} region={r} vm={vm} />)}
       <OtherTables vm={vm} cfg={cfg} />
     </div>
@@ -295,6 +301,14 @@ function DecisionLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
 }
 
 export function BusinessView({ vm, cfg, canPreview }: { vm: ViewModel; cfg: RendererConfig; canPreview: boolean }) {
+  return (
+    <IssuesContext.Provider value={vm.issues}>
+      <Layout vm={vm} cfg={cfg} canPreview={canPreview} />
+    </IssuesContext.Provider>
+  );
+}
+
+function Layout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig; canPreview: boolean }) {
   switch (cfg.layout) {
     case "wide-table-with-issues":
       return <WideTableLayout vm={vm} cfg={cfg} />;

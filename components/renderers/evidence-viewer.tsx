@@ -35,13 +35,48 @@ export function availabilityNote(e: EvidenceView, previewable: boolean, snapshot
   return null;
 }
 
-export function EvidenceCard({ e, active, canPreview, snapshotSource }: { e: EvidenceView; active?: boolean; canPreview: boolean; snapshotSource?: string | null }) {
+type Rec = Record<string, unknown>;
+const rec = (v: unknown): Rec => (v && typeof v === "object" && !Array.isArray(v) ? (v as Rec) : {});
+const colName = (n: number) => {
+  let s = "";
+  for (let x = n; x > 0; x = Math.floor((x - 1) / 26)) s = String.fromCharCode(65 + ((x - 1) % 26)) + s;
+  return s;
+};
+
+/**
+ * Excel 证据所在行的单元格（R-13）：只读快照里随请求发送的预处理文本，不按文件名去找原件。
+ * 支持上传预处理结构 {sheets:[{name,cells:[{row,column,value}]}]} 与九立 Demo 抽取结构 {sheet,rows:[{row,B,C…}]}；找不到返回 null。
+ */
+export function excelRowExcerpt(request: unknown, e: Pick<EvidenceView, "fileId" | "sheet" | "row">): { column: string; value: string }[] | null {
+  if (e.row == null) return null;
+  const input = rec(rec(request).input);
+  const files = [...(Array.isArray(input.materials) ? input.materials : []), ...(Array.isArray(input.files) ? input.files : [])].map(rec);
+  for (const f of files.filter((x) => x.file_id === e.fileId)) {
+    const c = rec(f.content);
+    if (Array.isArray(c.sheets)) {
+      const sh = c.sheets.map(rec).find((x) => !e.sheet || x.name === e.sheet);
+      const cells = (Array.isArray(sh?.cells) ? sh.cells : []).map(rec).filter((x) => x.row === e.row);
+      if (cells.length) return cells.map((x) => ({ column: colName(Number(x.column)), value: String(x.value ?? "") }));
+    }
+    if (Array.isArray(c.rows) && (!e.sheet || c.sheet === e.sheet)) {
+      const r = c.rows.map(rec).find((x) => x.row === e.row);
+      if (r)
+        return Object.entries(r)
+          .filter(([k]) => k !== "row")
+          .map(([k, v]) => ({ column: k, value: typeof v === "object" && v !== null ? String(rec(v).cached ?? JSON.stringify(v)) : String(v ?? "") }));
+    }
+  }
+  return null;
+}
+
+export function EvidenceCard({ e, active, canPreview, snapshotSource, request }: { e: EvidenceView; active?: boolean; canPreview: boolean; snapshotSource?: string | null; request?: unknown }) {
   const select = useStudio((s) => s.select);
   const setStore = useStudio((s) => s.set);
   const sel = useStudio((s) => s.selection);
   const a = AVAIL[e.availability];
   const previewable = !!e.fileId && (canPreview || e.fileId.startsWith("U-"));
   const note = availabilityNote(e, previewable, snapshotSource);
+  const excerpt = e.sheet || e.row != null ? excelRowExcerpt(request, e) : null;
   return (
     <div data-evidence-id={e.id} className={cx("rounded-lg border border-ink-700 bg-ink-950/60 p-2", active && "border-accent/60 ring-2 ring-accent/15")}>
       <div className="flex flex-wrap items-center gap-1.5">
@@ -64,11 +99,23 @@ export function EvidenceCard({ e, active, canPreview, snapshotSource }: { e: Evi
         <dd className="font-mono">
           {[e.page != null && `第${e.page}页`, e.sheet && `Sheet ${e.sheet}`, e.row != null && `行${e.row}`, e.column && `列${e.column}`].filter(Boolean).join(" · ") || "未提供（不捏造坐标）"}
         </dd>
-        <dt className="text-ink-400">原文</dt>
+        <dt className="text-ink-400" title="模型或请求中记录的原文摘录，不是从原件重新读取的">{e.location === "REQUEST" ? "请求原文" : "模型摘录"}</dt>
         <dd className="break-words whitespace-pre-wrap">{e.rawText ?? <span className="text-ink-600">无</span>}</dd>
         <dt className="text-ink-400">引用</dt>
         <dd className="font-mono break-all text-ink-400">{e.id}</dd>
       </dl>
+      {excerpt && (
+        <div className="mt-1" data-testid="excel-excerpt">
+          <div className="text-[10.5px] text-ink-400">快照中第 {e.row} 行的单元格（随请求发送的预处理文本，不是原件截图）</div>
+          <div className="flex flex-wrap gap-1 text-[11px]">
+            {excerpt.map((c) => (
+              <span key={c.column} className={cx("rounded border border-ink-700 px-1", e.column && c.column === e.column && "border-accent bg-accent/10")}>
+                <span className="text-ink-400">{c.column}</span> {c.value}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="mt-1.5 flex gap-2">
         {e.jsonPointer !== undefined && (
           <button
@@ -91,7 +138,7 @@ export function EvidenceCard({ e, active, canPreview, snapshotSource }: { e: Evi
   );
 }
 
-export function EvidenceViewer({ vm, canPreview, snapshotSource }: { vm: ViewModel; canPreview: boolean; snapshotSource?: string | null }) {
+export function EvidenceViewer({ vm, canPreview, snapshotSource, request }: { vm: ViewModel; canPreview: boolean; snapshotSource?: string | null; request?: unknown }) {
   const sel = useStudio((s) => s.selection);
   const refs = selectedRefIds(vm, sel);
   const byId = new Map(vm.evidence.map((e) => [e.id, e]));
@@ -104,7 +151,7 @@ export function EvidenceViewer({ vm, canPreview, snapshotSource }: { vm: ViewMod
     <div className="space-y-2">
       {refs.map((id) => {
         const e = byId.get(id);
-        return e ? <EvidenceCard key={id} e={e} active={sel.sourceRefId === id} canPreview={canPreview} snapshotSource={snapshotSource} /> : <div key={id} className="text-[12px] text-stamp">引用 {id} 无法定位</div>;
+        return e ? <EvidenceCard key={id} e={e} active={sel.sourceRefId === id} canPreview={canPreview} snapshotSource={snapshotSource} request={request} /> : <div key={id} className="text-[12px] text-stamp">引用 {id} 无法定位</div>;
       })}
     </div>
   );

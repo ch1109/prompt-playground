@@ -190,7 +190,7 @@ export function ResultPane({
           </div>
           <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
             <SelectionInfo />
-            {vm ? <EvidenceViewer vm={vm} canPreview={canPreview} snapshotSource={detail?.snapshot?.source_type} /> : <p className="text-[12px] text-ink-400">无业务视图，无法定位来源。</p>}
+            {vm ? <EvidenceViewer vm={vm} canPreview={canPreview} snapshotSource={detail?.snapshot?.source_type} request={detail?.request} /> : <p className="text-[12px] text-ink-400">无业务视图，无法定位来源。</p>}
             <AnnotationForm detail={detail!} />
           </div>
         </aside>
@@ -210,9 +210,14 @@ function SelectionInfo() {
         选中：<span className="font-mono">{[sel.tableId, sel.rowId, sel.fieldKey].filter(Boolean).join(" / ") || "—"}</span>
       </div>
       {sel.jsonPointer !== undefined && (
-        <button onClick={() => setStore("resultTab", "json")} className="mt-0.5 font-mono break-all text-info hover:underline" data-testid="selection-pointer">
-          {sel.jsonPointer || "(根)"}
-        </button>
+        <div className="mt-0.5 flex flex-wrap items-center gap-2">
+          <button onClick={() => setStore("resultTab", "json")} className="font-mono break-all text-info hover:underline" data-testid="selection-pointer">
+            {sel.jsonPointer || "(根)"}
+          </button>
+          <Btn onClick={() => setStore("resultTab", "json")} data-testid="btn-view-json">
+            查看 JSON 位置
+          </Btn>
+        </div>
       )}
     </div>
   );

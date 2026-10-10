@@ -39,7 +39,8 @@ const label = (k: string) =>
 
 export const jiuliP2V3: BusinessAdapter = {
   adapterId: "jiuli-p2-v3",
-  adapterVersion: "1.0.0",
+  // 1.1.0：range_status 为 PARTIAL / UNCERTAIN 时进入问题区
+  adapterVersion: "1.1.0",
   promptKind: "JIULI_P2",
   schemaVersion: "jiuli-ai-v3",
   rendererId: "jiuli-p2-v3",
@@ -63,6 +64,16 @@ export const jiuliP2V3: BusinessAdapter = {
         .map((s, j) => b.sourceEvidence(s, join(base, "sources", j), "RESPONSE", `入仓号 ${wh} 来源`))
         .filter((x): x is string => !!x);
       const count = rawRows.filter((r) => strOrUndef(obj(r).warehouse_no) === wh).length;
+      const range = strOrUndef(l.range_status);
+      if (range === "PARTIAL" || range === "UNCERTAIN")
+        b.issue({
+          type: range === "PARTIAL" ? "RANGE_PARTIAL" : "RANGE_UNCERTAIN",
+          severity: "WARNING",
+          summary: `入仓号 ${wh || "（空）"} 的查货范围为 ${range}：${range === "PARTIAL" ? "只覆盖已知部分" : "范围是否完整无法确定"}，不能视为整单查货`,
+          target: { tableId: "logicalInspections", rowId: id, fieldKey: "range_status", jsonPointer: join(base, "range_status") },
+          sourceRefIds: srcIds,
+          origin: "MODEL_FINDING",
+        });
       return {
         id,
         sourceRefIds: srcIds,
@@ -70,7 +81,8 @@ export const jiuliP2V3: BusinessAdapter = {
         cells: {
           warehouse_no: makeCell(id, "warehouse_no", wh, join(base, "warehouse_no"), srcIds),
           range_status: makeCell(id, "range_status", l.range_status, join(base, "range_status")),
-          raw_row_count: makeCell(id, "raw_row_count", count, base),
+          // 由 Studio 按入仓号统计，不是模型输出字段：指向 raw_rows
+          raw_row_count: makeCell(id, "raw_row_count", count, ptr("output", "raw_rows")),
           source_count: makeCell(id, "source_count", srcIds.length, join(base, "sources"), srcIds),
         },
       };

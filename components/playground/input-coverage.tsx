@@ -6,7 +6,7 @@ const VISUAL_LABEL: Record<InputManifest["visual_evidence"], string> = {
   SENT: "已发送原件图片",
   PARTIAL: "原件图片只发送了一部分",
   NOT_SENT: "未发送原件图片",
-  NOT_APPLICABLE: "无原件（上游 JSON 输入）",
+  NOT_APPLICABLE: "不涉及图片（没有 PDF / 图片原件）",
 };
 
 const pages = (ps: (number | null)[]) => (ps.length ? ps.map((p) => (p === null ? "整图" : p)).join(",") : "无");

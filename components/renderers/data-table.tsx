@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { TableRow, TableView } from "@/lib/contracts/view-model";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import type { IssueView, TableRow, TableView } from "@/lib/contracts/view-model";
 import { useAnnotatedPointers, useStudio } from "@/lib/state/studio-store";
 import { Badge, CellValue, cx, Empty } from "@/components/ui";
 
@@ -21,31 +21,66 @@ export interface DataTableOptions {
 
 const FIXED_W = 132;
 
+/** 当前 ViewModel 的问题列表：表格据此给被问题指向的单元格加角标（BusinessView 提供） */
+export const IssuesContext = createContext<IssueView[]>([]);
+
+type SortState = { key: string; dir: 1 | -1 } | null;
+
+/** 排序只改变显示顺序：数字按数值、其余按文本；每个单元格的 JSON Pointer 不变 */
+function compareCells(a: unknown, b: unknown): number {
+  const na = Number(a);
+  const nb = Number(b);
+  if (a !== "" && b !== "" && a !== null && b !== null && Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+  return String(a ?? "").localeCompare(String(b ?? ""), "zh-CN");
+}
+
 export function DataTable({ table, options = {} }: { table: TableView; options?: DataTableOptions }) {
   const sel = useStudio((s) => s.selection);
   const select = useStudio((s) => s.select);
   const setStore = useStudio((s) => s.set);
   const annotated = useAnnotatedPointers();
+  const allIssues = useContext(IssuesContext);
   const hasCore = table.columns.some((c) => c.core !== undefined);
   const [preset, setPreset] = useState<"core" | "all">(options.fieldPreset ?? "all");
   const [q, setQ] = useState("");
+  const [qField, setQField] = useState("");
+  const [onlyIssues, setOnlyIssues] = useState(false);
+  const [sort, setSort] = useState<SortState>(null);
   const scroller = useRef<HTMLDivElement>(null);
+
+  // 指向本表单元格 / 行的问题（按 行|字段 索引；没有字段的记在行上）
+  const issueIndex = useMemo(() => {
+    const m = new Map<string, IssueView[]>();
+    for (const i of allIssues) {
+      if (i.target?.tableId !== table.id || !i.target.rowId) continue;
+      const k = `${i.target.rowId}|${i.target.fieldKey ?? ""}`;
+      m.set(k, [...(m.get(k) ?? []), i]);
+    }
+    return m;
+  }, [allIssues, table.id]);
+  const issueRows = useMemo(() => new Set([...issueIndex.keys()].map((k) => k.split("|")[0])), [issueIndex]);
+  const issueFields = useMemo(() => new Set([...issueIndex.keys()].map((k) => k.split("|")[1]).filter(Boolean)), [issueIndex]);
 
   const frozen = useMemo(() => new Set([...(options.frozenColumns ?? []), ...table.columns.filter((c) => c.fixed).map((c) => c.key)]), [options.frozenColumns, table.columns]);
   const columns = useMemo(() => {
-    const cols = table.columns.filter((c) => !hasCore || preset === "all" || c.core || frozen.has(c.key));
+    // 「核心字段」也保留被问题指向的字段，冲突列不会被隐藏
+    const cols = table.columns.filter((c) => !hasCore || preset === "all" || c.core || frozen.has(c.key) || issueFields.has(c.key));
     // 固定列排在最前
     return [...cols.filter((c) => frozen.has(c.key)), ...cols.filter((c) => !frozen.has(c.key))];
-  }, [table.columns, hasCore, preset, frozen]);
+  }, [table.columns, hasCore, preset, frozen, issueFields]);
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return table.rows.filter((r) => {
+    const out = table.rows.filter((r) => {
       if (options.rowFilter && !options.rowFilter(r)) return false;
+      if (onlyIssues && !issueRows.has(r.id)) return false;
       if (!needle) return true;
+      if (qField) return String(r.cells[qField]?.value ?? "").toLowerCase().includes(needle);
       return Object.values(r.cells).some((c) => String(c.value ?? "").toLowerCase().includes(needle)) || r.id.toLowerCase().includes(needle);
     });
-  }, [table.rows, q, options]);
+    if (sort) out.sort((a, b) => sort.dir * compareCells(a.cells[sort.key]?.value, b.cells[sort.key]?.value));
+    return out;
+  }, [table.rows, q, qField, onlyIssues, issueRows, sort, options]);
 
   // 选中对象变化时滚动到对应行（定位依赖行 ID，不依赖当前序号）
   useEffect(() => {
@@ -75,12 +110,31 @@ export function DataTable({ table, options = {} }: { table: TableView; options?:
           </div>
         )}
         {options.toolbar}
+        {issueRows.size > 0 && (
+          <label className="flex items-center gap-1 text-[11.5px] text-ink-300">
+            <input type="checkbox" checked={onlyIssues} onChange={(e) => setOnlyIssues(e.target.checked)} aria-label={`只看有问题的行 ${table.title}`} />
+            只看有问题的行（{issueRows.size}）
+          </label>
+        )}
+        {sort && (
+          <button onClick={() => setSort(null)} className="text-[11px] text-info hover:underline" title="恢复为模型输出的原始顺序">
+            按「{table.columns.find((c) => c.key === sort.key)?.title}」{sort.dir === 1 ? "升序" : "降序"} ✕
+          </button>
+        )}
+        <select value={qField} onChange={(e) => setQField(e.target.value)} aria-label={`筛选字段 ${table.title}`} className="ml-auto max-w-32 rounded-lg border border-ink-700 bg-ink-900 px-1 py-1 text-[11.5px]">
+          <option value="">全部列</option>
+          {table.columns.map((c) => (
+            <option key={c.key} value={c.key}>
+              {c.title}
+            </option>
+          ))}
+        </select>
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="筛选…"
           aria-label={`筛选 ${table.title}`}
-          className="ml-auto w-40 rounded-lg border border-ink-700 bg-ink-900 px-2.5 py-1 text-[12px] outline-none focus:border-ink-400"
+          className="w-40 rounded-lg border border-ink-700 bg-ink-900 px-2.5 py-1 text-[12px] outline-none focus:border-ink-400"
         />
       </div>
       {rows.length === 0 ? (
@@ -98,8 +152,17 @@ export function DataTable({ table, options = {} }: { table: TableView; options?:
                       frozen.has(c.key) && "z-20",
                     )}
                     style={frozen.has(c.key) ? { left: frozenLeft(c.key), minWidth: FIXED_W, maxWidth: FIXED_W } : { minWidth: 96 }}
+                    aria-sort={sort?.key === c.key ? (sort.dir === 1 ? "ascending" : "descending") : undefined}
                   >
-                    {c.title}
+                    <button
+                      onClick={() => setSort((s) => (s?.key !== c.key ? { key: c.key, dir: 1 } : s.dir === 1 ? { key: c.key, dir: -1 } : null))}
+                      className="inline-flex items-center gap-0.5 hover:text-ink-100"
+                      title="点击排序（升序 → 降序 → 原始顺序）；排序不改变定位"
+                      data-sort-key={c.key}
+                    >
+                      {c.title}
+                      {sort?.key === c.key && <span>{sort.dir === 1 ? "↑" : "↓"}</span>}
+                    </button>
                   </th>
                 ))}
               </tr>
@@ -117,6 +180,7 @@ export function DataTable({ table, options = {} }: { table: TableView; options?:
                     {columns.map((c) => {
                       const cell = r.cells[c.key];
                       const cellSelected = rowSelected && sel.fieldKey === c.key;
+                      const cellIssues = issueIndex.get(`${r.id}|${c.key}`);
                       return (
                         <td
                           key={c.key}
@@ -139,6 +203,15 @@ export function DataTable({ table, options = {} }: { table: TableView; options?:
                           <div className="flex items-start gap-1 break-words">
                             {cell ? <CellValue value={cell.value} state={cell.state} kind={c.kind} /> : <span className="text-ink-700">—</span>}
                             {cell && cell.sourceRefIds.length > 0 && <span className="mt-[3px] h-1.5 w-1.5 shrink-0 rounded-full bg-verify/70" aria-label="有来源" />}
+                            {cellIssues && (
+                              <span
+                                className="shrink-0 rounded-md bg-risk/15 px-1 text-[10px] leading-4 text-risk"
+                                title={cellIssues.map((i) => `${i.type}：${i.summary}${i.detail ? `\n${i.detail}` : ""}`).join("\n")}
+                                data-testid="cell-issue"
+                              >
+                                {cellIssues.some((i) => /CONFLICT/.test(i.type)) ? "冲突" : "问题"}
+                              </span>
+                            )}
                             {cell && annotated.has(cell.jsonPointer) && (
                               <span className="shrink-0 rounded-md bg-info/15 px-1 text-[10px] leading-4 text-info" title="已有标注（见右侧「来源与标注」）">
                                 标
