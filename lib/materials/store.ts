@@ -109,8 +109,8 @@ export async function materialInfo(fileIds: string[]) {
   return [
     ...uploaded.map((id) => {
       const f = resolveUploadedFile(id);
-      return { file_id: id, file_name: f?.fileName ?? id, media_type: f?.mediaType ?? "", authorized: !!f, exists: !!f };
+      return { file_id: id, file_name: f?.fileName ?? id, media_type: f?.mediaType ?? "", sha256: undefined as string | undefined, authorized: !!f, exists: !!f };
     }),
-    ...fromConnector.map((m) => ({ file_id: m.file_id, file_name: m.file_name, media_type: m.media_type, authorized: m.authorized, exists: m.exists })),
+    ...fromConnector.map((m) => ({ file_id: m.file_id, file_name: m.file_name, media_type: m.media_type, sha256: m.sha256, authorized: m.authorized, exists: m.exists })),
   ];
 }

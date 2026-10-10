@@ -71,6 +71,54 @@ export interface TokenUsage {
   total_tokens?: number | null;
 }
 
+/** 输入覆盖清单中的单个文件（R-02） */
+export interface ManifestFile {
+  file_id: string;
+  file_name: string | null;
+  media_type: string | null;
+  original_file_hash: string | null;
+  availability: string | null;
+  /** 在请求中的材料类型（ORDER / INVOICE / INSPECTION…） */
+  roles: string[];
+  preprocessor_version: string | null;
+  text_sent: boolean;
+  text_chars: number;
+  text_pages: number[];
+  sheets: { name: string; rows: number | null; columns: number | null; cells: number | null }[] | null;
+  /** 原件总页数；未知为 null */
+  total_pages: number | null;
+  /** 实际发送的页图页码（图片文件为 [null]）；null = 未开启附带图片 */
+  image_pages_sent: (number | null)[] | null;
+  image_skipped_reason: string | null;
+}
+
+/** 输入覆盖清单（R-02）：这次实际发出了哪些文件、页、Sheet、文本和图片 */
+export interface InputManifest {
+  version: string;
+  input_builder: string;
+  snapshot_id: string;
+  snapshot_source_type: string;
+  snapshot_hash: string;
+  files: ManifestFile[];
+  sent_text_chars: number;
+  sent_image_count: number;
+  /** 页图覆盖，如 "20/25"；未附带图片为 null */
+  page_coverage: string | null;
+  truncation_reason: string | null;
+  visual_evidence: "SENT" | "PARTIAL" | "NOT_SENT" | "NOT_APPLICABLE";
+  /** 没有缺页、解析失败、能力不足时才为 true */
+  complete: boolean;
+  gaps: string[];
+  notes: string[];
+}
+
+/** 分阶段耗时（毫秒）；没有该阶段为 null */
+export interface RunTiming {
+  preprocess_ms: number | null;
+  inference_ms: number | null;
+  parse_ms: number | null;
+}
+
 /** PRD §2.2 Run 完整信息 */
 export interface Run {
   run_id: string;
@@ -115,4 +163,13 @@ export interface Run {
   replay_of_run_id?: string | null;
   /** 重渲染时版本变化说明 */
   rerender_note?: string | null;
+  /** 输入覆盖清单（v1.1 起的 MODEL_RUN 才有） */
+  input_manifest?: InputManifest | null;
+  timing?: RunTiming | null;
+  /** 服务商返回的请求 ID，便于向服务商追查 */
+  provider_request_id?: string | null;
+  /** 运行时使用的 system 与 user 模板原文（展开前），用于原样重试 */
+  prompt_source?: { system: string; user_template: string } | null;
+  /** 重试时指向被重试的 Run */
+  retry_of_run_id?: string | null;
 }

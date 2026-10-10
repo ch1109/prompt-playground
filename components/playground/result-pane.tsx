@@ -10,6 +10,7 @@ import { EvidenceViewer } from "@/components/renderers/evidence-viewer";
 import { BusinessView } from "@/components/views/business-view";
 import { Badge, Btn, cx, Empty, runStatusView } from "@/components/ui";
 import { JsonTree, RawText } from "./json-tree";
+import { InputCoverage } from "./input-coverage";
 
 const TABS: { id: ResultTab; label: string }[] = [
   { id: "visual", label: "可视化" },
@@ -55,6 +56,7 @@ export function ResultPane({
   canPreview,
   loading,
   onCancel,
+  onRetry,
   emptyHint,
 }: {
   detail?: RunDetail;
@@ -62,6 +64,8 @@ export function ResultPane({
   canPreview: boolean;
   loading: boolean;
   onCancel?: (runId: string) => void;
+  /** 原样重试失败 / 取消的模型运行 */
+  onRetry?: (runId: string) => void;
   /** 还没有结果时的引导（按当前 Prompt 是否有样本、模型是否已配置给出） */
   emptyHint: string;
 }) {
@@ -144,6 +148,19 @@ export function ResultPane({
         </Banner>
       )}
       {run?.status === "CANCELLED" && <Banner tone="warn">这次运行已取消，没有取得模型结果（服务商可能已开始处理并计费）。</Banner>}
+      {run && onRetry && run.mode === "MODEL_RUN" && (run.status === "MODEL_ERROR" || run.status === "CANCELLED") && (
+        <div className="mx-3 mt-1 flex items-center gap-2 text-[11.5px] text-ink-400">
+          <Btn tone="outline" onClick={() => onRetry(run.run_id)} disabled={!run.prompt_source} data-testid="btn-retry" title={run.prompt_source ? "用同一快照、同一提示词原文和参数新建一次运行，原记录不变" : "这条记录没有保存提示词原文（v1.1 之前），无法原样重试"}>
+            原样重试
+          </Btn>
+          {run.prompt_source ? "同一快照、同一提示词原文与参数，新建 Run；原失败记录保留。" : "这条记录早于 v1.1，没有保存提示词原文，不能原样重试。"}
+        </div>
+      )}
+      {run?.input_manifest && !run.input_manifest.complete && run.status !== "RUNNING" && (
+        <Banner tone="bad">
+          <span data-testid="incomplete-input-banner">这次运行不是完整输入（{run.input_manifest.gaps[0]}）。结果不能作为完整材料识别评测，详见「运行信息 → 输入覆盖」。</span>
+        </Banner>
+      )}
       {run && !vm && run.status === "SUCCEEDED" && <Banner tone="info">未登记 Schema（UNKNOWN_SCHEMA）：不套用九立模板，请在「原始 JSON」查看 JSON 树，或选择正确的 Prompt/Schema。</Banner>}
       {run?.rerender_note && <Banner tone="info">{run.rerender_note}（原始结果 Hash 未变：{run.raw_response_hash.slice(0, 12)}…）</Banner>}
 
@@ -360,13 +377,20 @@ function MetaTab({ detail }: { detail: RunDetail }) {
         <Row k="RendererConfig 版本" v={r.renderer_config_version} />
         <Row k="开始 / 结束" v={`${r.started_at} → ${r.ended_at ?? "—"}`} />
         <Row k="耗时" v={r.latency_ms != null ? `${r.latency_ms} ms` : null} />
+        <Row
+          k="分阶段耗时"
+          v={r.timing ? `预处理 ${r.timing.preprocess_ms ?? "—"} ms · 模型 ${r.timing.inference_ms ?? "—"} ms · 解析与渲染 ${r.timing.parse_ms ?? "—"} ms` : r.mode === "MODEL_RUN" ? "未记录（v1.1 之前的 Run）" : "不适用"}
+        />
+        <Row k="服务商请求 ID" v={r.provider_request_id} />
+        <Row k="重试来源" v={r.retry_of_run_id} />
         <Row k="Token" v={r.token_usage ? JSON.stringify(r.token_usage) : null} />
         <Row k="结束原因" v={r.finish_reason ? `${r.finish_reason}${r.finish_reason === "length" ? "（达到 max_tokens 被截断）" : ""}` : null} />
-        <Row k="费用" v={r.estimated_cost ? `${r.estimated_cost.value} ${r.estimated_cost.currency}（${r.estimated_cost.basis}）` : null} />
+        <Row k="费用" v={r.estimated_cost ? `${r.estimated_cost.value} ${r.estimated_cost.currency}（${r.estimated_cost.basis}）` : "未知（服务商未返回价格，Studio 不估算）"} />
         <Row k="原始响应 sha256" v={r.raw_response_hash} />
         <Row k="回放来源" v={r.replay_of_run_id} />
         <Row k="错误" v={r.error ? `${r.error.code}: ${r.error.message}` : "无"} />
       </dl>
+      {r.input_manifest ? <InputCoverage manifest={r.input_manifest} /> : r.mode === "MODEL_RUN" && <p className="text-[11.5px] text-ink-400">这条 Run 早于 v1.1，没有输入覆盖清单。</p>}
       {detail.snapshot?.warnings?.length ? (
         <div className="rounded-lg border border-risk/30 p-2 text-[11.5px] text-risk">
           {detail.snapshot.warnings.map((w) => (

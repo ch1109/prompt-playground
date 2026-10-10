@@ -232,6 +232,16 @@ export function usableKinds(snapshot: InputSnapshot): PromptKind[] {
   return PROMPT_KINDS.filter((k) => buildInput(k, snapshot).ok);
 }
 
+/** 模板里登记的变量；其余 {{...}} 都视为悬空变量 */
+export const TEMPLATE_VARIABLES = ["input_json"];
+
+/** 模板（system 与 user）中没有登记、展开后仍会原样发出的 {{变量}} */
+export function unresolvedVariables(...templates: string[]): string[] {
+  const found = new Set<string>();
+  for (const t of templates) for (const m of t.matchAll(/\{\{\s*([^{}]*?)\s*\}\}/g)) if (!TEMPLATE_VARIABLES.includes(m[1])) found.add(m[0]);
+  return [...found];
+}
+
 /** 展开用户模板：只替换登记的变量 */
 export function renderUserTemplate(template: string, request: unknown): string {
   return template.split("{{input_json}}").join(JSON.stringify(request, null, 2));

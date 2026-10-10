@@ -5,6 +5,8 @@ import type { CapabilityDTO, FixtureSummary, PromptVersionDTO, ProviderInfoDTO, 
 import type { PromptKind } from "@/lib/contracts/run";
 import { runSnapshotId, useStudio, useWorkspace, type InputMode } from "@/lib/state/studio-store";
 import { Badge, Btn, cx, Empty } from "@/components/ui";
+import type { InputManifest, ModelParams } from "@/lib/contracts/run";
+import { InputCoverage } from "./input-coverage";
 
 type EditorTab = "prompt" | "input" | "model" | "preview";
 
@@ -62,7 +64,7 @@ export function EditorPane(props: {
           />
         )}
         {tab === "model" && <ModelTab provider={props.provider} />}
-        {tab === "preview" && <PreviewTab fixtures={props.fixtures} />}
+        {tab === "preview" && <PreviewTab fixtures={props.fixtures} isDraft={isDraft} versionLabel={version?.label} />}
       </div>
       <div className="border-t border-ink-700 px-3 py-1 text-[11px] text-ink-400">
         输入：{ws.inputMode === "fixture" ? (ws.fixtureId ? `样本 ${ws.fixtureId}` : "还没选样本，请点上方列表里的一项") :ws.inputMode === "paste" ? "粘贴 JSON（仅渲染）" : ws.inputMode === "jiuli" ? "九立导入（创建快照后使用）" : ws.inputMode === "upload" ? `上传文件 ${ws.uploadSnapshotId ?? "（未上传）"}` : `快照 ${ws.snapshotId ?? "未选"}`}
@@ -669,6 +671,7 @@ function ModelTab({ provider }: { provider: ProviderInfoDTO | null }) {
         </p>
         <p className="text-ink-400">文件直传：{provider?.supportsFileInput ? "支持" : "不支持（默认只发送预处理文本；缺文本的材料会被阻断。看图请勾选下方「附带原件图片」）"}</p>
       </div>
+      {provider?.capabilities && <CapabilityTable caps={provider.capabilities} />}
       <label className="flex items-start gap-2">
         <input type="checkbox" checked={ws.attachImages} onChange={(e) => patch({ attachImages: e.target.checked })} aria-label="附带原件图片" className="mt-0.5" />
         <span>
@@ -688,6 +691,33 @@ function ModelTab({ provider }: { provider: ProviderInfoDTO | null }) {
   );
 }
 
+const capText = (v: boolean | null) => (v === null ? "未声明" : v ? "支持" : "不支持");
+
+/** 模型能力声明（R-04）：来自 .env.local，未声明的如实显示，不当作支持 */
+function CapabilityTable({ caps }: { caps: NonNullable<ProviderInfoDTO["capabilities"]> }) {
+  const rows: [string, string, string][] = [
+    ["图片输入", capText(caps.images), "MODEL_SUPPORTS_IMAGES；声明不支持时勾选「附带原件图片」会被阻断"],
+    ["原生 PDF", "不支持", "本适配器不直传 PDF，PDF 只能转文本或转页图"],
+    ["JSON 模式", capText(caps.jsonMode), "MODEL_SUPPORTS_JSON_MODE；只作说明，请求中不发送 response_format"],
+    ["Thinking", capText(caps.thinking), "MODEL_SUPPORTS_THINKING；只作说明，不发送 thinking 参数"],
+    ["流式输出", "不使用", "本适配器只用非流式请求"],
+    ["输出 token 上限", caps.maxOutputTokens ? String(caps.maxOutputTokens) : "未声明", "MODEL_MAX_OUTPUT_TOKENS；max_tokens 超过上限会被阻断"],
+  ];
+  return (
+    <table className="w-full text-[11.5px]" data-testid="capability-table">
+      <tbody>
+        {rows.map(([k, v, hint]) => (
+          <tr key={k} className="border-b border-ink-800">
+            <td className="w-28 py-0.5 text-ink-400">{k}</td>
+            <td className={cx("w-20 py-0.5", v === "未声明" && "text-risk")}>{v}</td>
+            <td className="py-0.5 text-[10.5px] text-ink-400">{hint}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 interface PreviewDTO {
   ok: boolean;
   code?: string;
@@ -701,12 +731,16 @@ interface PreviewDTO {
   builtInputHash?: string;
   attachFiles?: { file_id: string; file_name: string; media_type: string; authorized: boolean; exists: boolean }[] | null;
   provider: ProviderInfoDTO;
+  params?: ModelParams;
+  tokenEstimate?: number;
+  blockers?: { code: string; message: string }[];
+  manifest?: InputManifest;
 }
 
 /** 预览中 system 默认只显示开头，可展开全文 */
 const PREVIEW_HEAD = 600;
 
-function PreviewTab({ fixtures }: { fixtures: FixtureSummary[] }) {
+function PreviewTab({ fixtures, isDraft, versionLabel }: { fixtures: FixtureSummary[]; isDraft: boolean; versionLabel?: string }) {
   const [ws, , promptId] = useWorkspace();
   // 与「运行模型」同一来源，保证预览的就是要发送的
   const snapshotId = runSnapshotId(ws);
@@ -718,10 +752,10 @@ function PreviewTab({ fixtures }: { fixtures: FixtureSummary[] }) {
     setP(null);
     setErr(null);
     if (!snapshotId) return;
-    api<PreviewDTO>("/api/runs/preview", { json: { promptId, snapshotId, system: ws.system, userTemplate: ws.userTemplate, attachImages: ws.attachImages } })
+    api<PreviewDTO>("/api/runs/preview", { json: { promptId, snapshotId, system: ws.system, userTemplate: ws.userTemplate, attachImages: ws.attachImages, params: ws.params } })
       .then(setP)
       .catch((e) => setErr(e.message));
-  }, [snapshotId, ws.system, ws.userTemplate, ws.attachImages, promptId]);
+  }, [snapshotId, ws.system, ws.userTemplate, ws.attachImages, ws.params, promptId]);
   if (!snapshotId) {
     const why =
       ws.inputMode === "fixture"
@@ -749,7 +783,21 @@ function PreviewTab({ fixtures }: { fixtures: FixtureSummary[] }) {
         <Badge>prompt hash {p.actualPromptHash?.slice(0, 10)}</Badge>
         <Badge>input hash {p.builtInputHash?.slice(0, 10)}</Badge>
         <Badge tone={p.provider.configured ? "info" : "warn"}>将发送至 {p.provider.provider}</Badge>
+        <Badge tone={isDraft ? "warn" : "ok"}>{isDraft ? `含未保存草稿（基于 ${versionLabel ?? "无版本"}）` : `版本 ${versionLabel}`}</Badge>
+        <Badge>参数 {JSON.stringify(p.params ?? {})}</Badge>
+        {p.tokenEstimate !== undefined && <Badge title="按字符数粗估，不含图片，误差可能较大">≈ {p.tokenEstimate.toLocaleString()} 输入 token（粗估）</Badge>}
       </div>
+      {p.blockers?.length ? (
+        <div className="rounded-lg border border-stamp/50 bg-stamp/10 p-2 text-stamp" data-testid="preview-blockers">
+          <div className="font-semibold">以下问题会阻止运行：</div>
+          {p.blockers.map((b) => (
+            <div key={b.code + b.message}>
+              [{b.code}] {b.message}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {p.manifest && <InputCoverage manifest={p.manifest} planned />}
       {p.requiresFiles?.length ? <p className="rounded-lg border border-stamp/40 bg-stamp/10 p-2 text-stamp">材料 {p.requiresFiles.join(", ")} 没有预处理文本：当前文本模型会阻断运行（PDF / 图片可勾选「附带原件图片」）。</p> : null}
       {p.attachFiles && (
         <div className="rounded-lg border border-ink-700 p-2" data-testid="attach-files">

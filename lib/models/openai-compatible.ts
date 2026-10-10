@@ -1,9 +1,25 @@
-import type { ModelRequest, ModelResult, ProviderAdapter, ProviderInfo } from "./provider-adapter";
+import type { ModelRequest, ModelResult, ProviderAdapter, ProviderCapabilities, ProviderInfo } from "./provider-adapter";
 
 // OpenAI 兼容 /chat/completions（DashScope、OpenAI、OpenRouter 等）。
 // 只在服务端运行；API Key 只从环境变量读取，绝不返回给浏览器或写进 Run。
 
-export const OPENAI_COMPATIBLE_VERSION = "1.0.0";
+// 1.1.0：能力声明（capabilities）
+export const OPENAI_COMPATIBLE_VERSION = "1.1.0";
+
+const flag = (v: string | undefined): boolean | null => (v === undefined || v === "" ? null : /^(1|true|yes)$/i.test(v));
+
+/** 从环境变量读能力声明：MODEL_SUPPORTS_IMAGES / MODEL_SUPPORTS_JSON_MODE / MODEL_SUPPORTS_THINKING / MODEL_MAX_OUTPUT_TOKENS；未填即「未声明」 */
+export function capabilitiesFromEnv(env: Record<string, string | undefined> = process.env): ProviderCapabilities {
+  const max = Number(env.MODEL_MAX_OUTPUT_TOKENS);
+  return {
+    images: flag(env.MODEL_SUPPORTS_IMAGES),
+    nativePdf: false,
+    jsonMode: flag(env.MODEL_SUPPORTS_JSON_MODE),
+    thinking: flag(env.MODEL_SUPPORTS_THINKING),
+    streaming: false,
+    maxOutputTokens: Number.isFinite(max) && max > 0 ? max : null,
+  };
+}
 
 export function redactSecrets(text: string, extraSecrets: (string | undefined)[] = []): string {
   let out = text;
@@ -15,7 +31,7 @@ export function redactSecrets(text: string, extraSecrets: (string | undefined)[]
 
 export class OpenAICompatibleProvider implements ProviderAdapter {
   constructor(
-    private env: { baseUrl?: string; model?: string; apiKey?: string; timeoutMs?: number } = {
+    private env: { baseUrl?: string; model?: string; apiKey?: string; timeoutMs?: number; capabilities?: ProviderCapabilities } = {
       baseUrl: process.env.MODEL_BASE_URL,
       model: process.env.MODEL_NAME,
       apiKey: process.env.MODEL_API_KEY,
@@ -43,6 +59,7 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
       supportsFileInput: false,
       adapterVersion: OPENAI_COMPATIBLE_VERSION,
       baseUrlHost: host,
+      capabilities: this.env.capabilities ?? capabilitiesFromEnv(),
     };
   }
 

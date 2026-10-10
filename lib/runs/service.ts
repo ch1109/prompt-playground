@@ -4,7 +4,7 @@ import type { ModelParams, PipelineResult, PromptKind, Run, RunMode } from "@/li
 import type { Diagnostic } from "@/lib/contracts/view-model";
 import type { InputSnapshot } from "@/lib/contracts/snapshot";
 import { newId, sha256, stableStringify } from "@/lib/hash";
-import { buildInput, INPUT_BUILDER_VERSION, renderUserTemplate } from "@/lib/input-builders";
+import { buildInput, INPUT_BUILDER_VERSION, renderUserTemplate, unresolvedVariables, type BuildResult } from "@/lib/input-builders";
 import { getProvider, redactSecrets } from "@/lib/models/openai-compatible";
 import { runPipeline } from "@/lib/pipeline/pipeline";
 import { findRendererConfig } from "@/lib/renderer-config/registry";
@@ -12,7 +12,9 @@ import { contentHash, getPrompt, getVersion } from "@/lib/repositories/prompts";
 import { finishRun, getRun, saveRun, startRun } from "@/lib/repositories/runs";
 import { getSnapshot, snapshotDeletedAt } from "@/lib/repositories/snapshots";
 import { materialInfo } from "@/lib/materials/store";
-import { buildPageImages, referencedFileIds } from "./page-images";
+import type { ProviderCapabilities } from "@/lib/models/provider-adapter";
+import { buildInputManifest } from "./input-manifest";
+import { buildPageImages, planPageImages, referencedFileIds, type PageImageCoverage } from "./page-images";
 
 export class RunServiceError extends Error {
   constructor(
@@ -137,17 +139,63 @@ function blockedFiles(requiresFiles: string[], snapshot: InputSnapshot, attachIm
   return requiresFiles.filter((id) => !(media.get(id) === "application/pdf" || media.get(id)?.startsWith("image/")));
 }
 
-/** 运行前预览：实际发送的系统提示词、用户消息与构造输入 */
-export async function previewModelRun(input: { promptId: string; snapshotId: string; system: string; userTemplate: string; attachImages?: boolean }) {
+const PARAM_KEYS = new Set(["temperature", "max_tokens", "top_p"]);
+
+/** 运行前就能确定的阻断原因（R-03 / R-04）：悬空变量、参数不合法、模型能力不满足 */
+export function runBlockers(input: { system: string; userTemplate: string; params: ModelParams; attachImages?: boolean }, caps: ProviderCapabilities): { code: string; message: string }[] {
+  const out: { code: string; message: string }[] = [];
+  const vars = unresolvedVariables(input.system, input.userTemplate);
+  if (vars.length) out.push({ code: "UNRESOLVED_TEMPLATE_VARIABLE", message: `提示词中有未登记的变量 ${vars.join("、")}，展开后会原样发给模型。只支持 {{input_json}}，请删除或改正后再运行。` });
+  const p = input.params ?? {};
+  for (const k of Object.keys(p)) if (!PARAM_KEYS.has(k)) out.push({ code: "MODEL_PARAM_UNSUPPORTED", message: `参数 ${k} 不在本适配器支持的范围（temperature / max_tokens / top_p），不会被当作生效` });
+  if (p.temperature !== undefined && !(typeof p.temperature === "number" && p.temperature >= 0 && p.temperature <= 2)) out.push({ code: "MODEL_PARAM_INVALID", message: `temperature=${String(p.temperature)} 不合法（应为 0~2）` });
+  if (p.top_p !== undefined && !(typeof p.top_p === "number" && p.top_p > 0 && p.top_p <= 1)) out.push({ code: "MODEL_PARAM_INVALID", message: `top_p=${String(p.top_p)} 不合法（应为 0~1）` });
+  if (p.max_tokens !== undefined && !(Number.isInteger(p.max_tokens) && (p.max_tokens as number) > 0)) out.push({ code: "MODEL_PARAM_INVALID", message: `max_tokens=${String(p.max_tokens)} 不合法（应为正整数）` });
+  else if (p.max_tokens !== undefined && caps.maxOutputTokens !== null && (p.max_tokens as number) > caps.maxOutputTokens)
+    out.push({ code: "MODEL_PARAM_INVALID", message: `max_tokens=${p.max_tokens} 超过模型声明的上限 ${caps.maxOutputTokens}（MODEL_MAX_OUTPUT_TOKENS）` });
+  if (input.attachImages && caps.images === false) out.push({ code: "CAPABILITY_UNSUPPORTED", message: "已勾选「附带原件图片」，但当前模型声明不支持图片输入（MODEL_SUPPORTS_IMAGES=false）。请取消勾选，或换用视觉模型。" });
+  return out;
+}
+
+/** token 粗估：中日韩等非 ASCII 字符约 1 字 1 token，ASCII 约 4 字符 1 token；不含图片，只作量级参考 */
+export function estimateTokens(text: string): number {
+  let ascii = 0;
+  let other = 0;
+  for (const ch of text) ch.charCodeAt(0) < 128 ? ascii++ : other++;
+  return Math.ceil(ascii / 4 + other);
+}
+
+async function manifestFor(request: Record<string, unknown>, snapshot: InputSnapshot, built: Extract<BuildResult, { ok: true }>, attachImages: boolean, coverage: PageImageCoverage[] | null, system: string, user: string, caps: ProviderCapabilities) {
+  const ids = [...new Set([...referencedFileIds(request), ...(coverage ?? []).map((c) => c.file_id)])];
+  const fileMeta = ids.length ? await materialInfo(ids).catch(() => []) : [];
+  return buildInputManifest({
+    request,
+    snapshot,
+    builderId: built.builderId,
+    builderVersion: INPUT_BUILDER_VERSION,
+    blockedFiles: blockedFiles(built.requiresFiles, snapshot, attachImages),
+    attachImages,
+    imageCoverage: coverage,
+    fileMeta,
+    systemChars: system.length,
+    userChars: user.length,
+    visionSupported: caps.images,
+  });
+}
+
+/** 运行前预览：实际发送的系统提示词、用户消息、参数、输入覆盖与阻断原因 */
+export async function previewModelRun(input: { promptId: string; snapshotId: string; system: string; userTemplate: string; attachImages?: boolean; params?: ModelParams }) {
   const prompt = loadPrompt(input.promptId);
   const snapshot = loadSnapshot(input.snapshotId)!;
   const built = buildInput(prompt.prompt_kind, snapshot);
   const info = getProvider().info();
   if (!built.ok) return { ok: false as const, code: built.code, message: built.message, provider: info };
   const user = renderUserTemplate(input.userTemplate, built.request);
-  // 只列出将附带的原件，不在预览时转换 PDF
+  // 只列出将附带的原件并按 20 页上限规划页数，不在预览时转换 PDF
   const ids = input.attachImages ? referencedFileIds(built.request) : [];
   const attachFiles = ids.length ? await materialInfo(ids) : [];
+  const coverage = input.attachImages ? await planPageImages(ids) : null;
+  const params = input.params ?? {};
   return {
     ok: true as const,
     attachFiles: input.attachImages ? attachFiles : null,
@@ -156,8 +204,12 @@ export async function previewModelRun(input: { promptId: string; snapshotId: str
     warnings: built.warnings,
     requiresFiles: blockedFiles(built.requiresFiles, snapshot, input.attachImages),
     request: built.request,
-    system: input.system,
-    user,
+    system: redactSecrets(input.system),
+    user: redactSecrets(user),
+    params,
+    tokenEstimate: estimateTokens(input.system) + estimateTokens(user),
+    blockers: runBlockers({ ...input, params }, info.capabilities),
+    manifest: await manifestFor(built.request, snapshot, built, !!input.attachImages, coverage, input.system, user, info.capabilities),
     actualPromptHash: contentHash(input.system, user),
     builtInputHash: sha256(stableStringify(built.request)),
   };
@@ -173,7 +225,7 @@ export function cancelRun(runId: string) {
   ac.abort();
 }
 
-type ModelRunInput = Base & { snapshotId: string; system: string; userTemplate: string; promptVersionId?: string | null; params: ModelParams; attachImages?: boolean };
+type ModelRunInput = Base & { snapshotId: string; system: string; userTemplate: string; promptVersionId?: string | null; params: ModelParams; attachImages?: boolean; retryOfRunId?: string | null };
 
 /** MODEL_RUN：服务端代理真实模型调用；失败保存失败 Run，绝不回退为 Mock */
 export async function modelRun(input: ModelRunInput): Promise<Run> {
@@ -192,6 +244,8 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
   const info = provider.info();
   if (!info.configured) throw new RunServiceError("MODEL_NOT_CONFIGURED", "未配置模型（.env.local 中的 MODEL_BASE_URL / MODEL_NAME / MODEL_API_KEY）", 400);
 
+  const blockers = runBlockers(input, info.capabilities);
+  if (blockers.length) throw new RunServiceError(blockers[0].code, blockers.map((b) => b.message).join("；"), 400);
   const built = buildInput(prompt.prompt_kind, snapshot);
   if (!built.ok) throw new RunServiceError(built.code, built.message, 400);
   // AT27：模型不支持文件且材料没有预处理文本 → 明确阻断，不会只发文件名
@@ -232,6 +286,10 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
     label: input.label ?? `${info.model} 运行`,
     input_builder_id: `${built.builderId}@${INPUT_BUILDER_VERSION}`,
     input_builder_warnings: built.warnings,
+    prompt_source: { system: input.system, user_template: input.userTemplate },
+    retry_of_run_id: input.retryOfRunId ?? null,
+    input_manifest: null as Run["input_manifest"],
+    timing: null as Run["timing"],
   };
   const noResult = { schema_id: null, schema_version: null, adapter_id: null, adapter_version: null, renderer_config_version: null, parse_diagnostics: [], schema_diagnostics: [], view_model: null, token_usage: null };
 
@@ -239,6 +297,7 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
   startRun({ ...common, ...noResult, status: "RUNNING", ended_at: null, latency_ms: null, raw_response: "", raw_response_hash: "", error: null });
 
   const request = built.request;
+  const builtOk = built;
   const builderWarnings = built.warnings;
   const abort = new AbortController();
   running.set(runId, abort);
@@ -257,13 +316,18 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
 
   async function finishModelRun(): Promise<Run> {
     try {
+      const t0 = Date.now();
       const pages = input.attachImages ? await buildPageImages(referencedFileIds(request)) : null;
+      const manifest = await manifestFor(request, snapshot, builtOk, !!input.attachImages, pages?.coverage ?? null, input.system, user, info.capabilities);
+      const preprocessMs = pages ? Date.now() - t0 : null;
       if (abort.signal.aborted) return cancelled();
       const images = pages?.images.map((i) => ({ mediaType: i.media_type, base64: i.base64 }));
       const result = await provider.complete({ system: input.system, user, params: input.params, images, signal: abort.signal });
       if (abort.signal.aborted) return cancelled();
       const done = {
         ...common,
+        input_manifest: manifest,
+        timing: { preprocess_ms: preprocessMs, inference_ms: result.latencyMs, parse_ms: null as number | null },
         // 附带图片时，图片 hash 也计入实际提示词 hash
         actual_prompt_hash: pages?.images.length ? contentHash(input.system, `${user}\n${pages.images.map((i) => i.sha256).join(",")}`) : common.actual_prompt_hash,
         attached_images: pages ? pages.images.map(({ base64: _b, ...m }) => m) : null,
@@ -278,6 +342,7 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
       }
 
       const finishReason = typeof result.responseMeta.finish_reason === "string" ? result.responseMeta.finish_reason : null;
+      const t1 = Date.now();
       const pr = runPipeline({ raw: result.raw, promptKind: prompt.prompt_kind, context: { ...contextFromSnapshot(runId, prompt.prompt_kind, snapshot), request: request } });
       // 达到 max_tokens 被截断：单独说明原因，避免只看到"JSON 解析失败"
       const truncated: Diagnostic[] =
@@ -287,6 +352,8 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
       const diag = diagByPhase(pr);
       return finishRun({
         ...done,
+        timing: { ...done.timing, parse_ms: Date.now() - t1 },
+        provider_request_id: typeof result.responseMeta.id === "string" ? result.responseMeta.id : null,
         ...versionsOf(pr),
         status: pr.status,
         raw_response: result.raw,
@@ -313,6 +380,30 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
       });
     }
   }
+}
+
+/**
+ * 原样重试：用原 Run 的同一快照、同一提示词原文、同一参数和图片开关新建 Run；原 Run 不变。
+ * v1.1 之前的 Run 没有保存提示词原文，不能重试（不拿当前编辑内容冒充）。
+ */
+export function retryRun(runId: string): { runId: string; done: Promise<Run> } {
+  const orig = getRun(runId) as (Run & { label?: string }) | undefined;
+  if (!orig) throw new RunServiceError("RUN_NOT_FOUND", "Run 不存在", 404);
+  if (orig.mode !== "MODEL_RUN") throw new RunServiceError("RETRY_NOT_APPLICABLE", "只有真实模型运行可以重试；仅渲染请直接重新渲染", 400);
+  if (orig.status === "RUNNING") throw new RunServiceError("RUN_NOT_FINISHED", "Run 仍在运行中", 409);
+  if (!orig.prompt_source || !orig.input_snapshot_id) throw new RunServiceError("RETRY_SOURCE_MISSING", "这条 Run 没有保存运行时的提示词原文（v1.1 之前的记录），无法原样重试", 400);
+  return startModelRun({
+    projectId: orig.project_id,
+    promptId: orig.prompt_id,
+    snapshotId: orig.input_snapshot_id,
+    system: orig.prompt_source.system,
+    userTemplate: orig.prompt_source.user_template,
+    promptVersionId: orig.prompt_version_id,
+    params: orig.model_params ?? {},
+    attachImages: !!orig.attached_images,
+    label: `重试 · ${orig.label ?? orig.run_id}`,
+    retryOfRunId: orig.run_id,
+  });
 }
 
 /**

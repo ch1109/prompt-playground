@@ -89,6 +89,7 @@ export interface ProviderInfoDTO {
   configured: boolean;
   supportsFileInput: boolean;
   adapterVersion: string;
+  capabilities: import("@/lib/models/provider-adapter").ProviderCapabilities;
 }
 
 export interface CapabilityDTO {

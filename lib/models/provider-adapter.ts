@@ -13,6 +13,21 @@ export type ModelResult =
   | { ok: true; raw: string; usage: TokenUsage | null; latencyMs: number; responseMeta: Record<string, unknown> }
   | { ok: false; code: string; message: string; latencyMs: number; partialRaw?: string };
 
+/**
+ * 模型能力声明（R-04）。OpenAI 兼容网关无法自动探测，由 .env.local 显式声明；
+ * null = 未声明（未知），界面如实显示「未声明」，不当作支持。
+ */
+export interface ProviderCapabilities {
+  images: boolean | null;
+  /** 原生 PDF 直传：本适配器不支持 */
+  nativePdf: false;
+  jsonMode: boolean | null;
+  thinking: boolean | null;
+  /** 流式输出：本适配器只用非流式 */
+  streaming: false;
+  maxOutputTokens: number | null;
+}
+
 export interface ProviderInfo {
   provider: string;
   model: string;
@@ -21,6 +36,7 @@ export interface ProviderInfo {
   supportsFileInput: boolean;
   adapterVersion: string;
   baseUrlHost?: string;
+  capabilities: ProviderCapabilities;
 }
 
 export interface ProviderAdapter {
