@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { IssueView, TableRow, TableView } from "@/lib/contracts/view-model";
 import { useAnnotatedPointers, useStudio } from "@/lib/state/studio-store";
 import { Badge, CellValue, cx, Empty } from "@/components/ui";
@@ -17,6 +17,11 @@ export interface DataTableOptions {
   onRowSelect?: (row: TableRow) => void;
   highlightRowIds?: Set<string>;
   hideTitle?: boolean;
+  /** 行可展开：在行下方列出全部字段（有问题的排前面），点字段同点单元格 */
+  expandable?: boolean;
+  /** 受控的「只看有问题的行」（结果精简状态里的按钮也能切换） */
+  onlyIssues?: boolean;
+  onOnlyIssuesChange?: (v: boolean) => void;
 }
 
 const FIXED_W = 132;
@@ -44,7 +49,11 @@ export function DataTable({ table, options = {} }: { table: TableView; options?:
   const [preset, setPreset] = useState<"core" | "all">(options.fieldPreset ?? "all");
   const [q, setQ] = useState("");
   const [qField, setQField] = useState("");
-  const [onlyIssues, setOnlyIssues] = useState(false);
+  const [ownOnlyIssues, setOwnOnlyIssues] = useState(false);
+  const onlyIssues = options.onlyIssues ?? ownOnlyIssues;
+  const setOnlyIssues = options.onOnlyIssuesChange ?? setOwnOnlyIssues;
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleRow = (id: string) => setExpanded((cur) => (cur.has(id) ? new Set([...cur].filter((x) => x !== id)) : new Set([...cur, id])));
   const [sort, setSort] = useState<SortState>(null);
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -92,6 +101,13 @@ export function DataTable({ table, options = {} }: { table: TableView; options?:
       cell?.scrollIntoView({ block: "nearest", inline: "center" });
     }
   }, [sel.tableId, sel.rowId, sel.fieldKey, table.id]);
+
+  const pickCell = (r: TableRow, key: string) => {
+    const cell = r.cells[key];
+    if (!cell) return;
+    select({ tableId: table.id, rowId: r.id, fieldKey: key, jsonPointer: cell.jsonPointer, sourceRefId: cell.sourceRefIds[0] ?? r.sourceRefIds?.[0] });
+    setStore("evidenceOpen", true);
+  };
 
   const frozenLeft = (key: string) => columns.filter((c) => frozen.has(c.key)).findIndex((c) => c.key === key) * FIXED_W;
 
@@ -170,64 +186,108 @@ export function DataTable({ table, options = {} }: { table: TableView; options?:
             <tbody>
               {rows.map((r) => {
                 const rowSelected = sel.tableId === table.id && sel.rowId === r.id;
+                const open = options.expandable && expanded.has(r.id);
                 return (
-                  <tr
-                    key={r.id}
-                    data-row-id={r.id}
-                    onClick={() => options.onRowSelect?.(r)}
-                    className={cx("group", rowSelected && "bg-accent/[0.06]", options.highlightRowIds?.has(r.id) && "bg-info/[0.08]")}
-                  >
-                    {columns.map((c) => {
-                      const cell = r.cells[c.key];
-                      const cellSelected = rowSelected && sel.fieldKey === c.key;
-                      const cellIssues = issueIndex.get(`${r.id}|${c.key}`);
-                      return (
-                        <td
-                          key={c.key}
-                          data-field={c.key}
-                          data-annotated={cell && annotated.has(cell.jsonPointer) ? "" : undefined}
-                          onClick={() => {
-                            if (!cell) return;
-                            select({ tableId: table.id, rowId: r.id, fieldKey: c.key, jsonPointer: cell.jsonPointer, sourceRefId: cell.sourceRefIds[0] ?? r.sourceRefIds?.[0] });
-                            setStore("evidenceOpen", true);
-                          }}
-                          className={cx(
-                            "cursor-pointer border-b border-ink-800 px-3 py-1.5 align-top transition-colors group-hover:bg-ink-850",
-                            options.dense ? "max-w-[220px]" : "max-w-[320px]",
-                            frozen.has(c.key) && cx("sticky z-[5]", rowSelected ? "bg-[color-mix(in_srgb,var(--color-accent)_6%,white)]" : "bg-ink-900 group-hover:bg-ink-850"),
-                            cellSelected && "outline outline-2 -outline-offset-2 outline-accent flash",
-                          )}
-                          style={frozen.has(c.key) ? { left: frozenLeft(c.key), minWidth: FIXED_W, maxWidth: FIXED_W } : undefined}
-                          title={cell ? `${cell.jsonPointer}${cell.sourceRefIds.length ? `  · ${cell.sourceRefIds.length} 个来源` : "  · 未提供来源"}` : undefined}
-                        >
-                          <div className="flex items-start gap-1 break-words">
-                            {cell ? <CellValue value={cell.value} state={cell.state} kind={c.kind} /> : <span className="text-ink-700">—</span>}
-                            {cell && cell.sourceRefIds.length > 0 && <span className="mt-[3px] h-1.5 w-1.5 shrink-0 rounded-full bg-verify/70" aria-label="有来源" />}
-                            {cellIssues && (
-                              <span
-                                className="shrink-0 rounded-md bg-risk/15 px-1 text-[10px] leading-4 text-risk"
-                                title={cellIssues.map((i) => `${i.type}：${i.summary}${i.detail ? `\n${i.detail}` : ""}`).join("\n")}
-                                data-testid="cell-issue"
-                              >
-                                {cellIssues.some((i) => /CONFLICT/.test(i.type)) ? "冲突" : "问题"}
-                              </span>
+                  <Fragment key={r.id}>
+                    <tr
+                      data-row-id={r.id}
+                      onClick={() => options.onRowSelect?.(r)}
+                      className={cx("group", rowSelected && "bg-accent/[0.06]", options.highlightRowIds?.has(r.id) && "bg-info/[0.08]")}
+                    >
+                      {columns.map((c, ci) => {
+                        const cell = r.cells[c.key];
+                        const cellSelected = rowSelected && sel.fieldKey === c.key;
+                        const cellIssues = issueIndex.get(`${r.id}|${c.key}`);
+                        return (
+                          <td
+                            key={c.key}
+                            data-field={c.key}
+                            data-annotated={cell && annotated.has(cell.jsonPointer) ? "" : undefined}
+                            onClick={() => pickCell(r, c.key)}
+                            className={cx(
+                              "cursor-pointer border-b border-ink-800 px-3 py-1.5 align-top whitespace-nowrap transition-colors group-hover:bg-ink-850",
+                              options.dense ? "max-w-[200px]" : "max-w-[240px]",
+                              frozen.has(c.key) && cx("sticky z-[5]", rowSelected ? "bg-[color-mix(in_srgb,var(--color-accent)_6%,white)]" : "bg-ink-900 group-hover:bg-ink-850"),
+                              cellSelected && "outline outline-2 -outline-offset-2 outline-accent flash",
                             )}
-                            {cell && annotated.has(cell.jsonPointer) && (
-                              <span className="shrink-0 rounded-md bg-info/15 px-1 text-[10px] leading-4 text-info" title="已有标注（见右侧「来源与标注」）">
-                                标
-                              </span>
-                            )}
-                          </div>
+                            style={frozen.has(c.key) ? { left: frozenLeft(c.key), minWidth: FIXED_W, maxWidth: FIXED_W } : undefined}
+                            title={cell ? `${typeof cell.value === "object" ? JSON.stringify(cell.value) : String(cell.value ?? "")}\n${cell.sourceRefIds.length ? `${cell.sourceRefIds.length} 个来源，点击查看` : "模型没有提供来源"}` : undefined}
+                          >
+                            <div className="flex min-w-0 items-center gap-1">
+                              {options.expandable && ci === 0 && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleRow(r.id);
+                                  }}
+                                  className="shrink-0 rounded px-0.5 text-ink-400 hover:bg-ink-800 hover:text-ink-100"
+                                  aria-label={open ? "收起全部字段" : "展开全部字段"}
+                                  aria-expanded={open}
+                                  data-testid="row-expand"
+                                >
+                                  {open ? "▾" : "▸"}
+                                </button>
+                              )}
+                              <span className="min-w-0 truncate">{cell ? <CellValue value={cell.value} state={cell.state} kind={c.kind} /> : <span className="text-ink-700">—</span>}</span>
+                              {cellIssues && (
+                                <span
+                                  className="shrink-0 rounded-md bg-risk/15 px-1 text-[10px] leading-4 text-risk"
+                                  title={cellIssues.map((i) => `${i.type}：${i.summary}${i.detail ? `\n${i.detail}` : ""}`).join("\n")}
+                                  data-testid="cell-issue"
+                                >
+                                  {cellIssues.some((i) => /CONFLICT/.test(i.type)) ? "冲突" : "问题"}
+                                </span>
+                              )}
+                              {cell && annotated.has(cell.jsonPointer) && (
+                                <span className="shrink-0 rounded-md bg-info/15 px-1 text-[10px] leading-4 text-info" title="已有标注（见右侧「来源与标注」）">
+                                  标
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                    {open && (
+                      <tr data-expanded-for={r.id}>
+                        <td colSpan={columns.length} className="border-b border-ink-700 bg-ink-850 p-0">
+                          <RowFields table={table} row={r} issueIndex={issueIndex} selectedKey={rowSelected ? sel.fieldKey : undefined} onPick={(k) => pickCell(r, k)} />
                         </td>
-                      );
-                    })}
-                  </tr>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
             </tbody>
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+/** 展开行：全部字段两列网格（有问题的字段排在最前），点字段等同点单元格 */
+function RowFields({ table, row, issueIndex, selectedKey, onPick }: { table: TableView; row: TableRow; issueIndex: Map<string, IssueView[]>; selectedKey?: string; onPick: (key: string) => void }) {
+  const cols = [...table.columns].sort((a, b) => Number(issueIndex.has(`${row.id}|${b.key}`)) - Number(issueIndex.has(`${row.id}|${a.key}`)));
+  return (
+    <div className="sticky left-0 grid max-w-[920px] grid-cols-2 gap-x-6 gap-y-0.5 px-4 py-2.5 text-[12px]" data-testid="row-fields">
+      {cols.map((c) => {
+        const cell = row.cells[c.key];
+        const issues = issueIndex.get(`${row.id}|${c.key}`);
+        return (
+          <button
+            key={c.key}
+            onClick={() => onPick(c.key)}
+            disabled={!cell}
+            data-field={c.key}
+            className={cx("flex min-w-0 items-baseline gap-2 rounded px-1.5 py-0.5 text-left hover:bg-ink-800 disabled:cursor-default", selectedKey === c.key && "bg-accent/[0.08] ring-1 ring-accent/40")}
+          >
+            <span className="w-24 shrink-0 text-ink-400">{c.title}</span>
+            <span className="min-w-0 break-words">{cell ? <CellValue value={cell.value} state={cell.state} kind={c.kind} /> : <span className="text-ink-700">—</span>}</span>
+            {issues && <span className="shrink-0 rounded-md bg-risk/15 px-1 text-[10px] leading-4 text-risk">{issues.some((i) => /CONFLICT/.test(i.type)) ? "冲突" : "问题"}</span>}
+          </button>
+        );
+      })}
     </div>
   );
 }

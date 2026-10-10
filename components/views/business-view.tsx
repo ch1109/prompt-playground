@@ -94,7 +94,7 @@ function WideTableLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
   const strip = cfg.regions.filter((r) => r.component === "summary-strip");
   return (
     <div className="space-y-3">
-      {tableRegions.slice(0, 1).map((r) => <Region key={r.id} region={r} vm={vm} extra={{ maxHeight: 460 }} />)}
+      {tableRegions.slice(0, 1).map((r) => <Region key={r.id} region={r} vm={vm} extra={{ maxHeight: 460, expandable: true }} />)}
       {vm.issues.length ? (
         cfg.regions.filter((r) => r.component === "issue-list").map((r) => <Region key={r.id} region={r} vm={vm} />)
       ) : (

@@ -58,3 +58,17 @@ test("P1 第一屏只有精简状态、商品表、待处理问题；合计与�
   // 状态用词：运行成功 ≠ 结果正确
   await expect(page.getByTestId("result-pane")).not.toContainText("解析成功");
 });
+
+test("商品表：不再有密集的来源绿点；行可展开看全部 25 字段，点字段打开证据并定位到 JSON", async ({ page }) => {
+  await pickInDrawer(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
+  const table = page.locator('[data-table-id="orderRows"]');
+  await expect(table.locator('[aria-label="有来源"]')).toHaveCount(0);
+  await table.getByTestId("row-expand").first().click();
+  const fields = table.getByTestId("row-fields");
+  await expect(fields.locator("button")).toHaveCount(26);
+  await fields.locator('[data-field="origin"]').click();
+  await expect(page.getByTestId("evidence-drawer")).toBeVisible();
+  await expect(page.getByTestId("selection-pointer")).toHaveText("/output/rows/0/values/origin");
+  // 有冲突的字段排在展开区最前
+  await expect(fields.locator("button").first()).toContainText("冲突");
+});
