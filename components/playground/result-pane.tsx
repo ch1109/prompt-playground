@@ -239,7 +239,7 @@ export function ResultPane({
 function ResultTab({ detail, canPreview }: { detail: RunDetail; canPreview: boolean }) {
   const run = detail.run;
   const select = useStudio((s) => s.select);
-  if (run.view_model && detail.renderer) return <BusinessView vm={run.view_model} cfg={detail.renderer} canPreview={canPreview} />;
+  if (run.view_model && detail.renderer) return <BusinessView vm={run.view_model} cfg={detail.renderer} canPreview={canPreview} status={run.status} mode={run.mode} />;
   if (run.status !== "SUCCEEDED") return <Empty>没有可展示的结果，原因见上方提示。</Empty>;
   if (run.parsed_json !== undefined) {
     return (

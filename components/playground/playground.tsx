@@ -453,7 +453,6 @@ export function Playground({ projectId }: { projectId: string }) {
     }
   }
 
-  // 拖拽分隔线
   /** 运行历史表（底部面板与「版本对比」模式共用） */
   const historyTable = (
     <>
@@ -544,6 +543,7 @@ export function Playground({ projectId }: { projectId: string }) {
     );
   }
 
+  // 拖拽分隔线
   const dragging = useRef(false);
   const container = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -749,13 +749,12 @@ export function Playground({ projectId }: { projectId: string }) {
           </div>
           {currentVersion && (
             <span className="flex min-w-0 items-center gap-1" data-testid="header-version" title={`当前版本：${currentVersion.label}`}>
-              <Badge tone="mute" className="max-w-[260px] truncate">
+              <Badge tone="mute" className="max-w-[180px] truncate">
                 版本 {currentVersion.label}
               </Badge>
               {versionDraft && <Badge tone="warn">未保存草稿</Badge>}
             </span>
           )}
-          {prompt?.active_schema_version && <Badge className="max-xl:hidden">{prompt.active_schema_version}</Badge>}
           {!narrow && (
             <div className="flex gap-0.5 rounded-xl bg-ink-800 p-1 text-[12.5px]" role="tablist" aria-label="工作模式" data-testid="work-modes">
               {MODES.map(([id, label, hint]) => (

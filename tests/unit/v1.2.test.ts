@@ -115,3 +115,21 @@ describe("通用提示词", () => {
     expect(runPipeline({ raw: '{"a": ', promptKind: "GENERIC_JSON", context: ctx }).status).toBe("PARSE_ERROR");
   });
 });
+
+describe("v1.3 结果第一屏精简状态", () => {
+  it("P1 headline：客户名称为主、编号为次；有独立 Gold 才算可评测", async () => {
+    const { getFixture } = await import("@/lib/fixtures/catalog");
+    const { snapshotForFixture } = await import("@/lib/fixtures/snapshot");
+    const { renderOnly } = await import("@/lib/runs/service");
+    const f = getFixture("constructed/p1-v3-conflict.json")!;
+    const withGold = renderOnly({ projectId: "jiuli", promptId: "jiuli-p1", raw: f.raw, snapshotId: snapshotForFixture("jiuli", f)!.snapshot_id });
+    const h = withGold.view_model!.metadata!.headline!;
+    expect(h.entity).toBe("商品");
+    expect(h.gold).toBe(true);
+    expect(renderOnly({ projectId: "jiuli", promptId: "jiuli-p1", raw: f.raw, snapshotId: null }).view_model!.metadata!.headline!.gold).toBe(false);
+    const recorded = getFixture("v3/SC-08-audit/P1")!;
+    const r = renderOnly({ projectId: "jiuli", promptId: "jiuli-p1", raw: recorded.raw, snapshotId: null });
+    expect(r.view_model!.metadata!.headline!.gold).toBe(false);
+    expect(r.adapter_version).toBe("1.1.0");
+  });
+});

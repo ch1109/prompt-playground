@@ -5,6 +5,7 @@ import type {
   EvidenceView,
   IssueView,
   RelationView,
+  Headline,
   SummaryItem,
   TableView,
 } from "@/lib/contracts/view-model";
@@ -34,7 +35,7 @@ export interface AdapterOutput {
   changes: ChangeView[];
   evidence: EvidenceView[];
   diagnostics: Diagnostic[];
-  metadata?: { summary?: SummaryItem[]; notes?: string[] };
+  metadata?: { summary?: SummaryItem[]; notes?: string[]; headline?: Headline };
 }
 
 export interface BusinessAdapter {

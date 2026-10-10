@@ -33,7 +33,7 @@ function goldCheck(b: VMBuilder, ctx: AdapterContext, rowCount: number) {
 
 export const jiuliP1V3: BusinessAdapter = {
   adapterId: "jiuli-p1-v3",
-  adapterVersion: "1.0.0",
+  adapterVersion: "1.1.0",
   promptKind: "JIULI_P1",
   schemaVersion: "jiuli-ai-v3",
   rendererId: "jiuli-p1-v3",
@@ -136,7 +136,7 @@ export const jiuliP1V3: BusinessAdapter = {
     });
     b.out.tables.push({
       id: "scopeRecords",
-      title: "共享范围 / 合计（scope_records）",
+      title: "合计与共享范围",
       columns: [
         { key: "kind", title: "类型" },
         { key: "member_row_nos", title: "成员行" },
@@ -163,7 +163,7 @@ export const jiuliP1V3: BusinessAdapter = {
     });
     b.out.tables.push({
       id: "unlinkedRecords",
-      title: "未能唯一对应的辅助记录（unlinked_records）",
+      title: "未关联记录（没能对应到唯一商品行的辅助信息）",
       columns: [
         { key: "fields", title: "字段" },
         { key: "candidate_row_nos", title: "候选行" },
@@ -188,7 +188,7 @@ export const jiuliP1V3: BusinessAdapter = {
     });
     b.out.tables.push({
       id: "readStatus",
-      title: "材料读取状态（read_status）",
+      title: "材料读取情况",
       columns: [
         { key: "file_id", title: "文件" },
         { key: "status", title: "状态" },
@@ -210,6 +210,7 @@ export const jiuliP1V3: BusinessAdapter = {
         { label: "输入材料数", value: arr(out.read_status).length },
       ],
       notes: ["统计仅为结构计数，不代表业务准确率。"],
+      headline: { entity: "商品", customerName: strOrUndef(cr.recognized_name), customerId: strOrUndef(cr.customer_id), gold: !!ctx.gold },
     };
     return b.out;
   },
@@ -219,7 +220,7 @@ export const jiuliP1V3: BusinessAdapter = {
 
 export const jiuliP1V2: BusinessAdapter = {
   adapterId: "jiuli-p1-v2",
-  adapterVersion: "1.0.0",
+  adapterVersion: "1.1.0",
   promptKind: "JIULI_P1",
   schemaVersion: "jiuli-ai-v2",
   rendererId: "jiuli-p1",
@@ -319,6 +320,7 @@ export const jiuliP1V2: BusinessAdapter = {
         { label: "输入材料数", value: arr(out.source_materials).length },
       ],
       notes: ["统计仅为结构计数，不代表业务准确率。"],
+      headline: { entity: "商品", customerName: strOrUndef(cr.recognized_name), customerId: strOrUndef(cr.customer_id), gold: !!ctx.gold },
     };
     return b.out;
   },

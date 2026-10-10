@@ -14,7 +14,12 @@ async function renderFixture(page: Page, prompt: string, fixtureId: string) {
   await page.click(`[data-prompt="${prompt}"]`);
   await page.getByRole("button", { name: "示例", exact: true }).click();
   await page.click(`[data-fixture-id="${fixtureId}"]`);
+  // 等提示词版本加载完再渲染：版本文本晚到会改动工作区，结果被误标为「来自上次运行」
+  await expect(page.getByTestId("header-version")).toBeVisible();
+  // 等这次渲染的结果真正读回来（结果页签默认就是选中的，不能只看页签）
+  const loaded = page.waitForResponse((r) => /\/api\/runs\/run_[^/?]+$/.test(r.url()) && r.request().method() === "GET");
   await page.click('[data-testid="btn-render"]');
+  await loaded;
   await expect(page.getByTestId("tab-visual")).toBeVisible();
 }
 

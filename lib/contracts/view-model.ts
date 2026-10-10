@@ -138,6 +138,16 @@ export interface ViewModel {
   changes: ChangeView[];
   evidence: EvidenceView[];
   diagnostics: Diagnostic[];
-  /** 扩展（03 文档：只读 ViewModel extension）：确定性统计，不是准确率 */
-  metadata?: { summary?: SummaryItem[]; notes?: string[] };
+  /** 扩展（03 文档：只读 ViewModel extension）：确定性统计，不是准确率；headline 供结果区第一屏的精简状态 */
+  metadata?: { summary?: SummaryItem[]; notes?: string[]; headline?: Headline };
+}
+
+/** 结果区第一屏的精简状态（只读扩展）：主要对象的称呼、客户名称（主）与编号（次）、是否对照了独立 Gold */
+export interface Headline {
+  /** 主表行的称呼，如「商品」 */
+  entity: string;
+  customerName?: string;
+  customerId?: string;
+  /** 快照里有独立 Gold 标注，才能谈准确性 */
+  gold: boolean;
 }

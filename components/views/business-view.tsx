@@ -81,15 +81,56 @@ function byId(cfg: RendererConfig) {
   return new Map(cfg.regions.map((r) => [r.id, r]));
 }
 
-// ---------------- P1：宽表 + 问题区 ----------------
+/** 表名去掉括号里的补充说明，用于一句话概括 */
+const shortTitle = (t: string) => t.replace(/（.*$/, "");
+
+// ---------------- P1：第一屏只有 主表 + 待处理问题；合计、读取情况、统计折叠 ----------------
 function WideTableLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
   const tableRegions = cfg.regions.filter((r) => r.component === "data-table");
+  const secondary = tableRegions
+    .slice(1)
+    .map((r) => ({ region: r, table: resolveTable(vm, r.binding) }))
+    .filter((x): x is { region: RendererRegion; table: TableView } => !!x.table);
+  const strip = cfg.regions.filter((r) => r.component === "summary-strip");
   return (
     <div className="space-y-3">
-      {cfg.regions.filter((r) => r.component === "summary-strip").map((r) => <Region key={r.id} region={r} vm={vm} />)}
       {tableRegions.slice(0, 1).map((r) => <Region key={r.id} region={r} vm={vm} extra={{ maxHeight: 460 }} />)}
-      {cfg.regions.filter((r) => r.component === "issue-list").map((r) => <Region key={r.id} region={r} vm={vm} />)}
-      {tableRegions.slice(1).map((r) => <Region key={r.id} region={r} vm={vm} />)}
+      {vm.issues.length ? (
+        cfg.regions.filter((r) => r.component === "issue-list").map((r) => <Region key={r.id} region={r} vm={vm} />)
+      ) : (
+        <p className="rounded-xl border border-ink-700 bg-ink-900 px-3.5 py-2 text-[12.5px] text-ink-300" data-testid="no-issues">
+          模型没有报告问题。<span className="text-ink-400">这不代表字段都正确，请抽查关键字段。</span>
+        </p>
+      )}
+      {secondary.length > 0 && (
+        <details className="rise overflow-hidden rounded-xl border border-ink-700 bg-ink-900" data-testid="secondary-details">
+          <summary className="cursor-pointer px-3.5 py-2 text-[12.5px]">
+            <span className="font-semibold text-ink-100">合计与读取情况</span>
+            <span className="ml-2 text-ink-400">{secondary.map(({ table }) => `${shortTitle(table.title)} ${table.rows.length ? `${table.rows.length} 条` : "无"}`).join(" · ")}</span>
+          </summary>
+          <div className="space-y-3 border-t border-ink-700/70 p-3">
+            {secondary.map(({ region, table }) =>
+              table.rows.length ? (
+                <Region key={region.id} region={region} vm={vm} />
+              ) : (
+                <p key={region.id} className="text-[12px] text-ink-400">
+                  {table.title}：没有记录。
+                </p>
+              ),
+            )}
+          </div>
+        </details>
+      )}
+      {strip.length > 0 && (
+        <details className="rise overflow-hidden rounded-xl border border-ink-700 bg-ink-900" data-testid="more-stats">
+          <summary className="cursor-pointer px-3.5 py-2 text-[12.5px] font-semibold text-ink-100">更多统计</summary>
+          <div className="border-t border-ink-700/70 p-3">
+            {strip.map((r) => (
+              <Region key={r.id} region={r} vm={vm} />
+            ))}
+          </div>
+        </details>
+      )}
       <OtherTables vm={vm} cfg={cfg} />
     </div>
   );
@@ -300,10 +341,57 @@ function DecisionLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
   );
 }
 
-export function BusinessView({ vm, cfg, canPreview }: { vm: ViewModel; cfg: RendererConfig; canPreview: boolean }) {
+export interface HeadlineProps {
+  /** 运行状态与模式：区分「模型运行成功」「示例结果」，以及结构是否完全符合 */
+  status: string;
+  mode: string;
+}
+
+/**
+ * 结果区第一屏的精简状态：运行是否成功、主表多少行、模型报告了几个问题、准确性能否评测。
+ * 明确把"模型运行成功"和"识别结果正确"分开：没有标准答案时写「准确性未评测」。
+ */
+export function ResultHeadline({ vm, cfg, status, mode }: { vm: ViewModel; cfg: RendererConfig } & HeadlineProps) {
+  const h = vm.metadata?.headline;
+  const mainId = cfg.regions.find((r) => r.component === "data-table")?.binding.slice(7);
+  const main = vm.tables.find((t) => t.id === mainId);
+  const run = mode === "MODEL_RUN" ? (status === "SCHEMA_INVALID" ? "模型运行成功，但结构不完全符合约定" : "模型运行成功") : mode === "REPLAY" ? "历史结果重新整理" : "示例 / 粘贴结果（未调用模型）";
+  return (
+    <div className="rise flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-ink-700 bg-ink-900 px-3.5 py-2.5 text-[12.5px]" data-testid="result-headline">
+      <span className={cx("font-semibold", status === "SCHEMA_INVALID" ? "text-risk" : "text-ink-100")}>{run}</span>
+      {main && (
+        <span>
+          <b className="text-ink-100">{main.rows.length}</b> 条{h?.entity ?? "记录"}
+        </span>
+      )}
+      <span>
+        <b className={cx(vm.issues.length ? "text-risk" : "text-ink-100")}>{vm.issues.length}</b> 条已报告问题
+      </span>
+      {h &&
+        (h.gold ? (
+          <Badge tone="ok">已对照标准答案</Badge>
+        ) : (
+          <span className="text-ink-400" title="没有独立的标准答案（Gold），问题数 0 不代表字段都正确">
+            <Badge tone="warn">准确性未评测</Badge> 没有标准答案
+          </span>
+        ))}
+      {h && (
+        <span className="ml-auto text-ink-300">
+          客户 <b className="text-ink-100">{h.customerName || "未识别"}</b>
+          {h.customerId && <span className="ml-1 font-mono text-[11px] text-ink-400">{h.customerId}</span>}
+        </span>
+      )}
+    </div>
+  );
+}
+
+export function BusinessView({ vm, cfg, canPreview, status, mode }: { vm: ViewModel; cfg: RendererConfig; canPreview: boolean } & HeadlineProps) {
   return (
     <IssuesContext.Provider value={vm.issues}>
-      <Layout vm={vm} cfg={cfg} canPreview={canPreview} />
+      <div className="space-y-3">
+        <ResultHeadline vm={vm} cfg={cfg} status={status} mode={mode} />
+        <Layout vm={vm} cfg={cfg} canPreview={canPreview} />
+      </div>
     </IssuesContext.Provider>
   );
 }

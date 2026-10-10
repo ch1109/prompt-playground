@@ -28,7 +28,12 @@ async function renderFixture(page: Page, prompt: string, fixtureId: string) {
   await page.click(`[data-prompt="${prompt}"]`);
   await page.getByRole("button", { name: "示例", exact: true }).click();
   await page.click(`[data-fixture-id="${fixtureId}"]`);
+  // 等提示词版本加载完再渲染：版本文本晚到会改动工作区，结果被误标为「来自上次运行」
+  await expect(page.getByTestId("header-version")).toBeVisible();
+  // 等这次渲染的结果真正读回来（结果页签默认就是选中的，不能只看页签）
+  const loaded = page.waitForResponse((r) => /\/api\/runs\/run_[^/?]+$/.test(r.url()) && r.request().method() === "GET");
   await page.click('[data-testid="btn-render"]');
+  await loaded;
   await expect(page.locator('[data-testid="result-pane"] [role="tab"][aria-selected="true"]')).toHaveText(/^(结果|原始输出)$/);
 }
 
@@ -559,7 +564,8 @@ test("重渲染 / 回放 / 保存版本失败时显示错误，不静默", async
   await expect(page.getByTestId("error-message")).toContainText("REPLAY_BOOM");
   await page.route("**/api/prompts/*/versions", boom("SAVE_BOOM"));
   await page.getByRole("button", { name: /^提示词/ }).click();
-  await page.getByLabel("System 提示词").fill("改动");
+  // 内容要唯一：与已有版本相同的内容不会发出保存请求
+  await page.getByLabel("System 提示词").fill(`改动 ${Date.now()}`);
   await page.getByLabel("新版本名称").fill("会失败的版本");
   await page.getByRole("button", { name: "保存为新版本" }).click();
   await expect(page.getByTestId("error-message")).toContainText("SAVE_BOOM");

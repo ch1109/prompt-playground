@@ -568,7 +568,7 @@ describe("AT28 代码版本升级重渲染历史 Run", () => {
     const re = rerender(run.run_id);
     expect(re.mode).toBe("REPLAY");
     expect(re.replay_of_run_id).toBe(run.run_id);
-    expect(re.rerender_note).toContain("jiuli-p1-v3@0.9.0 → jiuli-p1-v3@1.0.0");
+    expect(re.rerender_note).toContain("jiuli-p1-v3@0.9.0 → jiuli-p1-v3@1.1.0");
     expect(re.raw_response_hash).toBe(run.raw_response_hash);
     expect(getRun(run.run_id)!.adapter_version).toBe("0.9.0");
   });

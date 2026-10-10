@@ -38,3 +38,23 @@ test("默认进入「结果检查」：编辑区收起，顶部显示当前输�
   await expect(page.getByTestId("editor-pane")).toBeVisible();
   await expect(page.getByTestId("work-modes").getByRole("tab", { name: "提示词调试" })).toHaveAttribute("aria-selected", "true");
 });
+
+test("P1 第一屏只有精简状态、商品表、待处理问题；合计与读取情况折叠成一句话", async ({ page }) => {
+  await pickInDrawer(page, "jiuli-p1", "v3/2026(DG)ZW001-audit/P1");
+  const head = page.getByTestId("result-headline");
+  await expect(head).toContainText("示例 / 粘贴结果（未调用模型）");
+  await expect(head).toContainText("6 条商品");
+  await expect(head).toContainText("准确性未评测");
+  // 统计卡片和次要表格默认不展开
+  await expect(page.getByTestId("more-stats")).not.toHaveAttribute("open");
+  await expect(page.getByText("原始商品行数")).toBeHidden();
+  const sec = page.getByTestId("secondary-details");
+  await expect(sec).toContainText("合计与读取情况");
+  await expect(sec).toContainText("未关联记录 无");
+  await expect(page.locator('[data-table-id="readStatus"]')).toBeHidden();
+  await sec.locator("summary").click();
+  await expect(page.locator('[data-table-id="readStatus"]')).toBeVisible();
+  await expect(sec).toContainText("没有记录");
+  // 状态用词：运行成功 ≠ 结果正确
+  await expect(page.getByTestId("result-pane")).not.toContainText("解析成功");
+});
