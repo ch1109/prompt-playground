@@ -231,7 +231,8 @@ function Hunks({ title, hunks }: { title: string; hunks: StructuredPatchHunk[] |
 }
 
 /** 手动并排对比两次历史 Run 的 JSON（轻量对比，不是带准确率的正式评测） */
-export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: () => void }) {
+/** inline：嵌在「版本对比」模式页面里显示，不弹窗 */
+export function RunCompare({ ids, onClose, inline }: { ids: [string, string]; onClose: () => void; inline?: boolean }) {
   const [a, setA] = useState<RunDetail | null>(null);
   const [b, setB] = useState<RunDetail | null>(null);
   useEffect(() => {
@@ -243,14 +244,14 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
   const count = (k: DiffRow["kind"]) => rows.filter((r) => r.kind === k).length;
   const cmp = useMemo(() => (a && b ? compareRuns(a.run, b.run, [a.prompt_version_label, b.prompt_version_label]) : null), [a, b]);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-100/25 p-8 backdrop-blur-[2px]" role="dialog" aria-label="对比两次运行">
-      <div className="flex max-h-full w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-ink-700 bg-ink-900 shadow-2xl">
+    <div className={inline ? "" : "fixed inset-0 z-50 flex items-center justify-center bg-ink-100/25 p-8 backdrop-blur-[2px]"} role={inline ? "region" : "dialog"} aria-label="对比两次运行">
+      <div className={cx("flex w-full flex-col overflow-hidden rounded-2xl border border-ink-700 bg-ink-900", inline ? "" : "max-h-full max-w-5xl shadow-2xl")}>
         <div className="flex items-center gap-2 border-b border-ink-700 px-4 py-3">
           <span className="font-semibold">运行对比</span>
           <Badge>{ids[0]}</Badge>→<Badge>{ids[1]}</Badge>
           <span className="text-[11px] text-ink-400">A=左 / B=右；仅展示差异，不代表准确率</span>
           <Btn className="ml-auto" onClick={onClose}>
-            关闭
+            {inline ? "清除选择" : "关闭"}
           </Btn>
         </div>
         <div className="overflow-auto px-5 py-4">

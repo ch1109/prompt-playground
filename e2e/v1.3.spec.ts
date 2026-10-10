@@ -1,0 +1,40 @@
+// v1.3 界面验收：以「结果检查」为中心的交互重构。不预设工作模式，按新用户首次进入的默认状态操作。
+import { expect, type Page, test } from "@playwright/test";
+
+test.beforeEach(async ({ context }) => {
+  await context.addInitScript(() => localStorage.setItem("prompt-studio-guide-seen", "1"));
+});
+
+/** 结果检查模式：通过「更换输入」抽屉选一个示例，选完自动显示结果 */
+async function pickInDrawer(page: Page, prompt: string, fixtureId: string) {
+  await page.goto("/projects/jiuli/playground");
+  await page.click(`[data-prompt="${prompt}"]`);
+  await page.getByTestId("btn-change-input").click();
+  const drawer = page.getByTestId("input-drawer");
+  await drawer.getByRole("button", { name: "示例", exact: true }).click();
+  await drawer.locator(`[data-fixture-id="${fixtureId}"]`).click();
+  await expect(drawer).toHaveCount(0);
+}
+
+test("默认进入「结果检查」：编辑区收起，顶部显示当前输入；更换输入用抽屉，选完自动收起并显示结果", async ({ page }) => {
+  await page.goto("/projects/jiuli/playground");
+  await expect(page.getByTestId("work-modes").getByRole("tab", { name: "结果检查" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("editor-pane")).toHaveCount(0);
+  await page.click('[data-prompt="jiuli-p1"]');
+  await expect(page.getByTestId("context-bar")).toContainText("当前输入");
+  await pickInDrawer(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
+  const bar = page.getByTestId("context-bar");
+  await expect(bar).toContainText("P1 冲突");
+  await expect(bar).toContainText("人工构造");
+  await expect(bar).toContainText("有标准答案");
+  await expect(page.locator('[data-table-id="orderRows"]')).toBeVisible();
+  // 再次打开抽屉：已选示例收起成卡片，不再铺开整个列表
+  await page.getByTestId("btn-change-input").click();
+  await expect(page.getByTestId("input-drawer").getByTestId("fixture-current")).toContainText("P1 冲突");
+  await expect(page.getByTestId("input-drawer").locator("[data-fixture-id]")).toHaveCount(0);
+  await page.getByTestId("input-drawer").getByLabel("关闭输入抽屉").click();
+  // 「编辑提示词」切到提示词调试模式（左右分栏）
+  await page.getByTestId("btn-edit-prompt").click();
+  await expect(page.getByTestId("editor-pane")).toBeVisible();
+  await expect(page.getByTestId("work-modes").getByRole("tab", { name: "提示词调试" })).toHaveAttribute("aria-selected", "true");
+});

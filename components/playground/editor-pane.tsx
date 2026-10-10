@@ -144,8 +144,35 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
   );
 }
 
-function InputTab({ projectId, kind, fixtures, snapshots, capability, onPickFixture, onSnapshotsChanged, onMoreSnapshots }: { projectId: string; kind: PromptKind; fixtures: FixtureSummary[]; snapshots: SnapshotListItem[]; capability: CapabilityDTO | null; onPickFixture: (fixtureId: string) => void; onSnapshotsChanged: () => void; onMoreSnapshots?: () => void }) {
+/** 输入选择（编辑区「输入」页签与结果检查模式的「更换输入」抽屉共用）；onPicked：选定一个输入后回调（抽屉据此收起） */
+export function InputTab({
+  projectId,
+  kind,
+  fixtures,
+  snapshots,
+  capability,
+  onPickFixture,
+  onSnapshotsChanged,
+  onMoreSnapshots,
+  onPicked,
+}: {
+  projectId: string;
+  kind: PromptKind;
+  fixtures: FixtureSummary[];
+  snapshots: SnapshotListItem[];
+  capability: CapabilityDTO | null;
+  onPickFixture: (fixtureId: string) => void;
+  onSnapshotsChanged: () => void;
+  onMoreSnapshots?: () => void;
+  onPicked?: () => void;
+}) {
   const [ws, patch] = useWorkspace();
+  // 已选示例时列表默认收起；点「示例」或「更换示例」才展开
+  const [fixtureOpen, setFixtureOpen] = useState(false);
+  const created = () => {
+    onSnapshotsChanged();
+    onPicked?.();
+  };
   // 常用三种放主位置；粘贴 JSON、九立导入是少用的高级入口，放在右侧小字
   const modes: [InputMode, string][] = [
     ["upload", "上传文件"],
@@ -161,7 +188,13 @@ function InputTab({ projectId, kind, fixtures, snapshots, capability, onPickFixt
       <div className="flex items-center gap-2">
         <div className="flex flex-1 gap-0.5 rounded-xl bg-ink-800 p-1 text-[12.5px]">
           {modes.map(([m, l]) => (
-            <button key={m} onClick={() => patch({ inputMode: m })} className={cx("flex-1 whitespace-nowrap rounded-lg px-2 py-1 transition-colors", ws.inputMode === m ? "bg-ink-900 font-medium text-ink-100 shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-ink-400 hover:text-ink-100")}>
+            <button
+              key={m}
+              onClick={() => {
+                patch({ inputMode: m });
+                if (m === "fixture") setFixtureOpen(true);
+              }}
+              className={cx("flex-1 whitespace-nowrap rounded-lg px-2 py-1 transition-colors", ws.inputMode === m ? "bg-ink-900 font-medium text-ink-100 shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-ink-400 hover:text-ink-100")}>
               {l}
             </button>
           ))}
@@ -175,19 +208,31 @@ function InputTab({ projectId, kind, fixtures, snapshots, capability, onPickFixt
           ))}
         </div>
       </div>
-      {ws.inputMode === "fixture" && <FixtureList kind={kind} fixtures={fixtures} onPick={onPickFixture} />}
+      {ws.inputMode === "fixture" && (
+        <FixtureList
+          kind={kind}
+          fixtures={fixtures}
+          open={fixtureOpen}
+          onOpen={() => setFixtureOpen(true)}
+          onPick={(id) => {
+            setFixtureOpen(false);
+            onPickFixture(id);
+            onPicked?.();
+          }}
+        />
+      )}
       {ws.inputMode === "paste" && <PasteInput projectId={projectId} kind={kind} onSnapshotsChanged={onSnapshotsChanged} />}
-      {ws.inputMode === "snapshot" && <SnapshotList projectId={projectId} kind={kind} snapshots={snapshots} onSnapshotsChanged={onSnapshotsChanged} onMore={onMoreSnapshots} />}
-      {ws.inputMode === "upload" && <UploadInput projectId={projectId} kind={kind} onCreated={onSnapshotsChanged} />}
-      {ws.inputMode === "jiuli" && <JiuliImport projectId={projectId} capability={capability} onCreated={onSnapshotsChanged} />}
+      {ws.inputMode === "snapshot" && <SnapshotList projectId={projectId} kind={kind} snapshots={snapshots} onSnapshotsChanged={onSnapshotsChanged} onMore={onMoreSnapshots} onPicked={onPicked} />}
+      {ws.inputMode === "upload" && <UploadInput projectId={projectId} kind={kind} onCreated={created} />}
+      {ws.inputMode === "jiuli" && <JiuliImport projectId={projectId} capability={capability} onCreated={created} />}
     </div>
   );
 }
 
 const ORIGIN_GROUP = { RECORDED_MODEL_OUTPUT: "真实运行录制（不是标准答案）", CONSTRUCTED: "人工构造的异常示例", STRUCTURE_EXAMPLE: "格式示例" } as const;
 
-/** 样本库（R-01）：按来源分组，支持搜索与来源 / Gold / Schema 版本筛选；选中后显示详情 */
-function FixtureList({ kind, fixtures, onPick }: { kind: PromptKind; fixtures: FixtureSummary[]; onPick: (fixtureId: string) => void }) {
+/** 样本库（R-01）：按来源分组，支持搜索与来源 / Gold / Schema 版本筛选；已选示例时收起成一张卡片 */
+function FixtureList({ kind, fixtures, open, onOpen, onPick }: { kind: PromptKind; fixtures: FixtureSummary[]; open: boolean; onOpen: () => void; onPick: (fixtureId: string) => void }) {
   const [ws] = useWorkspace();
   const [q, setQ] = useState("");
   const [origin, setOrigin] = useState<"" | FixtureSummary["origin"]>("");
@@ -205,6 +250,16 @@ function FixtureList({ kind, fixtures, onPick }: { kind: PromptKind; fixtures: F
   );
   const picked = all.find((f) => f.id === ws.fixtureId);
   if (!all.length) return <Empty>当前提示词没有示例。可以直接「上传文件」，或在「更多 → 粘贴 JSON」粘贴模型输出。</Empty>;
+  if (picked && !open) {
+    return (
+      <div className="space-y-2" data-testid="fixture-current">
+        <FixtureDetailCard f={picked} />
+        <Btn onClick={onOpen} data-testid="btn-change-fixture">
+          更换示例（共 {all.length} 个）
+        </Btn>
+      </div>
+    );
+  }
   return (
     <div className="space-y-2" data-testid="fixture-list">
       <div className="flex flex-wrap items-center gap-1.5">
@@ -330,7 +385,7 @@ function PasteInput({ projectId, kind, onSnapshotsChanged }: { projectId: string
 
 const KIND_SHORT: Record<string, string> = { JIULI_P1: "P1", JIULI_P2: "P2", JIULI_P3: "P3", JIULI_P4: "P4", GENERIC_JSON: "通用" };
 
-function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged, onMore }: { projectId: string; kind: PromptKind; snapshots: SnapshotListItem[]; onSnapshotsChanged: () => void; onMore?: () => void }) {
+function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged, onMore, onPicked }: { projectId: string; kind: PromptKind; snapshots: SnapshotListItem[]; onSnapshotsChanged: () => void; onMore?: () => void; onPicked?: () => void }) {
   const [ws, patch] = useWorkspace();
   const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -407,7 +462,10 @@ function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged, onMore }
             <li key={s.snapshot_id} className="flex items-start gap-1">
               <button
                 disabled={!ok}
-                onClick={() => patch({ snapshotId: s.snapshot_id })}
+                onClick={() => {
+                  patch({ snapshotId: s.snapshot_id });
+                  onPicked?.();
+                }}
                 data-snapshot-id={s.snapshot_id}
                 className={cx("min-w-0 flex-1 rounded-lg px-2 py-1 text-left text-[12px] hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-50", ws.snapshotId === s.snapshot_id && "bg-accent/[0.07] ring-1 ring-accent/40")}
               >

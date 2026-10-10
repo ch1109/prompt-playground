@@ -4,9 +4,9 @@ import { type ReactNode, useCallback, useEffect, useRef, useState, useSyncExtern
 import { api, ApiError } from "@/lib/client/api";
 import type { CapabilityDTO, FixtureSummary, PromptDef, PromptVersionDTO, ProviderInfoDTO, RunDetail, RunListItem, SnapshotListItem } from "@/lib/client/types";
 import type { PromptKind } from "@/lib/contracts/run";
-import { emptyWorkspace, inputSignature, runSnapshotId, useStudio } from "@/lib/state/studio-store";
-import { Badge, Btn, cx, runStatusView } from "@/components/ui";
-import { EditorPane } from "./editor-pane";
+import { emptyWorkspace, inputSignature, runSnapshotId, useStudio, type WorkMode } from "@/lib/state/studio-store";
+import { Badge, Btn, cx, Empty, runStatusView } from "@/components/ui";
+import { EditorPane, InputTab } from "./editor-pane";
 import { ResultPane } from "./result-pane";
 import { RunCompare } from "./run-compare";
 import { GuideDialog } from "./guide-dialog";
@@ -35,6 +35,15 @@ interface ProjectDTO {
   archived_at?: string | null;
 }
 
+const MODES: [WorkMode, string, string][] = [
+  ["check", "结果检查", "结果占满屏幕，看哪里错了"],
+  ["debug", "提示词调试", "左边改提示词和输入，右边看结果"],
+  ["compare", "版本对比", "选两次运行，看差在哪"],
+];
+
+const FIXTURE_ORIGIN = { STRUCTURE_EXAMPLE: "格式示例", RECORDED_MODEL_OUTPUT: "真实录制 · 非标准答案", CONSTRUCTED: "人工构造" } as const;
+const SOURCE_LABEL: Record<string, string> = { FILE_IMPORT: "上传文件", JIULI_READONLY: "九立导入", FIXTURE: "示例", JSON_IMPORT: "粘贴导入" };
+
 const NEW_PROMPT_KINDS: [PromptKind, string][] = [
   ["GENERIC_JSON", "通用提示词"],
   ["JIULI_P1", "P1 委托材料识别"],
@@ -62,7 +71,6 @@ export function Playground({ projectId }: { projectId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [compare, setCompare] = useState<string[]>([]);
-  const [showCompare, setShowCompare] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   // 第一次打开自动弹出新手指南；读写失败（隐私模式等）就不弹，不影响使用
   useEffect(() => {
@@ -82,6 +90,10 @@ export function Playground({ projectId }: { projectId: string }) {
   };
   const narrow = useNarrow();
   const [narrowPane, setNarrowPane] = useState<"editor" | "result">("editor");
+  /** 结果检查模式下的「更换输入」抽屉 */
+  const [inputDrawer, setInputDrawer] = useState(false);
+  // 窄屏沿用「编辑 / 结果」页签；三种工作模式只在宽屏生效
+  const mode: WorkMode = narrow ? "debug" : s.workMode;
 
   const promptId = s.activePromptId;
   const prompt = prompts.find((p) => p.prompt_id === promptId);
@@ -442,6 +454,96 @@ export function Playground({ projectId }: { projectId: string }) {
   }
 
   // 拖拽分隔线
+  /** 运行历史表（底部面板与「版本对比」模式共用） */
+  const historyTable = (
+    <>
+      <table className="w-full text-[12.5px]">
+                <thead className="sticky top-0 z-10 bg-ink-900/95 text-[11.5px] text-ink-400 backdrop-blur">
+                  <tr className="border-b border-ink-700">
+                    {["对比", "时间", "Prompt", "模式", "状态", "标签", "模型", ""].map((h) => (
+                      <th key={h} className="px-3 py-2 text-left font-medium">
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {!runs.length && (
+                    <tr>
+                      <td colSpan={8} className="px-3 py-5 text-ink-400">
+                        当前 Prompt 还没有运行记录。
+                      </td>
+                    </tr>
+                  )}
+                  {runs.map((r) => (
+                    <tr key={r.run_id} className={cx("border-b border-ink-800 hover:bg-ink-850", ws.runId === r.run_id && "bg-accent/[0.06]")}>
+                      <td className="px-3">
+                        <input
+                          type="checkbox"
+                          aria-label={`对比 ${r.run_id}`}
+                          checked={compare.includes(r.run_id)}
+                          onChange={(e) => setCompare((c) => (e.target.checked ? [...c.slice(-1), r.run_id] : c.filter((x) => x !== r.run_id)))}
+                          className="accent-ink-100"
+                        />
+                      </td>
+                      <td className="px-3 font-mono text-[11.5px] text-ink-400">{r.started_at.slice(5, 19).replace("T", " ")}</td>
+                      <td className="px-3 font-mono text-[11.5px]">{SHORT[r.prompt_kind]}</td>
+                      <td className="px-3">
+                        <Badge>{r.mode}</Badge>
+                      </td>
+                      <td className="px-3">
+                        <Badge tone={runStatusView(r.status, r.schema_id, r.prompt_kind).tone}>{runStatusView(r.status, r.schema_id, r.prompt_kind).label}</Badge>
+                      </td>
+                      <td className="max-w-[320px] truncate px-3">{r.label}</td>
+                      <td className="px-3 text-ink-400">{r.model_name ?? "—"}</td>
+                      <td className="space-x-1 px-3 py-1 whitespace-nowrap">
+                        <Btn onClick={() => replay(r.run_id)}>回放</Btn>
+                        <Btn onClick={() => rerender(r.run_id)} title="用当前的显示规则重新整理这次结果（另存为新记录，不改历史）">
+                          重渲染
+                        </Btn>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+      {moreRuns && (
+                <div className="p-2 text-center">
+                  <Btn onClick={() => setRunLimit((n) => n + RUN_PAGE)}>加载更多（已显示最近 {runs.length} 条）</Btn>
+                </div>
+              )}
+    </>
+  );
+  const moreSnapshots = snapshots.length >= snapshotLimit ? () => setSnapshotLimit((n) => n + SNAPSHOT_PAGE) : undefined;
+
+  /** 结果检查模式顶部：当前输入（名称 / 来源 / Gold）、提示词版本、模型，与三个常用动作 */
+  function contextBar() {
+    const fx = ws.inputMode === "fixture" ? fixtures.find((f) => f.id === ws.fixtureId) : undefined;
+    const snap = snapshots.find((x) => x.snapshot_id === runSnapshotId(ws));
+    const name = fx?.title ?? (ws.inputMode === "paste" ? "粘贴的 JSON" : snap?.label) ?? "还没选输入";
+    const source = fx ? FIXTURE_ORIGIN[fx.origin] : ws.inputMode === "paste" ? "粘贴" : snap ? (SOURCE_LABEL[snap.source_type] ?? snap.source_type) : null;
+    const gold = fx ? fx.hasGold : null;
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-ink-700 bg-ink-900 px-4 py-2 text-[12.5px]" data-testid="context-bar">
+        <span className="text-ink-400">当前输入</span>
+        <span className="max-w-[360px] truncate font-semibold text-ink-100" title={name}>
+          {name}
+        </span>
+        {source && <Badge tone="info">{source}</Badge>}
+        {gold !== null && <Badge tone={gold ? "ok" : "mute"}>{gold ? "有标准答案" : "无标准答案"}</Badge>}
+        <Btn onClick={() => setInputDrawer(true)} data-testid="btn-change-input">
+          更换输入
+        </Btn>
+        <span className="ml-auto text-ink-400">
+          提示词 {currentVersion?.label ?? "—"}
+          {versionDraft ? "（未保存草稿）" : ""} · {provider?.configured ? provider.model : "模型未配置"}
+        </span>
+        <Btn onClick={() => s.set("workMode", "debug")} data-testid="btn-edit-prompt">
+          编辑提示词
+        </Btn>
+      </div>
+    );
+  }
+
   const dragging = useRef(false);
   const container = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -654,6 +756,22 @@ export function Playground({ projectId }: { projectId: string }) {
             </span>
           )}
           {prompt?.active_schema_version && <Badge className="max-xl:hidden">{prompt.active_schema_version}</Badge>}
+          {!narrow && (
+            <div className="flex gap-0.5 rounded-xl bg-ink-800 p-1 text-[12.5px]" role="tablist" aria-label="工作模式" data-testid="work-modes">
+              {MODES.map(([id, label, hint]) => (
+                <button
+                  key={id}
+                  role="tab"
+                  aria-selected={mode === id}
+                  title={hint}
+                  onClick={() => s.set("workMode", id)}
+                  className={cx("whitespace-nowrap rounded-lg px-2.5 py-0.5 transition-colors", mode === id ? "bg-ink-900 font-medium text-ink-100 shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-ink-400 hover:text-ink-100")}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="ml-auto flex items-center gap-2">
             {error && (
               <span className="max-w-[420px] truncate rounded-lg bg-stamp-soft px-2 py-1 text-[12px] text-stamp" title={error} data-testid="error-message">
@@ -667,7 +785,7 @@ export function Playground({ projectId }: { projectId: string }) {
             <Btn onClick={() => setShowGuide(true)} title="查看三步上手说明和名词解释" data-testid="btn-guide">
               新手指南
             </Btn>
-            <Btn onClick={() => setShowCompare(true)} disabled={compare.length !== 2} title="在运行历史中勾选两条记录后对比">
+            <Btn onClick={() => s.set("workMode", "compare")} disabled={compare.length !== 2} title="在运行历史中勾选两条记录后对比">
               对比 {compare.length}/2
             </Btn>
             <Btn tone="outline" onClick={renderOnly} disabled={busy} data-testid="btn-render" title="离线整理已有输出为表格，不调用模型，不花钱">
@@ -701,8 +819,8 @@ export function Playground({ projectId }: { projectId: string }) {
             ))}
           </div>
         )}
-        <div ref={container} className="flex min-h-0 flex-1">
-          {(narrow ? narrowPane === "editor" : !s.maximized) && (
+        <div ref={container} className="relative flex min-h-0 flex-1">
+          {mode === "debug" && (narrow ? narrowPane === "editor" : true) && (
             <>
               <div className="min-w-0" style={{ width: narrow ? "100%" : `${s.editorPct}%` }}>
                 {prompt && (
@@ -716,7 +834,7 @@ export function Playground({ projectId }: { projectId: string }) {
                     onSaveVersion={saveVersion}
                     onPickFixture={pickFixture}
                     onSnapshotsChanged={loadSnapshots}
-                    onMoreSnapshots={snapshots.length >= snapshotLimit ? () => setSnapshotLimit((n) => n + SNAPSHOT_PAGE) : undefined}
+                    onMoreSnapshots={moreSnapshots}
                     projectId={projectId}
                   />
                 )}
@@ -728,80 +846,85 @@ export function Playground({ projectId }: { projectId: string }) {
               )}
             </>
           )}
-          {(!narrow || narrowPane === "result") && (
-            <div className="min-w-0 flex-1 bg-ink-850">
+          {mode !== "compare" && (!narrow || narrowPane === "result") && (
+            <div className="flex min-w-0 flex-1 flex-col bg-ink-850">
               {promptsLoaded && !prompts.length ? (
                 <p className="m-4 rounded-xl border border-risk/25 bg-risk/[0.08] p-3 text-[12.5px] text-risk" data-testid="project-missing">
                   该项目不存在或没有提示词。请在左侧切换或新建项目。
                 </p>
               ) : (
-                <ResultPane detail={detail} dirty={dirty} canPreview={capability?.status === "CONNECTED_DEMO_FILES"} loading={busy} onCancel={cancelRun} onRetry={retryRun} emptyHint={emptyHint} recentRun={runs[0]} onOpenRun={replay} example={exampleFixture} onOpenExample={openExample} />
+                <>
+                  {mode === "check" && prompt && contextBar()}
+                  <div className="min-h-0 flex-1">
+                    <ResultPane
+                      detail={detail}
+                      dirty={dirty}
+                      canPreview={capability?.status === "CONNECTED_DEMO_FILES"}
+                      loading={busy}
+                      onCancel={cancelRun}
+                      onRetry={retryRun}
+                      emptyHint={emptyHint}
+                      recentRun={runs[0]}
+                      onOpenRun={replay}
+                      example={exampleFixture}
+                      onOpenExample={openExample}
+                      onCompare={() => s.set("workMode", "compare")}
+                      onEditPrompt={() => s.set("workMode", "debug")}
+                    />
+                  </div>
+                </>
               )}
             </div>
+          )}
+          {mode === "compare" && (
+            <div className="min-h-0 min-w-0 flex-1 space-y-3 overflow-auto bg-ink-850 p-3" data-testid="compare-mode">
+              <section className="overflow-hidden rounded-xl border border-ink-700 bg-ink-900">
+                <header className="border-b border-ink-700/70 px-3.5 py-2 text-[12px] font-semibold">勾选两次运行进行对比（{compare.length}/2）</header>
+                <div className="max-h-64 overflow-auto">{historyTable}</div>
+              </section>
+              {compare.length === 2 ? (
+                <RunCompare ids={compare as [string, string]} inline onClose={() => setCompare([])} />
+              ) : (
+                <Empty>在上面勾选两条运行记录，就会在这里显示它们的差异。常用做法：同一输入，改提示词前后各运行一次。</Empty>
+              )}
+            </div>
+          )}
+          {inputDrawer && mode === "check" && prompt && (
+            <>
+              <div className="absolute inset-0 z-30 bg-ink-100/15" onClick={() => setInputDrawer(false)} aria-hidden="true" />
+              <aside className="absolute inset-y-0 left-0 z-40 flex w-[480px] max-w-full flex-col border-r border-ink-700 bg-ink-900 shadow-2xl" role="dialog" aria-label="更换输入" data-testid="input-drawer">
+                <div className="flex items-center justify-between border-b border-ink-700 px-3 py-2">
+                  <span className="text-[13px] font-semibold">更换输入</span>
+                  <button onClick={() => setInputDrawer(false)} className="text-ink-400 hover:text-ink-100" aria-label="关闭输入抽屉">
+                    ✕
+                  </button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-auto p-3">
+                  <InputTab
+                    projectId={projectId}
+                    kind={prompt.prompt_kind}
+                    fixtures={fixtures}
+                    snapshots={snapshots}
+                    capability={capability}
+                    // 结果检查模式：选了示例就直接显示它的结果
+                    onPickFixture={(id) => void openExample(id)}
+                    onSnapshotsChanged={loadSnapshots}
+                    onMoreSnapshots={moreSnapshots}
+                    onPicked={() => setInputDrawer(false)}
+                  />
+                </div>
+              </aside>
+            </>
           )}
         </div>
 
         {/* 底部运行历史 */}
-        {s.historyOpen && (
+        {s.historyOpen && mode !== "compare" && (
           <div className="h-60 shrink-0 overflow-auto border-t border-ink-700" data-testid="history">
-            <table className="w-full text-[12.5px]">
-              <thead className="sticky top-0 z-10 bg-ink-900/95 text-[11.5px] text-ink-400 backdrop-blur">
-                <tr className="border-b border-ink-700">
-                  {["对比", "时间", "Prompt", "模式", "状态", "标签", "模型", ""].map((h) => (
-                    <th key={h} className="px-3 py-2 text-left font-medium">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {!runs.length && (
-                  <tr>
-                    <td colSpan={8} className="px-3 py-5 text-ink-400">
-                      当前 Prompt 还没有运行记录。
-                    </td>
-                  </tr>
-                )}
-                {runs.map((r) => (
-                  <tr key={r.run_id} className={cx("border-b border-ink-800 hover:bg-ink-850", ws.runId === r.run_id && "bg-accent/[0.06]")}>
-                    <td className="px-3">
-                      <input
-                        type="checkbox"
-                        aria-label={`对比 ${r.run_id}`}
-                        checked={compare.includes(r.run_id)}
-                        onChange={(e) => setCompare((c) => (e.target.checked ? [...c.slice(-1), r.run_id] : c.filter((x) => x !== r.run_id)))}
-                        className="accent-ink-100"
-                      />
-                    </td>
-                    <td className="px-3 font-mono text-[11.5px] text-ink-400">{r.started_at.slice(5, 19).replace("T", " ")}</td>
-                    <td className="px-3 font-mono text-[11.5px]">{SHORT[r.prompt_kind]}</td>
-                    <td className="px-3">
-                      <Badge>{r.mode}</Badge>
-                    </td>
-                    <td className="px-3">
-                      <Badge tone={runStatusView(r.status, r.schema_id, r.prompt_kind).tone}>{runStatusView(r.status, r.schema_id, r.prompt_kind).label}</Badge>
-                    </td>
-                    <td className="max-w-[320px] truncate px-3">{r.label}</td>
-                    <td className="px-3 text-ink-400">{r.model_name ?? "—"}</td>
-                    <td className="space-x-1 px-3 py-1 whitespace-nowrap">
-                      <Btn onClick={() => replay(r.run_id)}>回放</Btn>
-                      <Btn onClick={() => rerender(r.run_id)} title="用当前的显示规则重新整理这次结果（另存为新记录，不改历史）">
-                        重渲染
-                      </Btn>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {moreRuns && (
-              <div className="p-2 text-center">
-                <Btn onClick={() => setRunLimit((n) => n + RUN_PAGE)}>加载更多（已显示最近 {runs.length} 条）</Btn>
-              </div>
-            )}
+            {historyTable}
           </div>
         )}
       </main>
-      {showCompare && compare.length === 2 && <RunCompare ids={compare as [string, string]} onClose={() => setShowCompare(false)} />}
       {showGuide && <GuideDialog onClose={closeGuide} />}
     </div>
   );

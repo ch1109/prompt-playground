@@ -6,6 +6,8 @@ import type { SelectionState } from "@/lib/contracts/renderer-config";
 import type { RunDetail } from "@/lib/client/types";
 
 export type ResultTab = "visual" | "json" | "details";
+/** 工作模式：结果检查（默认，结果占满）/ 提示词调试（编辑区 + 结果区）/ 版本对比 */
+export type WorkMode = "check" | "debug" | "compare";
 export type InputMode = "fixture" | "paste" | "snapshot" | "jiuli" | "upload";
 
 /** 每个 Prompt 独立的工作草稿与上次 Run（PRD §5.2） */
@@ -78,12 +80,12 @@ interface StudioState {
   selection: SelectionState;
   resultTab: ResultTab;
   editorPct: number;
-  maximized: boolean;
   sidebarCollapsed: boolean;
   historyOpen: boolean;
   evidenceOpen: boolean;
   /** 最后一次运行使用的模式，用于计算 DIRTY */
   lastMode: Record<string, "RENDER_ONLY" | "MODEL_RUN">;
+  workMode: WorkMode;
   setActivePrompt(id: string): void;
   patchWorkspace(promptId: string, patch: Partial<Workspace>): void;
   putRun(detail: RunDetail): void;
@@ -105,11 +107,11 @@ export const useStudio = create<StudioState>()(
       selection: { runId: null },
       resultTab: "visual",
       editorPct: 42,
-      maximized: false,
       sidebarCollapsed: false,
       historyOpen: false,
       evidenceOpen: false,
       lastMode: {},
+      workMode: "check",
       setActivePrompt: (id) => set({ activePromptId: id, selection: { runId: get().workspaces[id]?.runId ?? null } }),
       patchWorkspace: (promptId, patch) =>
         set((s) => ({ workspaces: { ...s.workspaces, [promptId]: { ...(s.workspaces[promptId] ?? emptyWorkspace()), ...patch } } })),
@@ -133,7 +135,7 @@ export const useStudio = create<StudioState>()(
       },
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
-      partialize: (s) => ({ activePromptId: s.activePromptId, workspaces: s.workspaces, lastMode: s.lastMode, editorPct: s.editorPct, sidebarCollapsed: s.sidebarCollapsed }),
+      partialize: (s) => ({ activePromptId: s.activePromptId, workspaces: s.workspaces, lastMode: s.lastMode, editorPct: s.editorPct, sidebarCollapsed: s.sidebarCollapsed, workMode: s.workMode }),
       // 旧数据缺少新增字段时用默认值补齐
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<StudioState>;

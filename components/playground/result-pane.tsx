@@ -64,6 +64,8 @@ export function ResultPane({
   onOpenRun,
   example,
   onOpenExample,
+  onCompare,
+  onEditPrompt,
 }: {
   detail?: RunDetail;
   dirty: boolean;
@@ -80,10 +82,12 @@ export function ResultPane({
   /** 空状态示例样本（明确标为 Fixture） */
   example?: FixtureSummary;
   onOpenExample?: (fixtureId: string) => void;
+  /** 结果里的下一步动作：对比历史运行 / 编辑提示词 */
+  onCompare?: () => void;
+  onEditPrompt?: () => void;
 }) {
   const tab = useStudio((s) => s.resultTab);
   const setStore = useStudio((s) => s.set);
-  const maximized = useStudio((s) => s.maximized);
   const evidenceOpen = useStudio((s) => s.evidenceOpen);
   const run = detail?.run;
   const vm = run?.view_model ?? undefined;
@@ -113,9 +117,6 @@ export function ResultPane({
           )}
           <Btn onClick={() => setStore("evidenceOpen", !evidenceOpen)} aria-pressed={evidenceOpen}>
             来源
-          </Btn>
-          <Btn onClick={() => setStore("maximized", !maximized)} title="结果区放大 / 还原">
-            {maximized ? "⤡ 还原" : "⤢ 放大"}
           </Btn>
         </div>
       </div>

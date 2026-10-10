@@ -3,7 +3,11 @@ import { expect, type Page, test } from "@playwright/test";
 
 // 新手指南第一次打开会自动弹出并挡住页面；其他用例默认视为已看过，指南本身由下面单独的用例验证
 test.beforeEach(async ({ context }) => {
-  await context.addInitScript(() => localStorage.setItem("prompt-studio-guide-seen", "1"));
+  await context.addInitScript(() => {
+    localStorage.setItem("prompt-studio-guide-seen", "1");
+    // 这些用例按「提示词调试」的左右分栏操作；只在首次进入时设定，刷新后仍以页面保存的状态为准
+    if (!localStorage.getItem("prompt-studio:workspace")) localStorage.setItem("prompt-studio:workspace", JSON.stringify({ state: { workMode: "debug" }, version: 2 }));
+  });
 });
 
 test("新手指南第一次打开自动弹出，关闭后刷新不再弹出", async ({ browser }) => {
@@ -300,6 +304,8 @@ test("请求预览与真实运行使用同一份输入：切换输入来源后�
   await expect(page.getByTestId("request-preview")).not.toContainText("jiuli-demo-p1");
   // 没有请求上下文的样本：明确说明不能真实运行，不显示其他快照的预览
   await page.getByRole("button", { name: "输入", exact: true }).click();
+  // 已选示例时列表收起，先点「更换示例」
+  await page.getByTestId("btn-change-fixture").click();
   await page.click('[data-fixture-id="v2/p1-original-output-example.json"]');
   await page.getByRole("button", { name: "请求预览" }).click();
   await expect(page.getByTestId("editor-pane")).toContainText("没有附带输入");
@@ -327,7 +333,8 @@ test("刷新页面不丢工作区：草稿、输入选择、当前结果都恢�
   await expect(page.getByLabel("System 提示词")).toHaveValue("刷新前的草稿");
   await expect(page.getByTestId("editor-pane").getByText("未保存草稿")).toBeVisible();
   await page.getByRole("button", { name: "输入", exact: true }).click();
-  await expect(page.locator('[data-fixture-id="constructed/p3-v3-multi-candidate.json"]')).toHaveClass(/ring-accent/);
+  // 已选示例收起成当前示例卡片
+  await expect(page.getByTestId("fixture-current")).toContainText("P3 一对多");
   expect(consoleErrors).toEqual([]);
 });
 
@@ -517,6 +524,7 @@ test("上传原件：伪装文件被拒绝；Excel 委托单建快照后可预�
 
 test("运行对比：显示关键指标、提示词差异区与输出差异", async ({ page }) => {
   await renderFixture(page, "jiuli-p3", "constructed/p3-v3-multi-candidate.json");
+  await page.getByTestId("btn-change-fixture").click();
   await page.click('[data-fixture-id="constructed/p3-v3-unknown-enum.json"]');
   await page.click('[data-testid="btn-render"]');
   await page.getByRole("button", { name: /运行历史/ }).click();
@@ -528,7 +536,7 @@ test("运行对比：显示关键指标、提示词差异区与输出差异", as
   await boxes.nth(0).check();
   await boxes.nth(1).check();
   await page.getByRole("button", { name: "对比 2/2" }).click();
-  const dialog = page.getByRole("dialog", { name: "对比两次运行" });
+  const dialog = page.getByRole("region", { name: "对比两次运行" });
   await expect(dialog.getByTestId("compare-metrics")).toContainText("Schema 错误数");
   await expect(dialog.getByTestId("compare-metrics")).toContainText("原始响应 Hash");
   await expect(dialog.getByText("至少一方没有记录实际发送的提示词").first()).toBeVisible();
