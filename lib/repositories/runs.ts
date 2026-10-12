@@ -73,23 +73,47 @@ export function listRuns(projectId: string, promptId?: string, limit = 100): Run
       ? db().prepare("SELECT run_id, body FROM runs WHERE project_id = ? AND prompt_id = ? ORDER BY started_at DESC LIMIT ?").all(projectId, promptId, limit)
       : db().prepare("SELECT run_id, body FROM runs WHERE project_id = ? ORDER BY started_at DESC LIMIT ?").all(projectId, limit)
   ) as { run_id: string; body: string }[];
-  return rows.map((r) => {
-    const b = JSON.parse(r.body) as Run & { label?: string };
-    return {
-      run_id: b.run_id,
-      prompt_id: b.prompt_id,
-      prompt_kind: b.prompt_kind,
-      mode: b.mode,
-      status: b.status,
-      started_at: b.started_at,
-      input_snapshot_id: b.input_snapshot_id ?? null,
-      label: b.label ?? "",
-      model_name: b.model_name ?? null,
-      is_unsaved_draft: b.is_unsaved_draft,
-      replay_of_run_id: b.replay_of_run_id ?? null,
-      schema_id: b.schema_id ?? null,
-    };
-  });
+  return rows.map((r) => toListItem(r.body));
+}
+
+function toListItem(body: string): RunListItem {
+  const b = JSON.parse(body) as Run & { label?: string };
+  return {
+    run_id: b.run_id,
+    prompt_id: b.prompt_id,
+    prompt_kind: b.prompt_kind,
+    mode: b.mode,
+    status: b.status,
+    started_at: b.started_at,
+    input_snapshot_id: b.input_snapshot_id ?? null,
+    label: b.label ?? "",
+    model_name: b.model_name ?? null,
+    is_unsaved_draft: b.is_unsaved_draft,
+    replay_of_run_id: b.replay_of_run_id ?? null,
+    schema_id: b.schema_id ?? null,
+  };
+}
+
+/**
+ * 按条件分页查询 Run（MCP list_runs）：按开始时间倒序；cursor 是上一页最后一条的「开始时间|run_id」。
+ * sampleId 是样本 ID（经 FIXTURE 快照的 source_ids.fixture_id 关联）。
+ */
+export function queryRuns(f: { projectId: string; kind?: string; status?: string; sampleId?: string; cursor?: string; limit: number }): { items: RunListItem[]; next_cursor: string | null } {
+  const where = ["project_id = ?"];
+  const args: (string | number)[] = [f.projectId];
+  if (f.kind) where.push("prompt_kind = ?"), args.push(f.kind);
+  if (f.status) where.push("status = ?"), args.push(f.status);
+  if (f.sampleId) where.push("input_snapshot_id IN (SELECT snapshot_id FROM input_snapshots WHERE json_extract(body, '$.source_ids.fixture_id') = ?)"), args.push(f.sampleId);
+  if (f.cursor) {
+    const [at, id] = f.cursor.split("|");
+    where.push("(started_at < ? OR (started_at = ? AND run_id < ?))"), args.push(at, at, id ?? "");
+  }
+  const rows = db()
+    .prepare(`SELECT body FROM runs WHERE ${where.join(" AND ")} ORDER BY started_at DESC, run_id DESC LIMIT ?`)
+    .all(...args, f.limit + 1) as { body: string }[];
+  const items = rows.slice(0, f.limit).map((r) => toListItem(r.body));
+  const last = items[items.length - 1];
+  return { items, next_cursor: rows.length > f.limit && last ? `${last.started_at}|${last.run_id}` : null };
 }
 
 /** 每个样本在本项目中的运行次数、最近运行时间与「标为错误」的标注数（经 FIXTURE 快照关联） */

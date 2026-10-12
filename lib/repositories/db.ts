@@ -49,6 +49,20 @@ CREATE TRIGGER IF NOT EXISTS annotation_revisions_no_update BEFORE UPDATE ON ann
 BEGIN SELECT RAISE(ABORT, '标注修订记录只追加不修改'); END;
 CREATE TRIGGER IF NOT EXISTS annotation_revisions_no_delete BEFORE DELETE ON annotation_revisions
 BEGIN SELECT RAISE(ABORT, '标注修订记录只追加不删除'); END;
+-- Agent 访问授权（v1.3 §7.2 / §12.2 AgentAccessGrant）：令牌只存 sha256，到期或撤销后失效
+CREATE TABLE IF NOT EXISTS agent_access_grants (
+  grant_id TEXT PRIMARY KEY, principal TEXT NOT NULL, scopes TEXT NOT NULL, project_ids TEXT NOT NULL,
+  customer_ids TEXT, token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, revoked_at TEXT
+);
+-- Agent 调用审计（v1.3 §13.1-8）：谁、何时、调用了什么、读了哪个 Run、是否被拒绝；只追加
+CREATE TABLE IF NOT EXISTS agent_audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, grant_id TEXT, principal TEXT, tool TEXT NOT NULL,
+  args TEXT, run_id TEXT, outcome TEXT NOT NULL, detail TEXT
+);
+CREATE TRIGGER IF NOT EXISTS agent_audit_log_no_update BEFORE UPDATE ON agent_audit_log
+BEGIN SELECT RAISE(ABORT, '审计记录只追加不修改'); END;
+CREATE TRIGGER IF NOT EXISTS agent_audit_log_no_delete BEFORE DELETE ON agent_audit_log
+BEGIN SELECT RAISE(ABORT, '审计记录只追加不删除'); END;
 CREATE TRIGGER IF NOT EXISTS raw_responses_immutable BEFORE UPDATE ON raw_responses
 BEGIN SELECT RAISE(ABORT, 'raw_responses 不可修改'); END;
 -- 只有运行中（RUNNING）的 Run 可以更新为终态；结束后不可修改
@@ -89,8 +103,9 @@ export function db(): DatabaseSync {
     const pvCols = (d.prepare("PRAGMA table_info(prompt_versions)").all() as { name: string }[]).map((c) => c.name);
     if (!pvCols.includes("change_note")) d.exec("ALTER TABLE prompt_versions ADD COLUMN change_note TEXT");
     globalForDb.__studioDb = d;
-    // 进程刚启动时不可能有正在进行的调用：遗留的 RUNNING 都是上次被中断的
-    markInterruptedRuns(d);
+    // 进程刚启动时不可能有正在进行的调用：遗留的 RUNNING 都是上次被中断的。
+    // 命令行工具（STUDIO_CLI=1，如授权管理）与网页服务同时打开数据库，不能替网页服务做这个判断
+    if (!process.env.STUDIO_CLI) markInterruptedRuns(d);
   }
   return globalForDb.__studioDb;
 }
