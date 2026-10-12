@@ -1,0 +1,198 @@
+{
+  "client": "Codex CLI 0.162.1",
+  "mode": "codex exec（非交互，sandbox=read-only），MCP 地址 http://127.0.0.1:3000/api/mcp",
+  "session_id": "01a12e54-f390-7df0-bf99-22c3dbce9734",
+  "tokens_used": 56633,
+  "report": {
+    "target": {
+      "run_id": "run_a02aa2b093634c1a",
+      "stage": "P1",
+      "table_id": "orderRows",
+      "row_id": "row-1",
+      "field": "origin",
+      "json_pointer": "/output/rows/0/values/origin"
+    },
+    "observed_problem": {
+      "display_value": "韩国",
+      "error_confirmed": false,
+      "conclusion": "现有证据未发现该字段错误：输入文本、模型原始值和显示值一致，且符合当次 P1 规则。但尚未独立核对原始 Excel，不能确认完整链路无误。"
+    },
+    "verified_facts": [
+      {
+        "fact": "展开后的用户消息只有一份 ORDER；工作表 12-10-2 的 F 列标为“产地”，第 7 行 F 值为“韩国”。来源快照内容一致。",
+        "evidence_refs": [
+          "run_a02aa2b093634c1a#prompt/user:L1",
+          "run_a02aa2b093634c1a#/output/rows/0/evidence/5/source"
+        ]
+      },
+      {
+        "fact": "原始响应第一条商品行对应工作表第 7 行，型号为 H25G9TCXXCX702A#9；origin 为“韩国”，证据定位到 F7。",
+        "evidence_refs": [
+          "run_a02aa2b093634c1a#trace/raw_response"
+        ]
+      },
+      {
+        "fact": "对象显示值与原始节点均为“韩国”；adapter_converted=false。",
+        "evidence_refs": [
+          "run_a02aa2b093634c1a#trace/adapter"
+        ]
+      },
+      {
+        "fact": "输入清单记录该工作表文本已发送，complete=true、gaps=[]，发送图片数为 0；这些是采集记录，不能代替服务商实际请求。",
+        "evidence_refs": [
+          "run_a02aa2b093634c1a#trace/preprocessing"
+        ]
+      },
+      {
+        "fact": "Schema 检查状态为 SUCCEEDED，未返回解析错误或 Schema 诊断问题。",
+        "evidence_refs": [
+          "run_a02aa2b093634c1a#trace/schema"
+        ]
+      },
+      {
+        "fact": "人工标注为 0 条；没有版本化 Gold，评测返回 EVAL_NOT_AVAILABLE。",
+        "source_tools": [
+          "get_annotations",
+          "get_evaluation"
+        ],
+        "annotation_evidence_ref": null,
+        "note": "没有标注 ID，不构造虚假的标注引用，也不计算准确率。"
+      }
+    ],
+    "root_cause_category": "EVIDENCE_INSUFFICIENT",
+    "root_cause_conclusion": "该分类表示完整核验仍缺证据，不表示已经发现字段错误或确定了错误根因。",
+    "diagnosis_by_direction": [
+      {
+        "direction": "输入/预处理",
+        "conclusion": "文本中存在明确产地，未发现遗漏该字段的证据。是否忠实抽取原件、服务商最终收到什么，仍未确认。",
+        "categories_checked": [
+          "INPUT_MISSING_PAGE",
+          "PREPROCESSING_ERROR",
+          "OCR_VISION_ERROR"
+        ],
+        "evidence_refs": {
+          "supporting": [
+            "run_a02aa2b093634c1a#trace/actual_request",
+            "run_a02aa2b093634c1a#trace/built_input"
+          ],
+          "counter": [
+            "run_a02aa2b093634c1a#trace/preprocessing",
+            "run_a02aa2b093634c1a#/output/rows/0/evidence/5/source"
+          ]
+        }
+      },
+      {
+        "direction": "Prompt规则",
+        "conclusion": "未发现此次取值违反规则。第 42 行要求委托商品产地优先；委托产地非空时保留“韩国”符合该规则。未确认 PROMPT_RULE_ERROR 或 BUSINESS_RULE_ERROR。",
+        "evidence_refs": {
+          "supporting": [],
+          "counter": [
+            "run_a02aa2b093634c1a#prompt/system:L42",
+            "run_a02aa2b093634c1a#prompt/system:L12",
+            "run_a02aa2b093634c1a#/output/rows/0/evidence/5/source"
+          ]
+        }
+      },
+      {
+        "direction": "模型判断",
+        "conclusion": "原始输出与输入中第 7 行产地一致，商品型号也对应同一行。未发现 MODEL_REASONING_ERROR 或 RELATION_SELECTION_ERROR。",
+        "evidence_refs": {
+          "supporting": [],
+          "counter": [
+            "run_a02aa2b093634c1a#trace/raw_response",
+            "run_a02aa2b093634c1a#/output/rows/0/evidence/5/source"
+          ]
+        }
+      },
+      {
+        "direction": "候选召回",
+        "conclusion": "本对象是 P1 主体委托字段直接提取。规则明确本阶段不读取查货池，且输入产地非空，无需辅助补缺；未发现 CANDIDATE_RECALL_ERROR。没有 P3 证据，不推断后续召回情况。",
+        "evidence_refs": {
+          "supporting": [],
+          "counter": [
+            "run_a02aa2b093634c1a#prompt/system:L6",
+            "run_a02aa2b093634c1a#prompt/system:L42",
+            "run_a02aa2b093634c1a#prompt/user:L1"
+          ]
+        }
+      },
+      {
+        "direction": "Schema/Adapter",
+        "conclusion": "Schema 检查未报错，原始值与显示值一致，未发现 SCHEMA_CONTRACT_ERROR 或 ADAPTER_MAPPING_ERROR。独立 Adapter 诊断缺失，不能确认内部过程全部正确。",
+        "evidence_refs": {
+          "supporting": [
+            "run_a02aa2b093634c1a#trace/adapter"
+          ],
+          "counter": [
+            "run_a02aa2b093634c1a#trace/schema",
+            "run_a02aa2b093634c1a#trace/raw_response",
+            "run_a02aa2b093634c1a#trace/adapter"
+          ]
+        }
+      },
+      {
+        "direction": "Gold",
+        "conclusion": "没有人工标注和版本化 Gold，无法判定 INCORRECT_GOLD，也不能把本次推断作为标准答案。",
+        "source_tools": [
+          "get_annotations",
+          "get_evaluation"
+        ],
+        "evidence_refs": {
+          "supporting": [],
+          "counter": []
+        }
+      }
+    ],
+    "evidence_refs": {
+      "supporting": [
+        "run_a02aa2b093634c1a#trace/actual_request",
+        "run_a02aa2b093634c1a#trace/built_input",
+        "run_a02aa2b093634c1a#trace/adapter"
+      ],
+      "counter": [
+        "run_a02aa2b093634c1a#/output/rows/0/evidence/5/source",
+        "run_a02aa2b093634c1a#prompt/user:L1",
+        "run_a02aa2b093634c1a#prompt/system:L42",
+        "run_a02aa2b093634c1a#trace/raw_response",
+        "run_a02aa2b093634c1a#trace/schema"
+      ],
+      "interpretation": "supporting 支持“完整核验缺证据”；counter 反对“当前 origin 已被证实错误”。"
+    },
+    "limitations": [
+      "capture_quality=PARTIAL；服务商实际请求、运行时输入副本、响应元数据和独立 Adapter 诊断未保存。",
+      "来源 availability=METADATA_ONLY；读取到的是输入快照文本，不是独立核验过的原始 Excel 单元格。",
+      "上游抽取版本未知，无法确认原件到文本的转换是否准确。",
+      "原件预览访问被浏览器安全策略拒绝，返回原因是用户已拒绝该访问权限；未绕过限制。",
+      "Schema 工具提供了版本与检查结果，未返回完整 Schema 定义。"
+    ],
+    "proposed_change": {
+      "prompt_fix_supported": false,
+      "recommendation": "暂不建议修改 origin 规则或字段值。先补齐原件核验；只有发现具体不一致，再提出对应修复。",
+      "changes_executed": []
+    },
+    "impact_scope": {
+      "diagnostic_scope": "仅此 Run 的 orderRows/row-1/origin",
+      "confirmed_error_scope": [],
+      "business_data_changed": false,
+      "prompt_or_code_changed": false
+    },
+    "verification_plan": [
+      {
+        "step": 1,
+        "action": "通过获准的原件预览核对 2件.xlsx、工作表 12-10-2 的 F 列表头、F7 值及 D7 型号。",
+        "pass_condition": "F 列为产地，F7 为韩国，D7 与目标商品型号一致。"
+      },
+      {
+        "step": 2,
+        "action": "若原件与快照不一致，追查上游抽取和预处理；若一致，则本字段在已读输入和 P1 规则范围内可判为一致。",
+        "pass_condition": "明确差异发生在哪一层，并提供对应 evidence_ref。"
+      },
+      {
+        "step": 3,
+        "action": "如需确认服务商实际收到的内容，补充同次请求记录；必要时另行授权完整采集的重放。",
+        "pass_condition": "实际请求、原始响应和显示值可逐层核对；重放不作为旧 Run 缺失记录的替代证明。"
+      }
+    ],
+    "result_status": "NEEDS_MORE_EVIDENCE"
+  }
+}
