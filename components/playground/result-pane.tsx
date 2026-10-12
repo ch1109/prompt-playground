@@ -549,19 +549,61 @@ const ANN_LABEL: Record<string, string> = {
 };
 const ASSESS_LABEL = { WRONG: "标注错误", CORRECT: "标注正确", UNSURE: "暂不确定" } as const;
 type Assess = keyof typeof ASSESS_LABEL;
-/** 错误归因（需求 R-14） */
+/** 错误归因（v1.3 §6.2 的 13 类）；新标注只能选这些 */
 const CATEGORY_LABEL: Record<string, string> = {
-  INPUT_PREPROCESSING: "输入预处理：丢页 / 转换失真 / 未发送图像",
-  MODEL_EXTRACTION: "模型识别：收到证据但识别错误",
-  PROMPT_RULE: "提示词规则：规则执行或优先级错误",
-  CANDIDATE_RECALL: "候选召回：正确候选未进入 P3 输入",
-  MATCH_JUDGEMENT: "匹配裁决：候选已存在但 P3 判错",
-  SCHEMA_CONTRACT: "输出结构：Schema / 契约问题",
-  ADAPTER_RENDER: "显示映射：模型输出正确但显示错",
+  INPUT_MISSING_PAGE: "输入缺页：相关页没有进入模型",
+  PREPROCESSING_ERROR: "预处理：文字抽取 / 转图失真",
+  OCR_VISION_ERROR: "看图识字：原件已发送但读错",
+  PROMPT_RULE_ERROR: "提示词规则：规则缺失或优先级错误",
+  MODEL_REASONING_ERROR: "模型判断：证据和规则都在但判断错",
+  CANDIDATE_RECALL_ERROR: "候选召回：正确候选没进入 P3 输入",
+  RELATION_SELECTION_ERROR: "关系裁决：候选已在输入中但 P3 选错",
+  SCHEMA_CONTRACT_ERROR: "输出结构：Schema / 契约问题",
+  ADAPTER_MAPPING_ERROR: "显示映射：模型输出正确但显示错",
+  BUSINESS_RULE_ERROR: "业务规则：九立规则本身有误",
+  INCORRECT_GOLD: "标准答案有误",
+  EVIDENCE_INSUFFICIENT: "证据不足，无法判断",
+  UNKNOWN: "暂时无法归因",
+};
+/** v1.1 的旧归因：只用于显示已有标注 */
+const LEGACY_CATEGORY_LABEL: Record<string, string> = {
+  INPUT_PREPROCESSING: "输入预处理",
+  MODEL_EXTRACTION: "模型识别",
+  PROMPT_RULE: "提示词规则",
+  CANDIDATE_RECALL: "候选召回",
+  MATCH_JUDGEMENT: "匹配裁决",
+  SCHEMA_CONTRACT: "输出结构",
+  ADAPTER_RENDER: "显示映射",
   UNDETERMINED: "暂时无法归因",
 };
+const categoryText = (c: string) => CATEGORY_LABEL[c] ?? (LEGACY_CATEGORY_LABEL[c] ? `${LEGACY_CATEGORY_LABEL[c]}（旧分类）` : c);
+const REVISION_ACTION = { CREATE: "新增", UPDATE: "修改", DELETE: "删除" } as const;
 /** P3 才有候选 / 关系类型；其余只用「评判」与「备注」 */
 const annTypeChoices = (kind: string) => ["ASSESSMENT", ...(kind === "JIULI_P3" ? ["CORRECT_CANDIDATE", "WRONG_RELATION"] : []), "NOTE"];
+
+/** 标注的修订历史：展开时才渲染旧版本内容，默认只显示修订次数 */
+function RevisionHistory({ a }: { a: AnnotationDTO }) {
+  const [open, setOpen] = useState(false);
+  const revs = a.revisions ?? [];
+  return (
+    <details className="mt-0.5" data-testid="annotation-revisions" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary className="cursor-pointer text-[10.5px] text-ink-400">
+        修订 {revs.length - 1} 次（第 {a.revision} 版）
+      </summary>
+      {open && (
+        <ol className="ml-3 list-decimal text-[10.5px] text-ink-300">
+          {revs.map((r) => (
+            <li key={r.revision}>
+              {REVISION_ACTION[r.action]} · {r.created_at.slice(0, 19).replace("T", " ")} · {r.author ?? "—"}：{r.body.assessment ? ASSESS_LABEL[r.body.assessment] : (ANN_LABEL[r.body.issue_type] ?? r.body.issue_type)}
+              {r.body.error_category && ` · ${categoryText(r.body.error_category)}`}
+              {r.body.expected_value && ` · 正确值 ${r.body.expected_value}`}
+            </li>
+          ))}
+        </ol>
+      )}
+    </details>
+  );
+}
 
 /** 纠错标注独立保存，不修改模型输出、九立池或原始附件 */
 function AnnotationForm({ detail }: { detail: RunDetail }) {
@@ -713,6 +755,7 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
                       {v}
                     </option>
                   ))}
+                  {category && !CATEGORY_LABEL[category] && <option value={category}>{categoryText(category)}</option>}
                 </select>
                 <label className="flex items-center gap-1 text-[11px] text-ink-300">
                   <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} aria-label="归因已核实" />
@@ -753,7 +796,7 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
               </div>
               {a.error_category && (
                 <div>
-                  归因：{CATEGORY_LABEL[a.error_category] ?? a.error_category}
+                  归因：{categoryText(a.error_category)}
                   {a.category_confirmed === false && <span className="ml-1 text-risk">（疑似 / 待核实）</span>}
                 </div>
               )}
@@ -761,6 +804,7 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
               {a.expected_value && <div>正确值：{a.expected_value}</div>}
               {a.note && <div className="text-ink-300">{a.note}</div>}
               {a.author && <div className="text-[10px] text-ink-600">{a.author} · {a.created_at.slice(0, 19).replace("T", " ")}</div>}
+              {(a.revisions?.length ?? 0) > 1 && <RevisionHistory a={a} />}
             </li>
           ))}
         </ul>

@@ -40,6 +40,15 @@ CREATE TABLE IF NOT EXISTS annotations (
   annotation_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id),
   target_json_pointer TEXT, target TEXT, issue_type TEXT NOT NULL, expected_value TEXT, note TEXT, created_at TEXT NOT NULL
 );
+-- 标注修订历史（v1.3 §6.1）：每次新增 / 修改 / 删除标注各追加一条完整快照，只追加不修改
+CREATE TABLE IF NOT EXISTS annotation_revisions (
+  annotation_id TEXT NOT NULL, revision INTEGER NOT NULL, run_id TEXT NOT NULL, action TEXT NOT NULL,
+  body TEXT NOT NULL, author TEXT, created_at TEXT NOT NULL, PRIMARY KEY (annotation_id, revision)
+);
+CREATE TRIGGER IF NOT EXISTS annotation_revisions_no_update BEFORE UPDATE ON annotation_revisions
+BEGIN SELECT RAISE(ABORT, '标注修订记录只追加不修改'); END;
+CREATE TRIGGER IF NOT EXISTS annotation_revisions_no_delete BEFORE DELETE ON annotation_revisions
+BEGIN SELECT RAISE(ABORT, '标注修订记录只追加不删除'); END;
 CREATE TRIGGER IF NOT EXISTS raw_responses_immutable BEFORE UPDATE ON raw_responses
 BEGIN SELECT RAISE(ABORT, 'raw_responses 不可修改'); END;
 -- 只有运行中（RUNNING）的 Run 可以更新为终态；结束后不可修改

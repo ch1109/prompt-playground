@@ -155,7 +155,7 @@ test("标注类型精简（P3 才有候选/关系类型），标注错误必须�
   await expect(form.getByRole("radio")).toHaveText(["标注错误", "标注正确", "暂不确定"]);
   await page.getByLabel("正确值").fill("无牌");
   await expect(page.getByRole("button", { name: "保存标注" })).toBeDisabled();
-  await page.getByLabel("错误归因").selectOption("MODEL_EXTRACTION");
+  await page.getByLabel("错误归因").selectOption("OCR_VISION_ERROR");
   await page.getByRole("button", { name: "保存标注" }).click();
   await expect(form.getByRole("status")).toHaveText("已保存");
   await expect(form).toContainText("（疑似 / 待核实）");
@@ -806,7 +806,7 @@ test("标注独立保存，不改原始输出", async ({ page }) => {
   await page.locator('[data-change-id="OR_001:gross_weight"]').click();
   await page.getByLabel("正确值").fill("2.4");
   await page.getByLabel("标注备注").fill("模型应选箱单 GW");
-  await page.getByLabel("错误归因").selectOption("PROMPT_RULE");
+  await page.getByLabel("错误归因").selectOption("PROMPT_RULE_ERROR");
   await page.getByRole("button", { name: "保存标注" }).click();
   await expect(page.getByTestId("annotation-form")).toContainText("正确值：2.4");
   // 有标注的行显示角标；可导出 CSV
@@ -828,7 +828,7 @@ test("标注可修改、可删除：删除后角标消失、导出中不再出�
   const marker = `标注-${Date.now()}`;
   await page.getByLabel("正确值").fill("错写的值");
   await page.getByLabel("标注备注").fill(marker);
-  await page.getByLabel("错误归因").selectOption("UNDETERMINED");
+  await page.getByLabel("错误归因").selectOption("UNKNOWN");
   await page.getByRole("button", { name: "保存标注" }).click();
   const form = page.getByTestId("annotation-form");
   await expect(form).toContainText("正确值：错写的值");
@@ -840,6 +840,13 @@ test("标注可修改、可删除：删除后角标消失、导出中不再出�
   await page.getByRole("button", { name: "保存修改" }).click();
   await expect(form).toContainText("正确值：1.8");
   await expect(form).not.toContainText("错写的值");
+  // 修订留痕（v1.3 §6.1）：展开后能看到修改前的值
+  const revs = form.getByTestId("annotation-revisions").last();
+  await expect(revs).toContainText("修订 1 次（第 2 版）");
+  await revs.locator("summary").click();
+  await expect(revs).toContainText("正确值 错写的值");
+  await expect(revs).toContainText("正确值 1.8");
+  await revs.locator("summary").click();
   let csv = await page.request.get("/api/annotations/export?project=jiuli&format=csv").then((r) => r.text());
   expect(csv).toContain(marker);
   expect(csv).not.toContain("错写的值");

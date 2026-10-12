@@ -8,7 +8,8 @@ import type { InputSnapshot } from "@/lib/contracts/snapshot";
 import { getFixture } from "@/lib/fixtures/catalog";
 import { snapshotForFixture } from "@/lib/fixtures/snapshot";
 import { OpenAICompatibleProvider, setProviderForTests } from "@/lib/models/openai-compatible";
-import { resetDbForTests } from "@/lib/repositories/db";
+import { db, resetDbForTests } from "@/lib/repositories/db";
+import { addAnnotation, checkAssessment, deleteAnnotation, getAnnotation, listAnnotations, updateAnnotation } from "@/lib/repositories/runs";
 import { buildInputManifest } from "@/lib/runs/input-manifest";
 import { captureQuality, diagnosticStates } from "@/lib/runs/run-evidence";
 import { modelRun, renderOnly } from "@/lib/runs/service";
@@ -162,5 +163,56 @@ describe("M1-3 采集完整度与诊断状态（读取时推导）", () => {
     expect(warnings.map((w) => w.code)).toEqual(["SCHEMA_VERSION_MISMATCH"]);
     expect(warnings[0].reason).toMatch(/jiuli-ai-v3.*jiuli-ai-v2/);
     expect(states.map((s) => s.code)).not.toContain("EVAL_NOT_AVAILABLE");
+  });
+});
+
+describe("M1-4 标注修订留痕 + 13 类错误归因", () => {
+  const base = { target_json_pointer: "/output/rows/0/values/origin", target: "orderRows / row-1 / origin", issue_type: "ASSESSMENT", note: null, source_ref_ids: [], author: "测试员" };
+  const revisionRows = (id: string) => db().prepare("SELECT revision, action, body FROM annotation_revisions WHERE annotation_id = ? ORDER BY revision").all(id) as { revision: number; action: string; body: string }[];
+
+  it("RUN-07 新增、修改、删除各留一版；第 1 版保留原值；原始响应 hash 始终不变", () => {
+    const run = renderOnly({ projectId: "jiuli", promptId: "jiuli-p1", raw: fx("v3/SC-08/P1").raw });
+    const rawHash = () => (db().prepare("SELECT sha256 FROM raw_responses WHERE run_id = ?").get(run.run_id) as { sha256: string }).sha256;
+    const before = rawHash();
+    const a = addAnnotation({ ...base, run_id: run.run_id, expected_value: "日本", assessment: "WRONG", error_category: "OCR_VISION_ERROR", category_confirmed: false });
+    expect(a.revision).toBe(1);
+    updateAnnotation(a.annotation_id, { issue_type: "ASSESSMENT", expected_value: "韩国", note: null, assessment: "WRONG", error_category: "INPUT_MISSING_PAGE" });
+    const mid = getAnnotation(a.annotation_id)!;
+    expect(mid.revision).toBe(2);
+    expect(mid.revisions!.map((r) => [r.action, r.body.expected_value, r.body.error_category])).toEqual([
+      ["CREATE", "日本", "OCR_VISION_ERROR"],
+      ["UPDATE", "韩国", "INPUT_MISSING_PAGE"],
+    ]);
+    expect(deleteAnnotation(a.annotation_id)).toBe(true);
+    expect(listAnnotations(run.run_id)).toEqual([]);
+    expect(revisionRows(a.annotation_id).map((r) => r.action)).toEqual(["CREATE", "UPDATE", "DELETE"]);
+    expect(rawHash()).toBe(before);
+  });
+
+  it("修订记录只能追加：改写或删除都被数据库拒绝", () => {
+    const run = renderOnly({ projectId: "jiuli", promptId: "jiuli-p1", raw: fx("v3/SC-08/P1").raw });
+    const a = addAnnotation({ ...base, run_id: run.run_id, expected_value: "x", assessment: "UNSURE", error_category: null });
+    expect(() => db().prepare("UPDATE annotation_revisions SET body = '{}' WHERE annotation_id = ?").run(a.annotation_id)).toThrow(/只追加/);
+    expect(() => db().prepare("DELETE FROM annotation_revisions WHERE annotation_id = ?").run(a.annotation_id)).toThrow(/只追加/);
+  });
+
+  it("v1.3 之前的旧标注第一次修改时，先补一版原始内容再记修改", () => {
+    const run = renderOnly({ projectId: "jiuli", promptId: "jiuli-p1", raw: fx("v3/SC-08/P1").raw });
+    db()
+      .prepare("INSERT INTO annotations (annotation_id, run_id, target_json_pointer, target, issue_type, expected_value, note, created_at, assessment, error_category, source_ref_ids) VALUES ('ann_legacy', ?, NULL, NULL, 'ASSESSMENT', '旧值', NULL, '2026-10-09T00:00:00.000Z', 'WRONG', 'MODEL_EXTRACTION', '[]')")
+      .run(run.run_id);
+    expect(getAnnotation("ann_legacy")!.revision).toBe(1);
+    updateAnnotation("ann_legacy", { issue_type: "ASSESSMENT", expected_value: "新值", note: null });
+    expect(getAnnotation("ann_legacy")!.revisions!.map((r) => [r.revision, r.action, r.body.expected_value])).toEqual([
+      [1, "CREATE", "旧值"],
+      [2, "UPDATE", "新值"],
+    ]);
+  });
+
+  it("错误归因：接受 13 类新值，旧 8 类仍可读写，其他值拒绝", () => {
+    expect(checkAssessment({ assessment: "WRONG", error_category: "RELATION_SELECTION_ERROR" })).toBeNull();
+    expect(checkAssessment({ assessment: "WRONG", error_category: "MATCH_JUDGEMENT" })).toBeNull();
+    expect(checkAssessment({ assessment: "WRONG", error_category: "SOMETHING_ELSE" as never })).toMatch(/UNKNOWN/);
+    expect(checkAssessment({ assessment: "WRONG", error_category: null })).toMatch(/UNKNOWN/);
   });
 });

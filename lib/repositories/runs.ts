@@ -95,8 +95,25 @@ export function listRuns(projectId: string, promptId?: string, limit = 100): Run
 /** ASSESSMENT = v1.1 的评判型标注（错误 / 正确 / 不确定 + 错误归因）；其余为旧类型与 P3 关系类型 */
 export const ANNOTATION_TYPES = ["ASSESSMENT", "MODEL_WRONG", "CORRECT_VALUE", "ERROR_REASON", "CORRECT_CANDIDATE", "WRONG_RELATION", "NOTE"];
 export const ASSESSMENTS = ["WRONG", "CORRECT", "UNSURE"] as const;
-/** 错误归因（需求 R-14） */
-export const ERROR_CATEGORIES = ["INPUT_PREPROCESSING", "MODEL_EXTRACTION", "PROMPT_RULE", "CANDIDATE_RECALL", "MATCH_JUDGEMENT", "SCHEMA_CONTRACT", "ADAPTER_RENDER", "UNDETERMINED"] as const;
+/** 错误归因（v1.3 §6.2）：新标注使用这 13 类 */
+export const ERROR_CATEGORIES = [
+  "INPUT_MISSING_PAGE",
+  "PREPROCESSING_ERROR",
+  "OCR_VISION_ERROR",
+  "PROMPT_RULE_ERROR",
+  "MODEL_REASONING_ERROR",
+  "CANDIDATE_RECALL_ERROR",
+  "RELATION_SELECTION_ERROR",
+  "SCHEMA_CONTRACT_ERROR",
+  "ADAPTER_MAPPING_ERROR",
+  "BUSINESS_RULE_ERROR",
+  "INCORRECT_GOLD",
+  "EVIDENCE_INSUFFICIENT",
+  "UNKNOWN",
+] as const;
+/** v1.1 的 8 类旧归因：已有标注照常读取、显示，接口也仍接受；不改写旧数据 */
+export const LEGACY_ERROR_CATEGORIES = ["INPUT_PREPROCESSING", "MODEL_EXTRACTION", "PROMPT_RULE", "CANDIDATE_RECALL", "MATCH_JUDGEMENT", "SCHEMA_CONTRACT", "ADAPTER_RENDER", "UNDETERMINED"] as const;
+type ErrorCategory = (typeof ERROR_CATEGORIES)[number] | (typeof LEGACY_ERROR_CATEGORIES)[number];
 
 export interface Annotation {
   annotation_id: string;
@@ -109,22 +126,35 @@ export interface Annotation {
   created_at: string;
   updated_at?: string | null;
   assessment?: (typeof ASSESSMENTS)[number] | null;
-  error_category?: (typeof ERROR_CATEGORIES)[number] | null;
+  error_category?: ErrorCategory | null;
   /** 错误归因是否已核实；false = 疑似 / 待核实 */
   category_confirmed?: boolean | null;
   /** 保存时该位置上模型输出的原值（JSON 文本）；指向请求上下文或不存在时为 null */
   model_value?: string | null;
   source_ref_ids?: string[];
   author?: string | null;
+  /** 当前修订号（从 1 开始）与全部修订（旧到新）；只在读取时附带 */
+  revision?: number;
+  revisions?: AnnotationRevision[];
 }
 
-export type AnnotationInput = Omit<Annotation, "annotation_id" | "created_at" | "updated_at">;
+export interface AnnotationRevision {
+  revision: number;
+  action: "CREATE" | "UPDATE" | "DELETE";
+  /** 这一版标注的完整内容 */
+  body: Omit<Annotation, "revision" | "revisions">;
+  author: string | null;
+  created_at: string;
+}
+
+export type AnnotationInput = Omit<Annotation, "annotation_id" | "created_at" | "updated_at" | "revision" | "revisions">;
 
 /** 校验评判字段的组合；返回错误说明或 null */
 export function checkAssessment(a: Pick<Annotation, "assessment" | "error_category">): string | null {
   if (a.assessment && !ASSESSMENTS.includes(a.assessment)) return `assessment 必须是 ${ASSESSMENTS.join("/")}`;
-  if (a.error_category && !ERROR_CATEGORIES.includes(a.error_category)) return `error_category 必须是 ${ERROR_CATEGORIES.join("/")}`;
-  if (a.assessment === "WRONG" && !a.error_category) return "标注错误时必须选择错误归因（证据不足可选 UNDETERMINED 或标为待核实）";
+  if (a.error_category && !(ERROR_CATEGORIES as readonly string[]).includes(a.error_category) && !(LEGACY_ERROR_CATEGORIES as readonly string[]).includes(a.error_category))
+    return `error_category 必须是 ${ERROR_CATEGORIES.join("/")}`;
+  if (a.assessment === "WRONG" && !a.error_category) return "标注错误时必须选择错误归因（证据不足可选 UNKNOWN 或标为待核实）";
   if (a.assessment === "CORRECT" && a.error_category) return "标注正确时不填错误归因";
   return null;
 }
@@ -136,6 +166,45 @@ function fromRow(r: Row): Annotation {
     category_confirmed: r.category_confirmed === null || r.category_confirmed === undefined ? null : r.category_confirmed === 1,
     source_ref_ids: typeof r.source_ref_ids === "string" ? (JSON.parse(r.source_ref_ids) as string[]) : [],
   };
+}
+
+/**
+ * 追加一条修订。没有任何修订记录的旧标注（v1.3 之前创建）在第一次修改 / 删除时，
+ * 先用修改前的内容补一条 CREATE，保证第 1 版是原始内容。
+ */
+function appendRevision(action: AnnotationRevision["action"], after: Annotation, before?: Annotation) {
+  const d = db();
+  const strip = ({ revision: _r, revisions: _rs, ...a }: Annotation) => a;
+  const insert = d.prepare("INSERT INTO annotation_revisions (annotation_id, revision, run_id, action, body, author, created_at) VALUES (?,?,?,?,?,?,?)");
+  let last = (d.prepare("SELECT MAX(revision) AS n FROM annotation_revisions WHERE annotation_id = ?").get(after.annotation_id) as { n: number | null }).n ?? 0;
+  if (last === 0 && action !== "CREATE" && before) {
+    insert.run(before.annotation_id, 1, before.run_id, "CREATE", JSON.stringify(strip(before)), before.author ?? null, before.created_at);
+    last = 1;
+  }
+  insert.run(after.annotation_id, last + 1, after.run_id, action, JSON.stringify(strip(after)), process.env.STUDIO_USER || after.author || "本机用户", new Date().toISOString());
+}
+
+function revisionsOf(annotationIds: string[]): Map<string, AnnotationRevision[]> {
+  const out = new Map<string, AnnotationRevision[]>();
+  if (!annotationIds.length) return out;
+  const rows = db()
+    .prepare(`SELECT annotation_id, revision, action, body, author, created_at FROM annotation_revisions WHERE annotation_id IN (${annotationIds.map(() => "?").join(",")}) ORDER BY revision`)
+    .all(...annotationIds) as Row[];
+  for (const r of rows) {
+    const list = out.get(String(r.annotation_id)) ?? [];
+    list.push({ revision: Number(r.revision), action: r.action as AnnotationRevision["action"], body: JSON.parse(String(r.body)), author: (r.author as string | null) ?? null, created_at: String(r.created_at) });
+    out.set(String(r.annotation_id), list);
+  }
+  return out;
+}
+
+/** 附上修订历史；没有修订记录的旧标注视为第 1 版 */
+function withRevisions(list: Annotation[]): Annotation[] {
+  const revs = revisionsOf(list.map((a) => a.annotation_id));
+  return list.map((a) => {
+    const r = revs.get(a.annotation_id) ?? [];
+    return { ...a, revision: r.length ? r[r.length - 1].revision : 1, revisions: r };
+  });
 }
 
 /** 标注独立保存：不修改 Run、原始响应或任何九立数据 */
@@ -161,23 +230,30 @@ export function addAnnotation(a: AnnotationInput): Annotation {
       JSON.stringify(full.source_ref_ids ?? []),
       full.author ?? null,
     );
+  appendRevision("CREATE", readAnnotation(full.annotation_id)!);
   return getAnnotation(full.annotation_id)!;
 }
 
 const ANN_COLS = "annotation_id, run_id, target_json_pointer, target, issue_type, expected_value, note, created_at, updated_at, assessment, error_category, category_confirmed, model_value, source_ref_ids, author";
 
 export function listAnnotations(runId: string): Annotation[] {
-  return (db().prepare(`SELECT ${ANN_COLS} FROM annotations WHERE run_id = ? AND deleted_at IS NULL ORDER BY created_at`).all(runId) as Row[]).map(fromRow);
+  return withRevisions((db().prepare(`SELECT ${ANN_COLS} FROM annotations WHERE run_id = ? AND deleted_at IS NULL ORDER BY created_at`).all(runId) as Row[]).map(fromRow));
 }
 
-export function getAnnotation(annotationId: string): Annotation | undefined {
+/** 只读当前内容，不附修订历史 */
+function readAnnotation(annotationId: string): Annotation | undefined {
   const r = db().prepare(`SELECT ${ANN_COLS} FROM annotations WHERE annotation_id = ? AND deleted_at IS NULL`).get(annotationId) as Row | undefined;
   return r ? fromRow(r) : undefined;
 }
 
+export function getAnnotation(annotationId: string): Annotation | undefined {
+  const a = readAnnotation(annotationId);
+  return a ? withRevisions([a])[0] : undefined;
+}
+
 /** 修改标注内容（不涉及模型输出，模型原值与目标不变）；已删除的返回 undefined */
 export function updateAnnotation(annotationId: string, patch: Pick<Annotation, "issue_type" | "expected_value" | "note"> & Partial<Pick<Annotation, "assessment" | "error_category" | "category_confirmed">>): Annotation | undefined {
-  const cur = getAnnotation(annotationId);
+  const cur = readAnnotation(annotationId);
   if (!cur) return undefined;
   const next = { ...cur, ...patch };
   db()
@@ -192,10 +268,15 @@ export function updateAnnotation(annotationId: string, patch: Pick<Annotation, "
       new Date().toISOString(),
       annotationId,
     );
+  appendRevision("UPDATE", readAnnotation(annotationId)!, cur);
   return getAnnotation(annotationId);
 }
 
-/** 删除标注：只做删除标记（留痕），不再列出、不进入导出 */
+/** 删除标注：只做删除标记（留痕），不再列出、不进入导出；修订历史追加一条 DELETE */
 export function deleteAnnotation(annotationId: string): boolean {
-  return db().prepare("UPDATE annotations SET deleted_at = ? WHERE annotation_id = ? AND deleted_at IS NULL").run(new Date().toISOString(), annotationId).changes === 1;
+  const cur = readAnnotation(annotationId);
+  if (!cur) return false;
+  db().prepare("UPDATE annotations SET deleted_at = ? WHERE annotation_id = ? AND deleted_at IS NULL").run(new Date().toISOString(), annotationId);
+  appendRevision("DELETE", cur, cur);
+  return true;
 }

@@ -52,6 +52,9 @@ export interface AnnotationDTO {
   model_value?: string | null;
   source_ref_ids?: string[];
   author?: string | null;
+  /** 当前修订号与全部修订（旧到新） */
+  revision?: number;
+  revisions?: { revision: number; action: "CREATE" | "UPDATE" | "DELETE"; body: Omit<AnnotationDTO, "revision" | "revisions">; author: string | null; created_at: string }[];
 }
 
 export interface RunDetail {
