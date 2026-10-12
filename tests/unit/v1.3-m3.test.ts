@@ -258,3 +258,14 @@ describe("M3 MCP 实验工具", () => {
     expect(runCount()).toBe(before);
   });
 });
+
+describe("M3 服务重启", () => {
+  it("运行中的实验在服务重启后标为失败（说明原因），不会永远停在运行中", async () => {
+    const { markInterruptedRuns } = await import("@/lib/repositories/db");
+    const { insertExperiment, getExperiment } = await import("@/lib/repositories/experiments");
+    const c = newCandidate("（重启）");
+    insertExperiment({ experiment_id: "exp_restart", candidate_id: c.candidate_id, prompt_id: "jiuli-p1", project_id: "jiuli", idempotency_key: null, status: "RUNNING", created_by: "t", created_at: new Date().toISOString(), finished_at: null, base_version_id: baseVersion().version_id, model: "m", budget: { max_model_runs: 2, planned_model_runs: 2, used_model_runs: 1 }, samples: [], report: null, error: null });
+    markInterruptedRuns();
+    expect(getExperiment("exp_restart")).toMatchObject({ status: "FAILED", error: expect.stringMatching(/重启/), finished_at: expect.any(String) });
+  });
+});

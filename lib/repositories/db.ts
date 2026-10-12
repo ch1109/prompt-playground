@@ -149,6 +149,11 @@ export function markInterruptedRuns(d: DatabaseSync = db()) {
     new Date().toISOString(),
     error,
   );
+  // 实验在服务进程里依次运行：进程重启后不会再继续，标为失败并说明原因（已完成的运行保留）
+  d.prepare("UPDATE experiments SET status = 'FAILED', finished_at = ?, body = json_set(body, '$.error', ?) WHERE status = 'RUNNING'").run(
+    new Date().toISOString(),
+    "服务重启或进程退出，实验中断；已完成的运行保留，可重新发起实验",
+  );
 }
 
 /** 仅测试使用：切换到新的数据库 */
