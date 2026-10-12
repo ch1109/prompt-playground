@@ -118,7 +118,13 @@ function ExperimentView({ e }: { e: CandidateDTO["experiments"][number] }) {
         <>
           <p className="mt-1.5" data-testid="experiment-conclusion">
             <Badge tone={CONCLUSION[r.conclusion][1]}>{CONCLUSION[r.conclusion][0]}</Badge>{" "}
-            <span className="text-ink-300">{r.reasons.length ? r.reasons.join("；") : "目标样本全部修好，回归样本没有已知退化"}</span>
+            <span className="text-ink-300">
+              {r.reasons.length
+                ? r.reasons.join("；")
+                : r.unjudged_diff_count
+                  ? `目标样本全部修好，规则没有检出退化；但还有 ${r.unjudged_diff_count} 处输出差异无法自动判定，采纳前请逐个查看`
+                  : "目标样本全部修好，回归样本没有任何差异"}
+            </span>
           </p>
           <table className="mt-1.5 w-full text-[11px]">
             <thead className="text-left text-ink-400">
