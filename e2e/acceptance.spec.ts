@@ -11,7 +11,7 @@ test.beforeEach(async ({ context }) => {
 });
 
 test("新手指南第一次打开自动弹出，关闭后刷新不再弹出", async ({ browser }) => {
-  const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, baseURL: "http://localhost:3100" });
+  const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, baseURL: `http://localhost:${process.env.E2E_PORT ?? "3100"}` });
   const page = await context.newPage();
   await page.goto("/projects/jiuli/playground");
   await expect(page.getByRole("dialog", { name: "新手指南" })).toBeVisible();
