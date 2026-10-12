@@ -139,3 +139,15 @@ test("M1 状态用词：问题数按来源拆分；P2~P4 也显示准确性未�
   await expect(scope).not.toHaveAttribute("open");
   await expect(scope.locator("summary")).not.toContainText("scope_records");
 });
+
+test("M1 运行证据：详情顶部显示采集完整度与诊断状态；输出结构版本与提示词登记的不一致时给出警告", async ({ page }) => {
+  await pickInDrawer(page, "jiuli-p1", "v3/SC-08/P1");
+  await page.getByRole("tab", { name: "详情" }).click();
+  const ev = page.getByTestId("run-evidence");
+  await expect(ev.getByTestId("capture-quality")).toContainText("未调用模型，不适用");
+  await expect(ev.locator('[data-state="EVAL_NOT_AVAILABLE"]')).toBeVisible();
+  await expect(page.getByTestId("schema-version-mismatch")).toHaveCount(0);
+  // P1 提示词登记的是 jiuli-ai-v3，这个格式示例声明的是 jiuli-ai-v2
+  await pickInDrawer(page, "jiuli-p1", "v2/p1-original-output-example.json");
+  await expect(page.getByTestId("schema-version-mismatch")).toContainText("jiuli-ai-v3");
+});

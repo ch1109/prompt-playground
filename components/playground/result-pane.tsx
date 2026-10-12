@@ -11,6 +11,7 @@ import { BusinessView } from "@/components/views/business-view";
 import { Badge, Btn, cx, Empty, runStatusView } from "@/components/ui";
 import { JsonTree, RawText } from "./json-tree";
 import { InputCoverage } from "./input-coverage";
+import { RunEvidencePanel } from "./run-evidence-panel";
 
 // 平时只看「结果」和「原始输出」；结构校验、运行信息、输入覆盖都收在「详情」
 const TABS: { id: ResultTab; label: string }[] = [
@@ -175,6 +176,11 @@ export function ResultPane({
         </Banner>
       )}
       {run && !vm && run.status === "SUCCEEDED" && run.prompt_kind !== "GENERIC_JSON" && <Banner tone="info">这个回答不符合九立预设的结构，没有套用九立表格，下方按 JSON 树显示。</Banner>}
+      {detail?.evidence?.warnings.map((w) => (
+        <Banner key={w.code} tone="warn">
+          <span data-testid="schema-version-mismatch">{w.label}：{w.reason}</span>
+        </Banner>
+      ))}
       {run?.rerender_note && <Banner tone="info">{run.rerender_note}（模型原始输出没有改动）</Banner>}
 
       <div className="flex min-h-0 flex-1">
@@ -401,6 +407,7 @@ function MetaTab({ detail }: { detail: RunDetail }) {
   const [showPrompt, setShow] = useState(false);
   return (
     <div className="space-y-3 text-[12px]">
+      {detail.evidence && r.status !== "RUNNING" && <RunEvidencePanel run={r} evidence={detail.evidence} />}
       <dl className="grid grid-cols-[180px_1fr] overflow-hidden rounded-xl border border-ink-700 bg-ink-900 [&>*:nth-last-child(-n+2)]:border-b-0">
         <Row k="run_id" v={r.run_id} />
         <Row k="模式 / 状态" v={`${r.mode} / ${r.status}`} />

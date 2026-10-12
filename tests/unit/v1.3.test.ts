@@ -10,6 +10,7 @@ import { snapshotForFixture } from "@/lib/fixtures/snapshot";
 import { OpenAICompatibleProvider, setProviderForTests } from "@/lib/models/openai-compatible";
 import { resetDbForTests } from "@/lib/repositories/db";
 import { buildInputManifest } from "@/lib/runs/input-manifest";
+import { captureQuality, diagnosticStates } from "@/lib/runs/run-evidence";
 import { modelRun, renderOnly } from "@/lib/runs/service";
 
 beforeAll(() => {
@@ -119,5 +120,47 @@ describe("M1-2 输入清单 1.1：未进入模型的页、转换失败", () => {
     const m = buildInputManifest({ ...base, request: { input: { files: [{ file_id: "F1", content: null }] } }, imageCoverage: [{ file_id: "F1", media_type: null, total_pages: null, sent_pages: [], skipped_reason: "无法读取原件（坏文件）", conversion_failed: true }] });
     expect(m.conversion_failures).toEqual([{ file_id: "F1", reason: "无法读取原件（坏文件）" }]);
     expect(m.files[0].omitted_pages).toBeNull();
+  });
+});
+
+describe("M1-3 采集完整度与诊断状态（读取时推导）", () => {
+  it("v1.3 起的模型运行：采集完整；状态为模型响应成功 + 未评测", async () => {
+    const snap = snapshotForFixture("jiuli", fx("v3/SC-08/P1"))!;
+    setProviderForTests(fakeProvider(fx("v3/SC-08/P1").raw));
+    const run = await modelRun({ projectId: "jiuli", promptId: "jiuli-p1", snapshotId: snap.snapshot_id, system: "S", userTemplate: "{{input_json}}", params: {} });
+    const c = captureQuality(run);
+    expect(c.not_captured).toEqual([]);
+    expect(c.quality).toBe("COMPLETE");
+    const { states, warnings } = diagnosticStates(run, { activeSchemaVersion: "jiuli-ai-v3", hasGold: false });
+    expect(states.map((s) => s.code)).toEqual(["MODEL_RUN_SUCCESS", "EVAL_NOT_AVAILABLE"]);
+    expect(warnings).toEqual([]);
+  });
+
+  it("RUN-09 旧 Run 没有记录实际请求：判为不完整并逐项说明，不补造", async () => {
+    const snap = snapshotForFixture("jiuli", fx("v3/SC-08/P1"))!;
+    setProviderForTests(fakeProvider(fx("v3/SC-08/P1").raw));
+    const fresh = await modelRun({ projectId: "jiuli", promptId: "jiuli-p1", snapshotId: snap.snapshot_id, system: "S", userTemplate: "{{input_json}}", params: {} });
+    // 模拟 v1.1 之前的记录：只有展开后的提示词，没有请求副本、清单、计时等
+    const { request_actual: _a, response_meta: _b, built_input: _c, input_manifest: _d, timing: _e, prompt_source: _f, adapter_diagnostics: _g, ...old } = fresh;
+    const c = captureQuality(old);
+    expect(c.quality).toBe("PARTIAL");
+    expect(c.not_captured.map((n) => n.key)).toEqual(["prompt_source", "request_actual", "response_meta", "built_input", "input_manifest", "timing", "adapter_diagnostics"]);
+    expect(c.not_captured.every((n) => n.limitation.length > 0)).toBe(true);
+  });
+
+  it("仅渲染不评估采集完整度；未登记的 schema_version 判为结构未登记", () => {
+    const run = renderOnly({ projectId: "jiuli", promptId: "jiuli-p1", raw: fx("constructed/unknown-schema-version.json").raw });
+    expect(captureQuality(run).quality).toBe("NOT_APPLICABLE");
+    const { states } = diagnosticStates(run, { activeSchemaVersion: "jiuli-ai-v3", hasGold: false });
+    expect(states.find((s) => s.code === "SCHEMA_INVALID")?.label).toBe("结构未登记");
+    expect(states.map((s) => s.code)).not.toContain("MODEL_RUN_SUCCESS");
+  });
+
+  it("输出版本与提示词登记的版本不一致时给出警告；有 Gold 时不报未评测", () => {
+    const run = renderOnly({ projectId: "jiuli", promptId: "jiuli-p1", raw: fx("v2/p1-original-output-example.json").raw });
+    const { states, warnings } = diagnosticStates(run, { activeSchemaVersion: "jiuli-ai-v3", hasGold: true });
+    expect(warnings.map((w) => w.code)).toEqual(["SCHEMA_VERSION_MISMATCH"]);
+    expect(warnings[0].reason).toMatch(/jiuli-ai-v3.*jiuli-ai-v2/);
+    expect(states.map((s) => s.code)).not.toContain("EVAL_NOT_AVAILABLE");
   });
 });

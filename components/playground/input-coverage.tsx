@@ -31,6 +31,11 @@ export function InputCoverage({ manifest, planned }: { manifest: InputManifest; 
           ✕ {g}
         </p>
       ))}
+      {m.conversion_failures?.map((c) => (
+        <p key={c.file_id} className="text-stamp">
+          ✕ 原件 {c.file_id} 转图失败：{c.reason}
+        </p>
+      ))}
       {m.notes.map((n) => (
         <p key={n} className="text-risk">
           ⚠ {n}
@@ -76,6 +81,7 @@ export function InputCoverage({ manifest, planned }: { manifest: InputManifest; 
                       {f.image_skipped_reason && <div className="text-risk">{f.image_skipped_reason}</div>}
                     </>
                   )}
+                  {f.omitted_pages?.length ? <div className="text-stamp">未进入模型：第 {f.omitted_pages.join(",")} 页</div> : null}
                 </td>
                 <td className="py-0.5 font-mono text-[10.5px] break-all text-ink-400">
                   {f.original_file_hash ? f.original_file_hash.slice(0, 12) + "…" : "未知"}

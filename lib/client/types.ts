@@ -64,6 +64,8 @@ export interface RunDetail {
   snapshot_deleted_at?: string | null;
   /** 运行时所用 Prompt 版本的名称 */
   prompt_version_label?: string | null;
+  /** 采集完整度与诊断状态（读取时推导） */
+  evidence?: import("@/lib/runs/run-evidence").RunEvidence;
 }
 
 export interface RunListItem {
