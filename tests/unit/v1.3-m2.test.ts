@@ -68,8 +68,9 @@ describe("M2 访问授权与审计", () => {
     expect(verifyToken(t2)).toMatchObject({ ok: false, reason: expect.stringMatching(/过期/) });
   });
 
-  it("首版只能发只读权限", () => {
-    expect(() => createGrant({ principal: "x", projectIds: ["jiuli"], scopes: ["experiments:write" as Scope] })).toThrow(/只读/);
+  it("默认只发只读权限；没有修改正式版本之类的权限可发（M3 起实验权限须显式加上）", () => {
+    expect(createGrant({ principal: "x", projectIds: ["jiuli"] }).grant.scopes.every((s) => s.endsWith(":read"))).toBe(true);
+    expect(() => createGrant({ principal: "x", projectIds: ["jiuli"], scopes: ["prompts:promote" as Scope] })).toThrow(/不支持的权限/);
   });
 
   it("没有令牌返回 401 并审计；非本机 Host 返回 403", async () => {

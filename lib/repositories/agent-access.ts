@@ -6,9 +6,15 @@ import { db } from "./db";
 // 每个 Agent（principal）单独发令牌：只读权限范围、限定项目（可再限定客户）、有到期时间、可撤销。
 // 不存在「一个管理员 Key 读全部」：没有令牌、令牌过期或越权都会被拒绝并写审计。
 
-/** 首版只有只读权限（§7.3 P0-B）；没有任何写入类权限 */
+/** 只读权限（§7.3 P0-B），默认发放 */
 export const READ_SCOPES = ["runs:read", "prompts:read", "evidence:read", "annotations:read", "eval:read"] as const;
-export type Scope = (typeof READ_SCOPES)[number];
+/**
+ * 实验权限（§7.3 P1-A，v1.3 M3）：只作用于隔离候选与实验，不能改正式版本；必须发令牌时显式加上。
+ * experiments:execute 会真实调用模型、产生费用。
+ */
+export const EXPERIMENT_SCOPES = ["experiments:read", "experiments:write", "experiments:execute"] as const;
+export const ALL_SCOPES = [...READ_SCOPES, ...EXPERIMENT_SCOPES] as const;
+export type Scope = (typeof ALL_SCOPES)[number];
 
 export interface AgentGrant {
   grant_id: string;
@@ -39,8 +45,8 @@ const COLS = "grant_id, principal, scopes, project_ids, customer_ids, created_at
 /** 创建授权；令牌明文只在这里返回一次，数据库只存 sha256 */
 export function createGrant(input: { principal: string; projectIds: string[]; customerIds?: string[] | null; scopes?: Scope[]; days?: number }): { grant: AgentGrant; token: string } {
   const scopes = input.scopes ?? [...READ_SCOPES];
-  const bad = scopes.filter((s) => !(READ_SCOPES as readonly string[]).includes(s));
-  if (bad.length) throw new Error(`不支持的权限：${bad.join("、")}（首版只有只读权限）`);
+  const bad = scopes.filter((s) => !(ALL_SCOPES as readonly string[]).includes(s));
+  if (bad.length) throw new Error(`不支持的权限：${bad.join("、")}（可用：${ALL_SCOPES.join("、")}；没有修改正式版本或业务数据的权限）`);
   if (!input.principal.trim()) throw new Error("必须写明这个令牌给谁用（principal）");
   if (!input.projectIds.length) throw new Error("至少授权一个项目");
   const days = input.days ?? 7;

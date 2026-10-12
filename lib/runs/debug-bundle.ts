@@ -61,6 +61,11 @@ function customerOf(snapshot: InputSnapshot | undefined, request: unknown): stri
   return dir.length === 1 && typeof obj(dir[0]).customer_id === "string" ? (obj(dir[0]).customer_id as string) : null;
 }
 
+/** 输入快照属于哪个客户（实验授权用）：规则同 customerOf，请求取自快照 */
+export function snapshotCustomer(snapshot: InputSnapshot, kind: PromptKind): string | null {
+  return customerOf(snapshot, contextFromSnapshot("", kind, snapshot).request);
+}
+
 export function loadRunContext(runId: string): RunContext | undefined {
   const run = getRun(runId);
   if (!run) return undefined;

@@ -3,10 +3,12 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { POST } from "@/app/api/mcp/route";
 import { approveCandidate, createCandidate, evaluateExperiment, planExperiment, rejectCandidate, startExperiment } from "@/lib/experiments/service";
 import { getFixture } from "@/lib/fixtures/catalog";
 import { snapshotForFixture } from "@/lib/fixtures/snapshot";
 import { OpenAICompatibleProvider, setProviderForTests } from "@/lib/models/openai-compatible";
+import { createGrant, READ_SCOPES, type Scope } from "@/lib/repositories/agent-access";
 import { db, resetDbForTests } from "@/lib/repositories/db";
 import { getCandidate } from "@/lib/repositories/experiments";
 import { createVersion, listVersions, stableHistory, stableVersionId } from "@/lib/repositories/prompts";
@@ -189,5 +191,70 @@ describe("M3 人工审批", () => {
     expect(stableVersionId("jiuli-p1")).toBe(stable);
     expect(evaluateExperiment(exp.experiment_id).report!.conclusion).toBe("READY_FOR_REVIEW");
     expect(() => startExperiment({ candidateId: c.candidate_id, samples, maxModelRuns: 4, createdBy: "t" })).toThrow(/已采纳或已拒绝/);
+  });
+});
+
+describe("M3 MCP 实验工具", () => {
+  const ALL = [...READ_SCOPES, "experiments:read", "experiments:write", "experiments:execute"] as Scope[];
+  const tok = (scopes: Scope[] = ALL, customerIds?: string[]) => createGrant({ principal: "agent-m3", projectIds: ["jiuli"], scopes, customerIds }).token;
+  const rpc = async (t: string, method: string, params?: unknown) => {
+    const res = await POST(new Request("http://localhost:3000/api/mcp", { method: "POST", headers: { host: "localhost:3000", "content-type": "application/json", accept: "application/json, text/event-stream", authorization: `Bearer ${t}` }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) }));
+    return (await res.json()) as { result: { tools?: { name: string; annotations?: { readOnlyHint?: boolean } }[]; isError?: boolean; content?: { text: string }[] } };
+  };
+  const call = async (t: string, name: string, args: Record<string, unknown>) => {
+    const r = (await rpc(t, "tools/call", { name, arguments: args })).result;
+    return { isError: !!r.isError, data: JSON.parse(r.content![0].text) };
+  };
+  const firstLine = () => baseVersion().system_prompt.split("\n")[0];
+
+  it("默认只读令牌看不到实验工具；带实验权限的令牌多 3 个工具，但没有任何采纳 / 改正式版本的工具", async () => {
+    expect((await rpc(tok([...READ_SCOPES]), "tools/list")).result.tools).toHaveLength(8);
+    const tools = (await rpc(tok(), "tools/list")).result.tools!;
+    expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(["create_prompt_candidate", "run_experiment", "evaluate_experiment"]));
+    expect(tools).toHaveLength(11);
+    expect(tools.some((t) => /approve|promote|stable|publish/i.test(t.name))).toBe(false);
+  });
+
+  it("create_prompt_candidate：按查找 → 替换生成候选；find 找不到或不唯一都拒绝", async () => {
+    const t = tok();
+    const ok = await call(t, "create_prompt_candidate", { base_prompt_version_id: baseVersion().version_id, edits: [{ find: firstLine(), replace: firstLine() + FIX_LINE }], reason: "Source.column 写成数字", diagnosis_ref: "run_x#/output" });
+    expect(ok.isError).toBe(false);
+    expect(getCandidate(ok.data.candidate_id)).toMatchObject({ status: "DRAFT", created_by: "agent-m3", system_prompt: expect.stringContaining(FIX_LINE) });
+    expect((await call(t, "create_prompt_candidate", { base_prompt_version_id: baseVersion().version_id, edits: [{ find: "不存在的一句话", replace: "x" }], reason: "r" })).data.error.code).toBe("EDIT_NOT_FOUND");
+    expect((await call(t, "create_prompt_candidate", { base_prompt_version_id: baseVersion().version_id, edits: [{ find: "，", replace: "," }], reason: "r" })).data.error.code).toBe("EDIT_AMBIGUOUS");
+  });
+
+  it("run_experiment：dry_run 不花钱；正式运行后 evaluate_experiment 拿到报告；正式版本不变", async () => {
+    setProviderForTests(scenarioProvider());
+    const t = tok();
+    const cand = (await call(t, "create_prompt_candidate", { base_prompt_version_id: baseVersion().version_id, edits: [{ find: firstLine(), replace: firstLine() + FIX_LINE + "（MCP）" }], reason: "r" })).data;
+    const before = runCount();
+    const dry = await call(t, "run_experiment", { candidate_id: cand.candidate_id, samples, max_model_runs: 4, dry_run: true });
+    expect(dry.data).toMatchObject({ dry_run: true, planned_model_runs: expect.any(Number) });
+    expect(runCount()).toBe(before);
+    const stable = stableVersionId("jiuli-p1");
+    const started = await call(t, "run_experiment", { candidate_id: cand.candidate_id, samples, max_model_runs: 4, idempotency_key: "mcp-1" });
+    expect(started.data.status).toBe("RUNNING");
+    let ev;
+    for (let i = 0; i < 100; i++) {
+      ev = (await call(t, "evaluate_experiment", { experiment_id: started.data.experiment_id })).data;
+      if (ev.experiment.status !== "RUNNING") break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(ev.experiment.status).toBe("COMPLETED");
+    expect(ev.report.conclusion).toBe("READY_FOR_REVIEW");
+    expect(ev.report.samples[0]).toMatchObject({ role: "TARGET", verdict: "FIXED" });
+    expect(stableVersionId("jiuli-p1")).toBe(stable);
+    // 同一幂等键：返回同一实验
+    expect((await call(t, "run_experiment", { candidate_id: cand.candidate_id, samples, max_model_runs: 4, idempotency_key: "mcp-1" })).data).toMatchObject({ experiment_id: started.data.experiment_id, reused_existing: true });
+  });
+
+  it("客户受限的令牌不能在别的客户的样本上做实验；超预算在调用模型前拒绝", async () => {
+    setProviderForTests(scenarioProvider());
+    const cand = (await call(tok(), "create_prompt_candidate", { base_prompt_version_id: baseVersion().version_id, edits: [{ find: firstLine(), replace: firstLine() + FIX_LINE + "（客户）" }], reason: "r" })).data;
+    const before = runCount();
+    expect((await call(tok(ALL, ["C-someone-else"]), "run_experiment", { candidate_id: cand.candidate_id, samples, max_model_runs: 4 })).data.error.code).toBe("FORBIDDEN");
+    expect((await call(tok(), "run_experiment", { candidate_id: cand.candidate_id, samples, max_model_runs: 1 })).data.error.code).toBe("BUDGET_EXCEEDED");
+    expect(runCount()).toBe(before);
   });
 });

@@ -69,6 +69,29 @@ export function createCandidate(input: { promptId: string; baseVersionId: string
   return { candidate: c, diff: candidateDiff(c) };
 }
 
+export interface PromptEdit {
+  part?: "system" | "user_template";
+  find: string;
+  replace: string;
+}
+
+/**
+ * 按「查找 → 替换」生成候选文本（最小范围 Diff，§10.2）：每段 find 必须在当前文本里恰好出现一次，
+ * 找不到或出现多次都拒绝，避免改错位置。
+ */
+export function applyEdits(base: { system: string; user_template: string }, edits: PromptEdit[]) {
+  if (!edits.length) fail("NO_EDITS", "至少要有一处修改");
+  const out = { ...base };
+  edits.forEach((e, i) => {
+    const part = e.part ?? "system";
+    if (!e.find) fail("EDIT_FIND_EMPTY", `第 ${i + 1} 处修改的 find 为空；要追加内容，请找一段唯一的原文并在 replace 里带上它`);
+    const n = out[part].split(e.find).length - 1;
+    if (n !== 1) fail(n === 0 ? "EDIT_NOT_FOUND" : "EDIT_AMBIGUOUS", `第 ${i + 1} 处修改：find 在 ${part} 里出现了 ${n} 次，必须恰好 1 次`);
+    out[part] = out[part].replace(e.find, () => e.replace);
+  });
+  return out;
+}
+
 export function candidateDiff(c: PromptCandidate) {
   const base = getVersion(c.base_version_id)!;
   return { base_version_id: base.version_id, base_label: base.label, system: textHunks(base.system_prompt, c.system_prompt), user_template: textHunks(base.user_prompt_template, c.user_prompt_template) };
