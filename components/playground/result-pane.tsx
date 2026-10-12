@@ -110,8 +110,8 @@ export function ResultPane({
           {run && (
             <>
               <Badge tone="mute" title={run.mode}>{MODE_LABEL[run.mode] ?? run.mode}</Badge>
-              <Badge tone={runStatusView(run.status, run.schema_id, run.prompt_kind).tone} title={run.status}>
-                {runStatusView(run.status, run.schema_id, run.prompt_kind).label}
+              <Badge tone={runStatusView(run.status, run.schema_id, run.prompt_kind, run.mode).tone} title={run.status}>
+                {runStatusView(run.status, run.schema_id, run.prompt_kind, run.mode).label}
               </Badge>
             </>
           )}
@@ -188,7 +188,7 @@ export function ResultPane({
             <div className="mt-4 flex flex-col items-center gap-2" data-testid="empty-actions">
               {recentRun && onOpenRun && (
                 <Btn tone="outline" onClick={() => onOpenRun(recentRun.run_id)} data-testid="open-recent-run">
-                  打开最近一次运行：{recentRun.label || recentRun.run_id}（{recentRun.started_at.slice(5, 16).replace("T", " ")} · {runStatusView(recentRun.status, recentRun.schema_id, recentRun.prompt_kind).label}）
+                  打开最近一次运行：{recentRun.label || recentRun.run_id}（{recentRun.started_at.slice(5, 16).replace("T", " ")} · {runStatusView(recentRun.status, recentRun.schema_id, recentRun.prompt_kind, recentRun.mode).label}）
                 </Btn>
               )}
               {example && onOpenExample && (

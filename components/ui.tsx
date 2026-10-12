@@ -50,7 +50,7 @@ export const RUN_STATUS_TONE: Record<string, keyof typeof TONES> = {
 };
 
 export const RUN_STATUS_LABEL: Record<string, string> = {
-  SUCCEEDED: "运行成功",
+  SUCCEEDED: "模型运行成功",
   SCHEMA_INVALID: "结构不符",
   PARSE_ERROR: "JSON 解析失败",
   MODEL_ERROR: "模型调用失败",
@@ -62,11 +62,13 @@ export const RUN_STATUS_LABEL: Record<string, string> = {
 
 /**
  * 运行状态徽章。通用提示词没有预设结构，成功就是「完成」；
- * 九立预设成功但结构没对上时不显示"运行成功"，避免误以为已通过校验。
+ * 九立预设成功但结构没对上时不显示"运行成功"，避免误以为已通过校验；
+ * 没调用模型的结果（仅渲染 / 回放）不说「模型运行成功」。
  */
-export function runStatusView(status: string, schemaId: string | null | undefined, kind?: string): { label: string; tone: keyof typeof TONES } {
+export function runStatusView(status: string, schemaId: string | null | undefined, kind?: string, mode?: string): { label: string; tone: keyof typeof TONES } {
   if (status === "SUCCEEDED" && kind === "GENERIC_JSON") return { label: "完成", tone: "ok" };
   if (status === "SUCCEEDED" && !schemaId) return { label: "未校验（不符合预设结构）", tone: "mute" };
+  if (status === "SUCCEEDED" && mode && mode !== "MODEL_RUN") return { label: "已整理（未调用模型）", tone: "ok" };
   return { label: RUN_STATUS_LABEL[status] ?? status, tone: RUN_STATUS_TONE[status] ?? "mute" };
 }
 

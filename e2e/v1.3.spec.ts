@@ -116,3 +116,26 @@ test("版本对比模式：在页面里勾选两次运行，直接显示对比�
   await expect(region.getByTestId("compare-metrics")).toBeVisible();
   await expect(page.getByRole("dialog", { name: "对比两次运行" })).toHaveCount(0);
 });
+
+test("M1 状态用词：问题数按来源拆分；P2~P4 也显示准确性未评测；仅渲染不说「模型运行成功」；P2 合计与覆盖范围默认折叠", async ({ page }) => {
+  await pickInDrawer(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
+  const head = page.getByTestId("result-headline");
+  await expect(head).toContainText("3 条模型报告问题");
+  await expect(head).toContainText("1 条规则 / 结构提示");
+  await expect(page.getByTestId("result-pane")).toContainText("已整理（未调用模型）");
+  await expect(page.getByTestId("result-pane")).not.toContainText("模型运行成功");
+  for (const [prompt, fixture] of [
+    ["jiuli-p2", "v3/SC-08/P2"],
+    ["jiuli-p3", "v3/SC-08/P3"],
+    ["jiuli-p4", "v3/SC-08/P4"],
+  ]) {
+    await pickInDrawer(page, prompt, fixture);
+    await expect(head).toContainText("条模型报告问题");
+    await expect(head).toContainText("准确性未评测");
+  }
+  await pickInDrawer(page, "jiuli-p2", "v3/SC-08/P2");
+  const scope = page.getByTestId("p2-scope-details");
+  await expect(scope).toContainText("合计与覆盖范围");
+  await expect(scope).not.toHaveAttribute("open");
+  await expect(scope.locator("summary")).not.toContainText("scope_records");
+});

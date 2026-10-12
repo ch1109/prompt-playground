@@ -137,7 +137,7 @@ function WideTableLayout({ vm, cfg, onlyIssues, setOnlyIssues }: { vm: ViewModel
 }
 
 // ---------------- P2：入仓号分组 → 合并产品 → 原始行 ----------------
-function HierarchyLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
+function HierarchyLayout({ vm, cfg, onlyIssues, setOnlyIssues }: { vm: ViewModel; cfg: RendererConfig; onlyIssues: boolean; setOnlyIssues: (v: boolean) => void }) {
   const regions = byId(cfg);
   const li = vm.tables.find((t) => t.id === "logicalInspections");
   const merged = vm.tables.find((t) => t.id === "mergedProducts");
@@ -215,14 +215,20 @@ function HierarchyLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
             >
               <DataTable
                 table={raw}
-                options={{ hideTitle: true, rowFilter: (r) => inGroup(r) && (!members || members.has(String(r.cells.local_raw_row_ref?.value ?? r.id))), highlightRowIds: undefined }}
+                options={{ hideTitle: true, rowFilter: (r) => inGroup(r) && (!members || members.has(String(r.cells.local_raw_row_ref?.value ?? r.id))), highlightRowIds: undefined, onlyIssues, onOnlyIssuesChange: setOnlyIssues }}
               />
             </Section>
           )}
           {scopes && (
-            <Section title={scopes.title} className="overflow-hidden">
-              <DataTable table={scopes} options={{ hideTitle: true, rowFilter: inGroup, maxHeight: 200 }} />
-            </Section>
+            <details className="overflow-hidden rounded-xl border border-ink-700 bg-ink-900" data-testid="p2-scope-details">
+              <summary className="cursor-pointer px-3.5 py-2 text-[12.5px]" title="技术记录：output.scope_records">
+                <span className="font-semibold text-ink-100">合计与覆盖范围</span>
+                <span className="ml-2 text-ink-400">{scopes.rows.filter(inGroup).length ? `${scopes.rows.filter(inGroup).length} 条（原值不累计、不平均）` : "无"}</span>
+              </summary>
+              <div className="border-t border-ink-700/70">
+                <DataTable table={scopes} options={{ hideTitle: true, rowFilter: inGroup, maxHeight: 200 }} />
+              </div>
+            </details>
           )}
         </div>
       </div>
@@ -233,7 +239,7 @@ function HierarchyLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
 }
 
 // ---------------- P3：委托行 | 候选表/关系图 | 证据 ----------------
-function CandidateLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
+function CandidateLayout({ vm, cfg, onlyIssues, setOnlyIssues }: { vm: ViewModel; cfg: RendererConfig; onlyIssues: boolean; setOnlyIssues: (v: boolean) => void }) {
   const regions = byId(cfg);
   const orders = vm.tables.find((t) => t.id === "orderRows");
   const cands = vm.tables.find((t) => t.id === "candidateGroups");
@@ -253,7 +259,7 @@ function CandidateLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
         <div className="grid grid-cols-1 gap-3 @[860px]:grid-cols-[minmax(280px,0.85fr)_minmax(0,1.4fr)]">
           {orders && (
             <Section title="委托商品（点击行查看候选）" className="min-w-0 overflow-hidden">
-              <DataTable table={orders} options={{ hideTitle: true, dense: true, maxHeight: 520, highlightRowIds: new Set(current ? [current] : []) }} />
+              <DataTable table={orders} options={{ hideTitle: true, dense: true, maxHeight: 520, highlightRowIds: new Set(current ? [current] : []), onlyIssues, onOnlyIssuesChange: setOnlyIssues }} />
             </Section>
           )}
           <Section
@@ -297,7 +303,7 @@ function CandidateLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
 }
 
 // ---------------- P4：决策表 + Patch 预览 ----------------
-function DecisionLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
+function DecisionLayout({ vm, cfg, onlyIssues, setOnlyIssues }: { vm: ViewModel; cfg: RendererConfig; onlyIssues: boolean; setOnlyIssues: (v: boolean) => void }) {
   const regions = byId(cfg);
   const decisions = vm.tables.find((t) => t.id === "fieldDecisions");
   const presets = ((regions.get("decisions")?.options as { filterPresets?: string[] } | undefined)?.filterPresets ?? ["all", "changes", "risks"]) as ("all" | "changes" | "risks")[];
@@ -322,7 +328,7 @@ function DecisionLayout({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
       {regions.get("summary") && <Region region={regions.get("summary")!} vm={vm} />}
       {decisions && (
         <Section title={decisions.title} className="overflow-hidden">
-          <DataTable table={decisions} options={{ hideTitle: true, rowFilter, toolbar, frozenColumns: ["order_row_id", "field"] }} />
+          <DataTable table={decisions} options={{ hideTitle: true, rowFilter, toolbar, frozenColumns: ["order_row_id", "field"], onlyIssues, onOnlyIssuesChange: setOnlyIssues }} />
         </Section>
       )}
       {regions.get("changes") && (
@@ -359,6 +365,9 @@ export function ResultHeadline({ vm, cfg, status, mode, onCompare, onEditPrompt,
   const mainId = cfg.regions.find((r) => r.component === "data-table")?.binding.slice(7);
   const main = vm.tables.find((t) => t.id === mainId);
   const run = mode === "MODEL_RUN" ? (status === "SCHEMA_INVALID" ? "模型运行成功，但结构不完全符合约定" : "模型运行成功") : mode === "REPLAY" ? "历史结果重新整理" : "示例 / 粘贴结果（未调用模型）";
+  // 模型自己报告的问题与规则 / 结构检查发现的分开计数（§4.2），不混成一个「问题数」
+  const modelIssues = vm.issues.filter((i) => i.origin === "MODEL_FINDING").length;
+  const otherIssues = vm.issues.length - modelIssues;
   return (
     <div className="rise flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-ink-700 bg-ink-900 px-3.5 py-2.5 text-[12.5px]" data-testid="result-headline">
       <span className={cx("font-semibold", status === "SCHEMA_INVALID" ? "text-risk" : "text-ink-100")}>{run}</span>
@@ -368,16 +377,20 @@ export function ResultHeadline({ vm, cfg, status, mode, onCompare, onEditPrompt,
         </span>
       )}
       <span>
-        <b className={cx(vm.issues.length ? "text-risk" : "text-ink-100")}>{vm.issues.length}</b> 条已报告问题
+        <b className={cx(modelIssues ? "text-risk" : "text-ink-100")}>{modelIssues}</b> 条模型报告问题
       </span>
-      {h &&
-        (h.gold ? (
-          <Badge tone="ok">已对照标准答案</Badge>
-        ) : (
-          <span className="text-ink-400" title="没有独立的标准答案（Gold），问题数 0 不代表字段都正确">
-            <Badge tone="warn">准确性未评测</Badge> 没有标准答案
-          </span>
-        ))}
+      {otherIssues > 0 && (
+        <span title="来自规则、结构校验或整理过程，不是模型自己报告的">
+          <b className="text-risk">{otherIssues}</b> 条规则 / 结构提示
+        </span>
+      )}
+      {h?.gold ? (
+        <Badge tone="ok">已对照标准答案</Badge>
+      ) : (
+        <span className="text-ink-400" title="没有独立的标准答案（Gold），问题数 0 不代表字段都正确">
+          <Badge tone="warn">准确性未评测</Badge> 没有标准答案
+        </span>
+      )}
       {h && (
         <span className="text-ink-300">
           客户 <b className="text-ink-100">{h.customerName || "未识别"}</b>
@@ -406,13 +419,12 @@ export function ResultHeadline({ vm, cfg, status, mode, onCompare, onEditPrompt,
 }
 
 export function BusinessView({ vm, cfg, canPreview, ...headline }: { vm: ViewModel; cfg: RendererConfig; canPreview: boolean } & HeadlineProps) {
-  // 「只看有问题的行」目前只接到 P1 宽表的主表；其他布局下按钮不显示
+  // 「只看有问题的行」作用于各布局的主表（P1 委托行、P2 原始行、P3 委托商品、P4 字段决策）
   const [onlyIssues, setOnlyIssues] = useState(false);
-  const wide = cfg.layout === "wide-table-with-issues";
   return (
     <IssuesContext.Provider value={vm.issues}>
       <div className="space-y-3">
-        <ResultHeadline vm={vm} cfg={cfg} {...headline} onlyIssues={onlyIssues} setOnlyIssues={wide ? setOnlyIssues : undefined} />
+        <ResultHeadline vm={vm} cfg={cfg} {...headline} onlyIssues={onlyIssues} setOnlyIssues={setOnlyIssues} />
         <Layout vm={vm} cfg={cfg} canPreview={canPreview} onlyIssues={onlyIssues} setOnlyIssues={setOnlyIssues} />
       </div>
     </IssuesContext.Provider>
@@ -424,11 +436,11 @@ function Layout({ vm, cfg, onlyIssues, setOnlyIssues }: { vm: ViewModel; cfg: Re
     case "wide-table-with-issues":
       return <WideTableLayout vm={vm} cfg={cfg} onlyIssues={onlyIssues} setOnlyIssues={setOnlyIssues} />;
     case "hierarchy-with-issues":
-      return <HierarchyLayout vm={vm} cfg={cfg} />;
+      return <HierarchyLayout vm={vm} cfg={cfg} onlyIssues={onlyIssues} setOnlyIssues={setOnlyIssues} />;
     case "candidate-comparison":
-      return <CandidateLayout vm={vm} cfg={cfg} />;
+      return <CandidateLayout vm={vm} cfg={cfg} onlyIssues={onlyIssues} setOnlyIssues={setOnlyIssues} />;
     case "field-decisions-and-patch":
-      return <DecisionLayout vm={vm} cfg={cfg} />;
+      return <DecisionLayout vm={vm} cfg={cfg} onlyIssues={onlyIssues} setOnlyIssues={setOnlyIssues} />;
     default:
       return <p className="text-stamp">未知布局 {cfg.layout}</p>;
   }

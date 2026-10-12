@@ -491,7 +491,7 @@ export function Playground({ projectId }: { projectId: string }) {
                         <Badge>{r.mode}</Badge>
                       </td>
                       <td className="px-3">
-                        <Badge tone={runStatusView(r.status, r.schema_id, r.prompt_kind).tone}>{runStatusView(r.status, r.schema_id, r.prompt_kind).label}</Badge>
+                        <Badge tone={runStatusView(r.status, r.schema_id, r.prompt_kind, r.mode).tone}>{runStatusView(r.status, r.schema_id, r.prompt_kind, r.mode).label}</Badge>
                       </td>
                       <td className="max-w-[320px] truncate px-3">{r.label}</td>
                       <td className="px-3 text-ink-400">{r.model_name ?? "—"}</td>
