@@ -272,8 +272,8 @@ export function buildMcpServer(grant: AgentGrant) {
       "experiments:read",
       "查看实验状态与评判报告（结论：READY_FOR_REVIEW 可供人审 / NOT_RECOMMENDED 不建议 / INSUFFICIENT_EVIDENCE 证据不足），含每个样本的修复 / 退化 / 未判定、候选 Diff 与已用预算。只读，不调用模型。",
       { experiment_id: z.string() },
-      (a) => {
-        const r = evaluateExperiment(a.experiment_id);
+      async (a) => {
+        const r = await evaluateExperiment(a.experiment_id);
         const cand = authorizedCandidate(r.experiment.candidate_id);
         const { samples, ...exp } = r.experiment;
         return {

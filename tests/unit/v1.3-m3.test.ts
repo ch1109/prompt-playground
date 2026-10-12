@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import * as XLSX from "xlsx";
 import { POST } from "@/app/api/mcp/route";
 import { approveCandidate, createCandidate, evaluateExperiment, planExperiment, rejectCandidate, startExperiment } from "@/lib/experiments/service";
 import { getFixture } from "@/lib/fixtures/catalog";
@@ -47,7 +48,7 @@ const REGRESSION = "v3/2026AG001-audit/P1";
 
 let calls = 0;
 /** 按提示词与样本决定输出：候选（含修复说明）→ 正常输出（可另行改写）；基础版本在目标样本上 → column 写成数字 */
-function scenarioProvider(opts: { candidateRaw?: string; fail?: boolean } = {}) {
+function scenarioProvider(opts: { candidateRaw?: string; baseRaw?: string; fail?: boolean } = {}) {
   return new OpenAICompatibleProvider(
     { baseUrl: "https://model.invalid/v1", model: "fake-model", apiKey: "sk-test-m3", timeoutMs: 2000 },
     (async (_u: string, init?: RequestInit) => {
@@ -55,7 +56,7 @@ function scenarioProvider(opts: { candidateRaw?: string; fail?: boolean } = {}) 
       if (opts.fail) return new Response("rate limited", { status: 429 });
       const [system, user] = (JSON.parse(String(init?.body)).messages as { role: string; content: string }[]).map((m) => m.content);
       // 基础版本只在目标样本（SC-08）上出错，在回归样本上正常——与真实运行一致（ZW050 出错、AG001 正常）
-      const raw = system.includes(FIX_LINE) ? (opts.candidateRaw ?? RAW) : user.includes("SC08-AUDIT-20260920-P1") ? RAW_NUMERIC_COLUMN : RAW;
+      const raw = system.includes(FIX_LINE) ? (opts.candidateRaw ?? RAW) : user.includes("SC08-AUDIT-20260920-P1") ? RAW_NUMERIC_COLUMN : (opts.baseRaw ?? RAW);
       return Response.json({ id: "x", model: "fake-model", choices: [{ message: { content: raw }, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 } });
     }) as unknown as typeof fetch,
   );
@@ -160,26 +161,26 @@ describe("M3 实验与评判", () => {
 describe("M3 人工审批", () => {
   it("EXP-08 采纳：生成新版本并移动正式版本、留记录；没有完成的实验不能采纳", async () => {
     const noExp = newCandidate("（没实验）");
-    expect(() => approveCandidate({ candidateId: noExp.candidate_id, label: "x", decidedBy: "我" })).toThrow(/还没有完成的实验/);
+    await expect(approveCandidate({ candidateId: noExp.candidate_id, label: "x", decidedBy: "我" })).rejects.toThrow(/还没有完成的实验/);
     setProviderForTests(scenarioProvider());
     const c = newCandidate("（采纳）");
     const exp = await startExperiment({ candidateId: c.candidate_id, samples, maxModelRuns: 4, createdBy: "t" }).done;
     expect(exp.report!.conclusion).toBe("READY_FOR_REVIEW");
     const prevStable = stableVersionId("jiuli-p1");
-    const r = approveCandidate({ candidateId: c.candidate_id, label: "v3.0-fix 采纳候选", decidedBy: "我", note: "看过 Diff 与报告" });
+    const r = await approveCandidate({ candidateId: c.candidate_id, label: "v3.0-fix 采纳候选", decidedBy: "我", note: "看过 Diff 与报告" });
     expect(r.previous_stable_version_id).toBe(prevStable);
     expect(stableVersionId("jiuli-p1")).toBe(r.version.version_id);
     expect(r.version).toMatchObject({ parent_version_id: baseVersion().version_id, system_prompt: c.system_prompt });
     expect(stableHistory("jiuli-p1")[0]).toMatchObject({ version_id: r.version.version_id, previous_version_id: prevStable, candidate_id: c.candidate_id, experiment_id: exp.experiment_id, decided_by: "我" });
     expect(getCandidate(c.candidate_id)).toMatchObject({ status: "APPROVED", promoted_version_id: r.version.version_id });
-    expect(() => approveCandidate({ candidateId: c.candidate_id, label: "again", decidedBy: "我" })).toThrow(/已采纳或已拒绝/);
+    await expect(approveCandidate({ candidateId: c.candidate_id, label: "again", decidedBy: "我" })).rejects.toThrow(/已采纳或已拒绝/);
   });
 
   it("结论不是「可供人审」时，不确认风险就不能采纳", async () => {
     setProviderForTests(scenarioProvider({ fail: true }));
     const c = newCandidate("（证据不足）");
     await startExperiment({ candidateId: c.candidate_id, samples, maxModelRuns: 4, createdBy: "t" }).done;
-    expect(() => approveCandidate({ candidateId: c.candidate_id, label: "x", decidedBy: "我" })).toThrow(/INSUFFICIENT_EVIDENCE/);
+    await expect(approveCandidate({ candidateId: c.candidate_id, label: "x", decidedBy: "我" })).rejects.toThrow(/INSUFFICIENT_EVIDENCE/);
   });
 
   it("EXP-09 拒绝：正式版本不变，候选与实验历史保留", async () => {
@@ -189,7 +190,7 @@ describe("M3 人工审批", () => {
     const stable = stableVersionId("jiuli-p1");
     expect(rejectCandidate({ candidateId: c.candidate_id, decidedBy: "我", note: "不需要" }).status).toBe("REJECTED");
     expect(stableVersionId("jiuli-p1")).toBe(stable);
-    expect(evaluateExperiment(exp.experiment_id).report!.conclusion).toBe("READY_FOR_REVIEW");
+    expect((await evaluateExperiment(exp.experiment_id)).report!.conclusion).toBe("READY_FOR_REVIEW");
     expect(() => startExperiment({ candidateId: c.candidate_id, samples, maxModelRuns: 4, createdBy: "t" })).toThrow(/已采纳或已拒绝/);
   });
 });
@@ -267,5 +268,31 @@ describe("M3 服务重启", () => {
     insertExperiment({ experiment_id: "exp_restart", candidate_id: c.candidate_id, prompt_id: "jiuli-p1", project_id: "jiuli", idempotency_key: null, status: "RUNNING", created_by: "t", created_at: new Date().toISOString(), finished_at: null, base_version_id: baseVersion().version_id, model: "m", budget: { max_model_runs: 2, planned_model_runs: 2, used_model_runs: 1 }, samples: [], report: null, error: null });
     markInterruptedRuns();
     expect(getExperiment("exp_restart")).toMatchObject({ status: "FAILED", error: expect.stringMatching(/重启/), finished_at: expect.any(String) });
+  });
+});
+
+describe("来源坐标检查（打开原件核对）", () => {
+  it("候选把来源指到原件里空着的格子：判为退化（比基线多出一处指错）", async () => {
+    const { createFileSnapshot } = await import("@/lib/materials/store");
+    const ws = XLSX.utils.aoa_to_sheet([[], [], [], [], [], ["序号", "货物名称", "品牌", "型号", "参数", "产地"], [1, "晶圆", "SK HYNIX", "H25G9TCXXCX702A#9", "64GB", "韩国"]]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "12-10-2");
+    const snap = await createFileSnapshot({ projectId: "jiuli", files: [{ name: "委托.xlsx", buffer: XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer, materialType: "ORDER" }] });
+    const raw = RAW.replaceAll("F-3c3cc10bd26b", snap.materials[0].file_id);
+    // 候选：产地的来源从第 7 行 F 列（「韩国」）改指到第 4 行 F 列（空格子）
+    const moved = raw.replace('"row": 7, "column": "F", "raw_text": "韩国"', '"row": 4, "column": "F", "raw_text": "韩国"');
+    expect(moved).not.toBe(raw);
+    setProviderForTests(scenarioProvider({ candidateRaw: moved, baseRaw: raw }));
+    const base = await modelRun({ projectId: "jiuli", promptId: "jiuli-p1", snapshotId: snap.snapshot_id, system: baseVersion().system_prompt, userTemplate: baseVersion().user_prompt_template, promptVersionId: baseVersion().version_id, params: { temperature: 0 } });
+    expect(base.status).toBe("SUCCEEDED");
+    const c = newCandidate("（来源坐标）");
+    const exp = await startExperiment({ candidateId: c.candidate_id, samples: [{ sample_id: snap.snapshot_id, role: "TARGET" }, { sample_id: TARGET, role: "REGRESSION" }], maxModelRuns: 4, createdBy: "t" }).done;
+    const s = exp.report!.samples[0];
+    // 测试用的 Excel 只有两行，基线与候选在其他格子上的「对不上」一样多；多出来的正是改动的那一处
+    expect(s.source_check!.worse).toBe(true);
+    expect(s.source_check!.candidate_problems).toEqual(expect.arrayContaining([expect.objectContaining({ where: "「12-10-2」第 4 行 F 列", claimed: "韩国", actual: null })]));
+    expect(s.source_check!.candidate!.wrong).toBe(s.source_check!.baseline!.wrong + 1);
+    expect(s.verdict).toBe("REGRESSED");
+    expect(exp.report!.conclusion).toBe("NOT_RECOMMENDED");
   });
 });

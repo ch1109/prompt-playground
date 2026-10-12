@@ -6,5 +6,5 @@ import { approveCandidate } from "@/lib/experiments/service";
 export const POST = (req: NextRequest, ctx: RouteContext<"/api/candidates/[id]/approve">) =>
   handle(async () => {
     const b = await body<{ label?: string; note?: string; acknowledge_risks?: boolean }>(req);
-    return ok(approveCandidate({ candidateId: (await ctx.params).id, label: b.label ?? "", note: b.note ?? null, acknowledgeRisks: b.acknowledge_risks === true, decidedBy: process.env.STUDIO_USER || "本机用户" }));
+    return ok(await approveCandidate({ candidateId: (await ctx.params).id, label: b.label ?? "", note: b.note ?? null, acknowledgeRisks: b.acknowledge_risks === true, decidedBy: process.env.STUDIO_USER || "本机用户" }));
   });

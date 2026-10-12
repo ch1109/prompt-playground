@@ -11,11 +11,13 @@ export const GET = (_req: NextRequest, ctx: RouteContext<"/api/prompts/[id]/cand
     if (!getPrompt(id)) return fail("PROMPT_NOT_FOUND", "Prompt 不存在", 404);
     return ok({
       stable_version_id: stableVersionId(id),
-      candidates: listCandidates(id).map((c) => ({
-        ...c,
-        base_label: getVersion(c.base_version_id)?.label ?? c.base_version_id,
-        diff: candidateDiff(c),
-        experiments: listExperiments(c.candidate_id).map((e) => ({ ...e, report: evaluateExperiment(e.experiment_id).report })),
-      })),
+      candidates: await Promise.all(
+        listCandidates(id).map(async (c) => ({
+          ...c,
+          base_label: getVersion(c.base_version_id)?.label ?? c.base_version_id,
+          diff: candidateDiff(c),
+          experiments: await Promise.all(listExperiments(c.candidate_id).map(async (e) => ({ ...e, report: (await evaluateExperiment(e.experiment_id)).report }))),
+        })),
+      ),
     });
   });

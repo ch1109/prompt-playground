@@ -2,6 +2,7 @@ import type { Run } from "@/lib/contracts/run";
 import { getByPointer } from "@/lib/pipeline/json-pointer";
 import type { Annotation } from "@/lib/repositories/runs";
 import { diffSummary, textHunks } from "@/lib/runs/compare";
+import type { SourceCheck } from "./source-check";
 
 // 实验评判（v1.3 §10.3–10.5）：没有 Gold，只用两类依据——
 // 1）结构检查（能否解析、Schema 错误数）是确定性的；
@@ -57,6 +58,8 @@ export interface SampleInput {
   candidate?: Run;
   /** 这个样本上的人工标注（基线或同输入其他运行上的） */
   annotations: Annotation[];
+  /** 来源坐标检查（打开原件核对）；没做为 undefined */
+  sources?: { baseline: SourceCheck | null; candidate: SourceCheck | null };
 }
 
 export function evaluateSample(s: SampleInput) {
@@ -90,9 +93,14 @@ export function evaluateSample(s: SampleInput) {
   const judged = new Set(fields.map((f) => f.json_pointer));
   const unjudged = diff ? diff.rows.filter((r) => !judged.has(r.pointer)) : [];
 
+  // 来源指错的地方比基线多 → 退化（引用的原文不在它说的位置）
+  const sb = s.sources?.baseline;
+  const sc = s.sources?.candidate;
+  const sourcesWorse = !!sb && !!sc && sc.wrong > sb.wrong;
+
   let verdict: SampleVerdict;
   if (structure.change === "INCOMPLETE") verdict = "INCOMPLETE";
-  else if (structure.change === "REGRESSED" || structure.change === "WORSE" || hardGates.length || fields.some((f) => f.outcome === "REGRESSED")) verdict = "REGRESSED";
+  else if (structure.change === "REGRESSED" || structure.change === "WORSE" || hardGates.length || sourcesWorse || fields.some((f) => f.outcome === "REGRESSED")) verdict = "REGRESSED";
   else if (structure.change === "FIXED" || fields.some((f) => f.outcome === "FIXED")) verdict = "FIXED";
   else if (!diff?.rows.length && structure.change === "SAME") verdict = "NO_CHANGE";
   else verdict = "UNDETERMINED";
@@ -107,6 +115,7 @@ export function evaluateSample(s: SampleInput) {
     rows,
     hard_gates: hardGates,
     annotated_fields: fields,
+    source_check: sb || sc ? { baseline: sb ? { checked: sb.checked, wrong: sb.wrong, unchecked: sb.unchecked } : null, candidate: sc ? { checked: sc.checked, wrong: sc.wrong, unchecked: sc.unchecked } : null, worse: sourcesWorse, candidate_problems: sc?.problems.slice(0, 5) ?? [] } : null,
     unjudged_diffs: { count: unjudged.length, examples: unjudged.slice(0, 10) },
     usage: { baseline: b?.token_usage ?? null, candidate: c?.token_usage ?? null, latency_ms: [b?.latency_ms ?? null, c?.latency_ms ?? null] },
     verdict,
@@ -147,6 +156,9 @@ export function summarize(samples: SampleEvaluation[], base: { system: string; u
       "标注按同一 JSON 位置对齐；行顺序变化时可能对错位置",
       ...(unjudged ? [`另有 ${unjudged} 处输出差异未判定，需要人工查看`] : []),
       "P3 跨客户、P4 错误覆盖等业务硬闸门尚未实现，只检查了 P1 / P2 漏行",
+      ...(samples.some((s) => s.source_check?.candidate && !s.source_check.candidate.checked && s.source_check.candidate.unchecked)
+        ? ["有样本的来源没法对照原件检查（原件缺失、是图片，或只给了整行位置）"]
+        : []),
     ],
     samples,
   };

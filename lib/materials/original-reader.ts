@@ -30,8 +30,7 @@ function cellText(ws: XLSX.WorkSheet, addr: string): string | null {
   return c.w ?? (c.v === undefined || c.v === null ? null : String(c.v));
 }
 
-function excelAt(buf: Buffer, loc: OriginalLocation) {
-  const wb = XLSX.read(buf, { type: "buffer", cellFormula: false, cellHTML: false });
+function excelAt(wb: XLSX.WorkBook, loc: OriginalLocation) {
   const name = loc.sheet && wb.SheetNames.includes(loc.sheet) ? loc.sheet : !loc.sheet && wb.SheetNames.length === 1 ? wb.SheetNames[0] : null;
   if (!name) return { found: false, reason: `原件里没有 Sheet「${loc.sheet ?? "（未指明）"}」`, sheets_in_original: wb.SheetNames };
   const ws = wb.Sheets[name];
@@ -72,10 +71,11 @@ function excelAt(buf: Buffer, loc: OriginalLocation) {
   };
 }
 
-async function pdfAt(buf: Buffer, fileName: string, loc: OriginalLocation) {
-  const pre = await preprocessFile(buf, fileName);
-  const pages = ((pre.content as { pages?: { page: number; text: string }[] } | null)?.pages ?? []).map((p) => ({ page: p.page, text: p.text }));
-  if (!pages.length) return { found: false, reason: pre.warnings[0] ?? "原件没有可抽取的文字层（可能是扫描件），只能在网页预览里看图" };
+type PdfText = { pages: { page: number; text: string }[]; warning: string | null; extractor: string };
+
+function pdfAt(pdf: PdfText, loc: OriginalLocation) {
+  const { pages } = pdf;
+  if (!pages.length) return { found: false, reason: pdf.warning ?? "原件没有可抽取的文字层（可能是扫描件），只能在网页预览里看图" };
   if (loc.page == null) return { found: false, reason: "来源没有页码，无法定位到页", total_pages: pages.length };
   const pg = pages.find((p) => p.page === loc.page);
   if (!pg) return { found: false, reason: `原件只有 ${pages.length} 页，没有第 ${loc.page} 页`, total_pages: pages.length };
@@ -90,20 +90,33 @@ async function pdfAt(buf: Buffer, fileName: string, loc: OriginalLocation) {
     text: pg.text.slice(start, start + 800),
     text_offset: start,
     page_chars: pg.text.length,
-    extractor: pre.preprocessor_version,
+    extractor: pdf.extractor,
   };
 }
 
 /**
- * 读原件中来源指向的位置。expectedSha256 是运行 / 快照记录的原件 Hash：不一致说明原件在运行后被换过，结果要谨慎对待。
+ * 打开一个原件，之后可以反复按位置读取（同一文件只解析一次）。
+ * expectedSha256 是运行 / 快照记录的原件 Hash：不一致说明原件在运行后被换过，结果要谨慎对待。
  */
-export async function readOriginalAt(fileId: string, loc: OriginalLocation, expectedSha256: string | null) {
+export async function openOriginal(fileId: string, expectedSha256: string | null) {
   const f = await resolveMaterialFile(fileId);
   const buf = readFileSync(f.absolutePath);
   const sha256 = createHash("sha256").update(buf).digest("hex");
   const file = { file_id: fileId, file_name: f.fileName, media_type: f.mediaType, sha256, recorded_sha256: expectedSha256, hash_matches_record: expectedSha256 ? sha256 === expectedSha256 : null };
-  const isExcel = /spreadsheet|excel/.test(f.mediaType) || /\.xlsx?$/i.test(f.fileName);
-  const isPdf = f.mediaType === "application/pdf" || /\.pdf$/i.test(f.fileName);
-  const at = isExcel ? excelAt(buf, loc) : isPdf ? await pdfAt(buf, f.fileName, loc) : { found: false, reason: "图片原件没有文字层，无法按文字核对；请在网页预览里看图" };
-  return { file, original_at_location: at };
+  if (/spreadsheet|excel/.test(f.mediaType) || /\.xlsx?$/i.test(f.fileName)) {
+    const wb = XLSX.read(buf, { type: "buffer", cellFormula: false, cellHTML: false });
+    return { file, at: (loc: OriginalLocation) => excelAt(wb, loc) };
+  }
+  if (f.mediaType === "application/pdf" || /\.pdf$/i.test(f.fileName)) {
+    const pre = await preprocessFile(buf, f.fileName);
+    const pdf: PdfText = { pages: (pre.content as { pages?: { page: number; text: string }[] } | null)?.pages ?? [], warning: pre.warnings[0] ?? null, extractor: pre.preprocessor_version };
+    return { file, at: (loc: OriginalLocation) => pdfAt(pdf, loc) };
+  }
+  return { file, at: (_loc: OriginalLocation) => ({ found: false, reason: "图片原件没有文字层，无法按文字核对；请在网页预览里看图" }) };
+}
+
+/** 读原件中来源指向的一个位置 */
+export async function readOriginalAt(fileId: string, loc: OriginalLocation, expectedSha256: string | null) {
+  const o = await openOriginal(fileId, expectedSha256);
+  return { file: o.file, original_at_location: o.at(loc) };
 }

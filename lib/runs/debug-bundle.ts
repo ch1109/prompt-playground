@@ -365,7 +365,7 @@ export function sourceEvidence(c: RunContext, sourceRef: string, view: "snippet"
 }
 
 /** 这次运行输入里真实存在的文件（清单、快照材料、构造输入），用于决定能否打开原件 */
-function runFileIds(c: RunContext): Set<string> {
+export function runFileIds(c: RunContext): Set<string> {
   const input = obj(obj(c.request).input);
   const fromRequest = [...(Array.isArray(input.materials) ? input.materials : []), ...(Array.isArray(input.files) ? input.files : [])].map((x) => obj(x).file_id);
   return new Set([...(c.run.input_manifest?.files.map((f) => f.file_id) ?? []), ...(c.snapshot?.materials.map((m) => m.file_id) ?? []), ...fromRequest].filter((x): x is string => typeof x === "string"));

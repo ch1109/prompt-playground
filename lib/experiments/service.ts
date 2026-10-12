@@ -25,6 +25,7 @@ import { getSnapshot } from "@/lib/repositories/snapshots";
 import { textHunks } from "@/lib/runs/compare";
 import { modelRun, RunServiceError } from "@/lib/runs/service";
 import { evaluateSample, summarize } from "./evaluate";
+import { checkRunSources } from "./source-check";
 
 // 候选与实验（v1.3 §10）：候选是基础版本的隔离副本；实验在固定样本上跑候选（缺基线时也跑基线），
 // 只生成新 Run，不改历史、不动正式版本。正式版本只能由人工采纳移动（approveCandidate，只在网页上提供）。
@@ -201,7 +202,7 @@ export function startExperiment(input: ExperimentInput & { createdBy: string; id
         }
         updateExperiment(exp);
       }
-      exp.report = buildReport(exp);
+      exp.report = await buildReport(exp);
       exp.status = "COMPLETED";
     } catch (e) {
       exp.status = "FAILED";
@@ -214,39 +215,45 @@ export function startExperiment(input: ExperimentInput & { createdBy: string; id
   return { experiment: exp, reused: false, done };
 }
 
-function buildReport(exp: Experiment) {
+async function buildReport(exp: Experiment) {
   const cand = getCandidate(exp.candidate_id)!;
   const base = getVersion(exp.base_version_id)!;
-  const samples = exp.samples.map((s) =>
-    evaluateSample({
-      sample_id: s.sample_id,
-      role: s.role,
-      baseline: s.baseline_run_id ? getRun(s.baseline_run_id) : undefined,
-      candidate: s.candidate_run_id ? getRun(s.candidate_run_id) : undefined,
-      annotations: annotationsForSample(exp.prompt_id, s.snapshot_id),
-    }),
-  );
+  const samples = [];
+  for (const s of exp.samples)
+    samples.push(
+      evaluateSample({
+        sample_id: s.sample_id,
+        role: s.role,
+        baseline: s.baseline_run_id ? getRun(s.baseline_run_id) : undefined,
+        candidate: s.candidate_run_id ? getRun(s.candidate_run_id) : undefined,
+        annotations: annotationsForSample(exp.prompt_id, s.snapshot_id),
+        sources: {
+          baseline: s.baseline_run_id ? await checkRunSources(s.baseline_run_id) : null,
+          candidate: s.candidate_run_id ? await checkRunSources(s.candidate_run_id) : null,
+        },
+      }),
+    );
   return summarize(samples, { system: base.system_prompt, user_template: base.user_prompt_template }, { system: cand.system_prompt, user_template: cand.user_prompt_template });
 }
 
 /** 重新评判（标注可能在实验后新增）；只读，不调用模型 */
-export function evaluateExperiment(experimentId: string) {
+export async function evaluateExperiment(experimentId: string) {
   const exp = getExperiment(experimentId) ?? fail("EXPERIMENT_NOT_FOUND", "实验不存在", 404);
   if (exp.status === "RUNNING") return { experiment: exp, report: null, note: "实验还在运行" };
   if (exp.status === "FAILED") return { experiment: exp, report: null, note: `实验失败：${exp.error}` };
-  return { experiment: exp, report: buildReport(exp) };
+  return { experiment: exp, report: await buildReport(exp) };
 }
 
 /**
  * 人工采纳（只在网页提供，Agent 没有这个入口）：候选生成新的不可变版本，并把正式版本指向它。
  * 要求至少有一次完成的实验；最近一次报告不是「可供人审」时必须明确确认风险。
  */
-export function approveCandidate(input: { candidateId: string; label: string; decidedBy: string; note?: string | null; acknowledgeRisks?: boolean }) {
+export async function approveCandidate(input: { candidateId: string; label: string; decidedBy: string; note?: string | null; acknowledgeRisks?: boolean }) {
   const cand = getCandidate(input.candidateId) ?? fail("CANDIDATE_NOT_FOUND", "候选不存在", 404);
   if (cand.status !== "DRAFT") fail("CANDIDATE_DECIDED", "候选已采纳或已拒绝", 409);
   if (!input.label.trim()) fail("LABEL_REQUIRED", "请给新版本起个名字");
   const exp = listExperiments(cand.candidate_id).find((e) => e.status === "COMPLETED") ?? fail("NO_EXPERIMENT", "候选还没有完成的实验，不能采纳");
-  const report = buildReport(exp);
+  const report = await buildReport(exp);
   if (report.conclusion !== "READY_FOR_REVIEW" && !input.acknowledgeRisks)
     fail("RISK_NOT_ACKNOWLEDGED", `最近一次实验的结论是「${report.conclusion}」：${report.reasons.join("；")}。确认了解风险后才能采纳`);
   const previous = stableVersionId(cand.prompt_id);
