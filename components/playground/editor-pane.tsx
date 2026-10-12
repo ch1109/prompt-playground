@@ -9,6 +9,7 @@ import type { InputManifest, ModelParams } from "@/lib/contracts/run";
 import { guessMaterialType, skipReason, UPLOAD_EXTS } from "@/lib/materials/guess-type";
 import { InputCoverage } from "./input-coverage";
 import { PromptEditor } from "./prompt-editor";
+import { Hunks, textHunks } from "./run-compare";
 
 type EditorTab = "prompt" | "input" | "model" | "preview";
 
@@ -81,6 +82,8 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
   const [label, setLabel] = useState("");
   const [note, setNote] = useState("");
   const current = versions.find((v) => v.version_id === ws.versionId);
+  // 三层：编辑区（未保存）/ 已保存版本 / 当前结果那次运行实际用的提示词
+  const lastRun = useStudio((s) => (ws.runId ? s.runs[ws.runId]?.run : undefined));
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
@@ -109,6 +112,32 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
           {" · "}创建于 {current.created_at.slice(0, 19).replace("T", " ")}
           {current.change_note ? ` · 变更说明：${current.change_note}` : ""}
         </p>
+      )}
+      {isDraft && current && (
+        <details className="rounded-lg border border-risk/30 bg-risk/5 px-2 py-1 text-[11.5px]" data-testid="draft-diff">
+          <summary className="cursor-pointer text-risk">编辑区与已保存版本「{current.label}」的差异（未保存）</summary>
+          <div className="mt-1.5">
+            <Hunks title="System" hunks={textHunks(current.system_prompt, ws.system)} labels={["已保存", "编辑中"]} />
+            <Hunks title="User 模板" hunks={textHunks(current.user_prompt_template, ws.userTemplate)} labels={["已保存", "编辑中"]} />
+          </div>
+        </details>
+      )}
+      {lastRun?.mode === "MODEL_RUN" && (
+        <div className="text-[11px] text-ink-400" data-testid="run-prompt-layer">
+          {!lastRun.prompt_source ? (
+            "当前结果那次运行没有保存提示词原文（v1.1 之前的记录），无法和编辑区对照。"
+          ) : lastRun.prompt_source.system === ws.system && lastRun.prompt_source.user_template === ws.userTemplate ? (
+            <>当前结果那次运行（{lastRun.started_at.slice(5, 16).replace("T", " ")}）用的提示词与编辑区一致。</>
+          ) : (
+            <details>
+              <summary className="cursor-pointer text-risk">当前结果那次运行（{lastRun.started_at.slice(5, 16).replace("T", " ")}）用的提示词与编辑区不同，点开看差异</summary>
+              <div className="mt-1.5">
+                <Hunks title="System" hunks={textHunks(lastRun.prompt_source.system, ws.system)} labels={["运行时", "编辑中"]} />
+                <Hunks title="User 模板" hunks={textHunks(lastRun.prompt_source.user_template, ws.userTemplate)} labels={["运行时", "编辑中"]} />
+              </div>
+            </details>
+          )}
+        </div>
       )}
       <label className="block text-[11px] text-ink-400">System（提示词正文）</label>
       <PromptEditor system={ws.system} userTemplate={ws.userTemplate} onSystem={(v) => patch({ system: v })} />

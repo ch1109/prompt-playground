@@ -138,7 +138,7 @@ const KIND_LABEL: Record<DiffRow["kind"], string> = { ADDED: "新增", REMOVED: 
 const dash = (v: unknown) => (v === null || v === undefined || v === "" ? "—" : String(v));
 
 /** 两段文本的逐行差异（前后各保留 2 行上下文）；任一方没有文本时为 null */
-function textHunks(a?: string, b?: string): StructuredPatchHunk[] | null {
+export function textHunks(a?: string, b?: string): StructuredPatchHunk[] | null {
   if (a === undefined || b === undefined) return null;
   return structuredPatch("A", "B", a, b, "", "", { context: 2 }).hunks;
 }
@@ -204,7 +204,8 @@ export function compareRuns(a: Run, b: Run, versionLabels: [string | null | unde
   };
 }
 
-function Hunks({ title, hunks }: { title: string; hunks: StructuredPatchHunk[] | null }) {
+/** labels：差异两侧的叫法（默认 A / B） */
+export function Hunks({ title, hunks, labels = ["A", "B"] }: { title: string; hunks: StructuredPatchHunk[] | null; labels?: [string, string] }) {
   return (
     <div className="mb-3">
       <h4 className="mb-1.5 text-[12.5px] font-semibold text-ink-100">{title}</h4>
@@ -216,7 +217,7 @@ function Hunks({ title, hunks }: { title: string; hunks: StructuredPatchHunk[] |
         <pre className="overflow-auto rounded-lg border border-ink-700 bg-ink-950 p-2 text-[11.5px] leading-5" data-testid="prompt-diff">
           {hunks.map((h, i) => (
             <div key={i}>
-              <div className="text-info">{`@@ A 第 ${h.oldStart} 行 / B 第 ${h.newStart} 行 @@`}</div>
+              <div className="text-info">{`@@ ${labels[0]} 第 ${h.oldStart} 行 / ${labels[1]} 第 ${h.newStart} 行 @@`}</div>
               {h.lines.map((l, j) => (
                 <div key={j} className={cx("whitespace-pre-wrap break-all", l[0] === "+" && "bg-verify/10 text-verify", l[0] === "-" && "bg-stamp/10 text-stamp", l[0] === " " && "text-ink-400")}>
                   {l}

@@ -194,3 +194,33 @@ test("M1 样本抽屉：每个示例显示运行次数与标错数；可按「�
   await expect(list.locator('[data-fixture-id="constructed/p4-v3-conflict.json"]')).toBeVisible();
   for (const stats of await list.getByTestId("fixture-stats").allTextContents()) expect(stats).not.toMatch(/运行 0/);
 });
+
+test("M1 提示词三层：编辑区与已保存版本的差异可展开；当前结果那次运行用的提示词与编辑区不同时可对照", async ({ page }) => {
+  await pickInDrawer(page, "jiuli-p1", "v3/SC-08/P1");
+  await expect(page.getByTestId("result-headline")).toBeVisible();
+  // 等页面上的请求都结束再刷新，避免刷新中止进行中的请求
+  await page.waitForLoadState("networkidle");
+  // 把当前结果模拟成一次真实运行：运行时用的是另一段提示词
+  await page.route(/\/api\/runs\/run_[^/]+$/, async (r) => {
+    const res = await r.fetch();
+    const body = await res.json();
+    body.data.run = { ...body.data.run, mode: "MODEL_RUN", prompt_source: { system: "运行时的旧规则", user_template: "{{input_json}}" } };
+    await r.fulfill({ response: res, json: body });
+  });
+  await page.reload();
+  await page.getByTestId("work-modes").getByRole("tab", { name: "提示词调试" }).click();
+  await page.getByTestId("editor-pane").getByRole("button", { name: "提示词", exact: true }).click();
+  await expect(page.getByTestId("draft-diff")).toHaveCount(0);
+  const layer = page.getByTestId("run-prompt-layer");
+  await expect(layer).toContainText("用的提示词与编辑区不同");
+  await layer.locator("summary").click();
+  await expect(layer.getByTestId("prompt-diff").first()).toContainText("-运行时的旧规则");
+  // 改动编辑区：出现与已保存版本的差异
+  const sys = page.getByLabel("System 提示词");
+  await sys.fill(`${await sys.inputValue()}\n新增一条测试规则`);
+  const diff = page.getByTestId("draft-diff");
+  await expect(diff).toBeVisible();
+  await diff.locator("summary").click();
+  await expect(diff.getByTestId("prompt-diff").first()).toContainText("+新增一条测试规则");
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
