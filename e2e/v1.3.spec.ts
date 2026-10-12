@@ -251,3 +251,20 @@ test("修复：切换提示词时，较慢返回的旧历史请求不会覆盖�
   await expect(page.getByRole("button", { name: /运行历史（/ })).toContainText(`运行历史（${p1Count >= 100 ? "100+" : p1Count}`);
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
+
+test("修复：读取当前结果时刷新页面（请求被中止），刷新后仍保留当前结果", async ({ page }) => {
+  await pickInDrawer(page, "jiuli-p1", "v3/SC-08/P1");
+  await expect(page.getByTestId("result-headline")).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  // 让读取运行详情变慢：第一次刷新后的读取还没返回，就再刷新一次（前一个请求被中止）
+  await page.route(/\/api\/runs\/run_[^/]+$/, async (r) => {
+    await new Promise((res) => setTimeout(res, 1500));
+    await r.continue().catch(() => {});
+  });
+  const pending = page.waitForRequest(/\/api\/runs\/run_[^/]+$/);
+  await page.reload();
+  await pending;
+  await page.reload();
+  await expect(page.getByTestId("result-headline")).toBeVisible();
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});

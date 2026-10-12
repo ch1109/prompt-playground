@@ -185,14 +185,16 @@ export function Playground({ projectId }: { projectId: string }) {
     }
   }
 
-  // 当前 Run 详情不在内存时按 ID 重新读取；Run 已不存在则清掉引用
+  // 当前 Run 详情不在内存时按 ID 重新读取；只有服务端确认 Run 不存在才清掉引用（刷新中止、网络中断时保留）
   const runId = ws.runId;
   const cached = !!(runId && s.runs[runId]);
   useEffect(() => {
     if (!hydrated || !runId || cached) return;
     api<RunDetail>(`/api/runs/${runId}`)
       .then(s.putRun)
-      .catch(() => s.patchWorkspace(promptId, { runId: null, runInputSig: null }));
+      .catch((e) => {
+        if (e instanceof ApiError && e.status === 404) s.patchWorkspace(promptId, { runId: null, runInputSig: null });
+      });
   }, [hydrated, runId, cached, promptId, s]);
 
   // 历史只查当前 Prompt，分批加载（每批 100 条），避免旧记录被截断后看不到
