@@ -845,6 +845,8 @@ export function Playground({ projectId }: { projectId: string }) {
                     onSnapshotsChanged={loadSnapshots}
                     onMoreSnapshots={moreSnapshots}
                     projectId={projectId}
+                    promptId={promptId}
+                    onVersionsChanged={() => api<{ versions: PromptVersionDTO[] }>(`/api/prompts/${promptId}`).then((r) => setVersions((v) => ({ ...v, [promptId]: r.versions })))}
                   />
                 )}
               </div>

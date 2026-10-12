@@ -9,9 +9,10 @@ import type { InputManifest, ModelParams } from "@/lib/contracts/run";
 import { guessMaterialType, skipReason, UPLOAD_EXTS } from "@/lib/materials/guess-type";
 import { InputCoverage } from "./input-coverage";
 import { PromptEditor } from "./prompt-editor";
+import { CandidatesTab } from "./candidates-tab";
 import { Hunks, textHunks } from "./run-compare";
 
-type EditorTab = "prompt" | "input" | "model" | "preview";
+type EditorTab = "prompt" | "input" | "model" | "preview" | "candidates";
 
 const ORIGIN_TONE = { STRUCTURE_EXAMPLE: "mute", RECORDED_MODEL_OUTPUT: "info", CONSTRUCTED: "warn" } as const;
 const ORIGIN_SHORT = { STRUCTURE_EXAMPLE: "结构示例", RECORDED_MODEL_OUTPUT: "真实录制·非Gold", CONSTRUCTED: "人工构造" } as const;
@@ -29,6 +30,9 @@ export function EditorPane(props: {
   /** 还有更早的快照未加载时提供 */
   onMoreSnapshots?: () => void;
   projectId: string;
+  promptId: string;
+  /** 候选被采纳后重新读取版本列表（正式版本标记会变） */
+  onVersionsChanged: () => void;
 }) {
   const [tab, setTab] = useState<EditorTab>("input");
   const [ws, patch] = useWorkspace();
@@ -44,6 +48,7 @@ export function EditorPane(props: {
             ["prompt", "提示词"],
             ["model", "模型"],
             ["preview", "请求预览"],
+            ["candidates", "候选与实验"],
           ] as [EditorTab, string][]
         ).map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)} className={cx("rounded-lg px-3 py-1 text-[13px] transition-colors", tab === id ? "bg-ink-800 font-medium text-ink-100" : "text-ink-400 hover:bg-ink-850 hover:text-ink-100")}>
@@ -68,6 +73,7 @@ export function EditorPane(props: {
         )}
         {tab === "model" && <ModelTab provider={props.provider} />}
         {tab === "preview" && <PreviewTab fixtures={props.fixtures} isDraft={isDraft} versionLabel={version?.label} />}
+        {tab === "candidates" && <CandidatesTab promptId={props.promptId} onVersionsChanged={props.onVersionsChanged} />}
       </div>
       <div className="border-t border-ink-700 px-3 py-1 text-[11px] text-ink-400">
         输入：{ws.inputMode === "fixture" ? (ws.fixtureId ? `示例 ${ws.fixtureId}` : "还没选示例，请点上方列表里的一项") :ws.inputMode === "paste" ? "粘贴 JSON（仅渲染）" : ws.inputMode === "jiuli" ? "九立导入（导入后使用）" : ws.inputMode === "upload" ? (ws.uploadSnapshotId ? "已上传的文件" : "还没上传文件") : ws.snapshotId ? "已选历史输入" : "还没选历史输入"}
@@ -100,8 +106,8 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
         >
           {versions.map((v) => (
             <option key={v.version_id} value={v.version_id}>
-              {v.is_stable ? "【正式】" : ""}
               {v.label} · {v.created_at.slice(0, 16).replace("T", " ")}
+              {v.is_stable ? " · 【正式】" : ""}
             </option>
           ))}
         </select>

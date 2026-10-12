@@ -287,3 +287,56 @@ test("M2 字段抽屉：复制 Agent 诊断指令，内容带 Run ID、字段定
   expect(text).toContain("期望值是「美国-诊断」");
   expect(text).toMatch(/只读诊断/);
 });
+
+test("M3 候选与实验：看到修改差异与逐样本判定；证据不足时须确认风险才能采纳；采纳后成为正式版本，拒绝不影响正式版本", async ({ page }) => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const prompt = (await (await page.request.get("/api/prompts/jiuli-p1")).json()).data as { versions: { version_id: string; label: string; system_prompt: string; user_prompt_template: string; content_hash: string; is_stable: boolean }[] };
+  const base = prompt.versions.find((v) => !v.is_stable) ?? prompt.versions[0];
+  const raw = ((await (await page.request.get("/api/fixtures/item?id=v3/SC-08/P1")).json()).data as { raw: string }).raw;
+  // 仅渲染的两次结果充当基线 / 候选（e2e 不调用真实模型）：基线把 column 写成数字（结构不符），候选正常
+  const render = async (r: string) => ((await (await page.request.post("/api/runs", { data: { mode: "RENDER_ONLY", promptId: "jiuli-p1", raw: r } })).json()).data as { run_id: string }).run_id;
+  const badRun = await render(raw.replace(/"column":\s*"([A-Z]+)"/g, (_m, c: string) => `"column": ${c.charCodeAt(0) - 64}`));
+  const goodRun = await render(raw);
+  const regBase = await render(raw);
+  const regCand = await render(raw);
+  const tag = Date.now().toString(36);
+  const d = new DatabaseSync("data/e2e.db");
+  const addCandidate = (id: string, reason: string) =>
+    d.prepare("INSERT INTO prompt_candidates (candidate_id, prompt_id, base_version_id, system_prompt, user_prompt_template, content_hash, reason, diagnosis_ref, created_by, created_at, status) VALUES (?,?,?,?,?,?,?,?,?,?,?)").run(
+      id, "jiuli-p1", base.version_id, `${base.system_prompt}\nSource.column 必须是字符串-${tag}`, base.user_prompt_template, `h-${id}`, reason, "run_x#/output", "e2e-agent", new Date().toISOString(), "DRAFT");
+  const sample = (sample_id: string, role: string, b: string, c: string) => ({ sample_id, role, snapshot_id: `snap_none_${tag}`, baseline_run_id: b, baseline_reused: true, candidate_run_id: c, params: {}, error: null });
+  for (const [cid, reason] of [[`cand_a_${tag}`, `修 column 类型 ${tag}`], [`cand_b_${tag}`, `要拒绝的候选 ${tag}`]]) {
+    addCandidate(cid, reason);
+    const body = { base_version_id: base.version_id, model: "fake", budget: { max_model_runs: 4, planned_model_runs: 2, used_model_runs: 2 }, samples: [sample("v3/SC-08/P1", "TARGET", badRun, goodRun), sample("v3/2026AG001-audit/P1", "REGRESSION", regBase, regCand)], report: null, error: null };
+    d.prepare("INSERT INTO experiments VALUES (?,?,?,?,?,?,?,?,?,?)").run(`exp_${cid}`, cid, "jiuli-p1", "jiuli", null, "COMPLETED", "e2e-agent", new Date().toISOString(), new Date().toISOString(), JSON.stringify(body));
+  }
+  d.close();
+
+  await page.goto("/projects/jiuli/playground");
+  await page.click('[data-prompt="jiuli-p1"]');
+  await page.getByTestId("work-modes").getByRole("tab", { name: "提示词调试" }).click();
+  await page.getByRole("button", { name: "候选与实验" }).click();
+  const card = page.locator(`[data-candidate-id="cand_a_${tag}"]`);
+  await expect(card).toContainText("待审批");
+  await expect(card).toContainText(`Source.column 必须是字符串-${tag}`);
+  await expect(card.locator('[data-testid="experiment-sample"][data-verdict="FIXED"]')).toContainText("v3/SC-08/P1");
+  await expect(card.locator('[data-testid="experiment-sample"][data-verdict="NO_CHANGE"]')).toContainText("v3/2026AG001-audit/P1");
+  // 仅渲染没有构造输入记录 → 不可比 → 证据不足：不勾选风险确认就不能采纳
+  await expect(card.getByTestId("experiment-conclusion")).toContainText("证据不足");
+  await card.getByLabel("新版本名称").fill(`采纳-${tag}`);
+  await expect(card.getByTestId("btn-approve-candidate")).toBeDisabled();
+  await card.getByText("我已看过报告并了解风险").click();
+  page.once("dialog", (dlg) => dlg.accept());
+  await card.getByTestId("btn-approve-candidate").click();
+  await expect(card).toContainText("已采纳");
+  // 新版本成为正式版本
+  await page.getByRole("button", { name: "提示词", exact: true }).click();
+  await expect(page.getByLabel("Prompt 版本").locator("option", { hasText: `采纳-${tag}` })).toContainText("【正式】");
+  // 拒绝另一个候选：正式版本不变
+  await page.getByRole("button", { name: "候选与实验" }).click();
+  const other = page.locator(`[data-candidate-id="cand_b_${tag}"]`);
+  await other.getByTestId("btn-reject-candidate").click();
+  await expect(other).toContainText("已拒绝");
+  const after = (await (await page.request.get("/api/prompts/jiuli-p1")).json()).data as { versions: { label: string; is_stable: boolean }[] };
+  expect(after.versions.find((v) => v.is_stable)?.label).toBe(`采纳-${tag}`);
+});
