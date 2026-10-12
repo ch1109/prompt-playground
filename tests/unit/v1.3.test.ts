@@ -259,3 +259,24 @@ describe("M1-6 样本运行统计", () => {
     expect(fixtureRunStats("other-proj").get(f.id)).toBeUndefined();
   });
 });
+
+describe("M1-8 版本对比的输入可比性", () => {
+  it("同一样本可比；不同样本、没有输入记录、预处理未记录都判为不可直接比较", async () => {
+    const { inputComparability } = await import("@/components/playground/run-compare");
+    const snapA = snapshotForFixture("jiuli", fx("v3/SC-08/P1"))!;
+    const snapB = snapshotForFixture("jiuli", fx("v3/SC-08-audit/P1"))!;
+    const a1 = renderOnly({ projectId: "jiuli", promptId: "jiuli-p1", raw: fx("v3/SC-08/P1").raw, snapshotId: snapA.snapshot_id });
+    const a2 = renderOnly({ projectId: "jiuli", promptId: "jiuli-p1", raw: fx("v3/SC-08/P1").raw, snapshotId: snapA.snapshot_id });
+    const b = renderOnly({ projectId: "jiuli", promptId: "jiuli-p1", raw: fx("v3/SC-08-audit/P1").raw, snapshotId: snapB.snapshot_id });
+    const pasted = renderOnly({ projectId: "jiuli", promptId: "jiuli-p1", raw: fx("v3/SC-08/P1").raw });
+    expect(inputComparability(a1, a2)).toEqual({ comparable: true, reasons: [] });
+    expect(inputComparability(a1, b).reasons).toEqual(["两次运行用的输入不同（样本或输入快照不同）"]);
+    expect(inputComparability(a1, pasted).reasons[0]).toMatch(/没有输入记录/);
+    // 两次真实运行：同一输入，但一方没有预处理记录（旧 Run）
+    setProviderForTests(fakeProvider(fx("v3/SC-08/P1").raw));
+    const m1 = await modelRun({ projectId: "jiuli", promptId: "jiuli-p1", snapshotId: snapA.snapshot_id, system: "S", userTemplate: "{{input_json}}", params: {} });
+    const m2 = await modelRun({ projectId: "jiuli", promptId: "jiuli-p1", snapshotId: snapA.snapshot_id, system: "S", userTemplate: "{{input_json}}", params: {} });
+    expect(inputComparability(m1, m2).comparable).toBe(true);
+    expect(inputComparability(m1, { ...m2, input_manifest: null }).reasons).toEqual(["至少一方没有预处理记录（v1.1 之前的运行）"]);
+  });
+});

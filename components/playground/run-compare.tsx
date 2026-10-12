@@ -174,6 +174,25 @@ export function strictConditions(a: Run, b: Run): { applicable: boolean; strict:
   return { applicable: true, strict: reasons.length === 0, reasons };
 }
 
+/**
+ * 输入可比性（v1.3 §3.5 / §10.4）：两次运行是否用的同一份输入、同一预处理。
+ * 不可比时仍可看技术差异，但不能当作提示词改进的依据；缺记录按不可比处理，不默认相同。
+ */
+export function inputComparability(a: Run, b: Run): { comparable: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  const sameSnapshot = !!a.input_snapshot_id && a.input_snapshot_id === b.input_snapshot_id;
+  const sameBuilt = !!a.built_input_hash && a.built_input_hash === b.built_input_hash;
+  if (!sameSnapshot && !sameBuilt) {
+    if ((!a.input_snapshot_id && !a.built_input_hash) || (!b.input_snapshot_id && !b.built_input_hash)) reasons.push("至少一方没有输入记录（例如粘贴的输出）");
+    else reasons.push("两次运行用的输入不同（样本或输入快照不同）");
+  }
+  if (a.mode === "MODEL_RUN" && b.mode === "MODEL_RUN") {
+    if (!a.input_manifest || !b.input_manifest) reasons.push("至少一方没有预处理记录（v1.1 之前的运行）");
+    else if (preprocessText(a) !== preprocessText(b)) reasons.push("预处理版本不同");
+  }
+  return { comparable: reasons.length === 0, reasons };
+}
+
 export function compareRuns(a: Run, b: Run, versionLabels: [string | null | undefined, string | null | undefined] = [undefined, undefined]) {
   const schemaErrors = (r: Run) => String(r.schema_diagnostics.filter((d) => d.level === "ERROR").length);
   const rows: [string, (r: Run) => string][] = [
@@ -197,6 +216,7 @@ export function compareRuns(a: Run, b: Run, versionLabels: [string | null | unde
     ["原始响应 Hash", (r) => dash(r.raw_response_hash?.slice(0, 12))],
   ];
   return {
+    input: inputComparability(a, b),
     strict: strictConditions(a, b),
     metrics: rows.map(([key, f]) => ({ key, a: f(a), b: f(b), differs: f(a) !== f(b) })),
     system: textHunks(a.actual_prompt?.system, b.actual_prompt?.system),
@@ -258,6 +278,14 @@ export function RunCompare({ ids, onClose, inline }: { ids: [string, string]; on
         <div className="overflow-auto px-5 py-4">
           {cmp && (
             <>
+              {!cmp.input.comparable && (
+                <div className="mb-3 rounded-lg border border-stamp/40 bg-stamp/[0.07] px-3 py-2 text-[12px] text-stamp" data-testid="input-not-comparable">
+                  <div className="font-semibold">输入不可直接比较：只能看技术差异，不能作为提示词改进的依据</div>
+                  {cmp.input.reasons.map((r) => (
+                    <div key={r}>· {r}</div>
+                  ))}
+                </div>
+              )}
               <div
                 data-testid="strict-verdict"
                 className={cx("mb-3 rounded-lg border px-3 py-2 text-[12px]", !cmp.strict.applicable ? "border-ink-700 text-ink-300" : cmp.strict.strict ? "border-verify/40 bg-verify/[0.06] text-verify" : "border-risk/40 bg-risk/[0.07] text-risk")}

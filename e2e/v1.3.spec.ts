@@ -224,3 +224,15 @@ test("M1 提示词三层：编辑区与已保存版本的差异可展开；当�
   await expect(diff.getByTestId("prompt-diff").first()).toContainText("+新增一条测试规则");
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
+
+test("M1 版本对比：两次运行用的样本不同时，明确提示「输入不可直接比较」", async ({ page }) => {
+  await pickInDrawer(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
+  await pickInDrawer(page, "jiuli-p1", "v3/SC-08/P1");
+  await page.getByTestId("headline-actions").getByRole("button", { name: "对比历史运行" }).click();
+  const boxes = page.getByTestId("compare-mode").getByRole("checkbox");
+  await boxes.nth(0).check();
+  await boxes.nth(1).check();
+  const banner = page.getByRole("region", { name: "对比两次运行" }).getByTestId("input-not-comparable");
+  await expect(banner).toContainText("输入不可直接比较");
+  await expect(banner).toContainText("输入不同");
+});
