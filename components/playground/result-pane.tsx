@@ -578,7 +578,7 @@ function FieldVerdict({ detail }: { detail: RunDetail }) {
           </pre>
         </details>
       )}
-      <div className="mt-2 flex gap-1.5">
+      <div className="mt-2 flex flex-wrap gap-1.5">
         <Btn tone="outline" onClick={markCorrect} disabled={busy || !!done} data-testid="btn-mark-correct">
           {done ? "✓ 已标为正确" : "✓ 这个值对"}
         </Btn>
