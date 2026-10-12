@@ -268,3 +268,22 @@ test("修复：读取当前结果时刷新页面（请求被中止），刷新�
   await expect(page.getByTestId("result-headline")).toBeVisible();
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
+
+test("M2 字段抽屉：复制 Agent 诊断指令，内容带 Run ID、字段定位和人工标注的期望值", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await pickInDrawer(page, "jiuli-p1", "v3/SC-08/P1");
+  await page.locator('[data-table-id="orderRows"] [data-row-id="row-2"] [data-field="origin"]').first().click();
+  const verdict = page.getByTestId("field-verdict");
+  await verdict.getByTestId("btn-mark-wrong").click();
+  await page.getByLabel("错误归因").selectOption("UNKNOWN");
+  await page.getByLabel("正确值").fill("美国-诊断");
+  await page.getByRole("button", { name: "保存标注" }).click();
+  await expect(page.getByTestId("annotation-form")).toContainText("正确值：美国-诊断");
+  await verdict.getByTestId("btn-copy-diagnosis").click();
+  await expect(verdict.getByTestId("btn-copy-diagnosis")).toHaveText("已复制");
+  const text = await page.evaluate(() => navigator.clipboard.readText());
+  expect(text).toMatch(/目标 Run：run_[0-9a-f]+（P1）/);
+  expect(text).toContain('"row_id":"row-2","field":"origin"');
+  expect(text).toContain("期望值是「美国-诊断」");
+  expect(text).toMatch(/只读诊断/);
+});

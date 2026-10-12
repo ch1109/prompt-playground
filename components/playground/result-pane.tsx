@@ -8,6 +8,7 @@ import { getByPointer } from "@/lib/pipeline/json-pointer";
 import { useStudio, type ResultTab } from "@/lib/state/studio-store";
 import { EvidenceViewer, selectedRefIds } from "@/components/renderers/evidence-viewer";
 import { fieldInputCoverage } from "@/lib/runs/run-evidence";
+import { diagnosisPrompt } from "@/lib/mcp/task-template";
 import { BusinessView } from "@/components/views/business-view";
 import { Badge, Btn, cx, Empty, runStatusView } from "@/components/ui";
 import { JsonTree, RawText } from "./json-tree";
@@ -493,6 +494,7 @@ function FieldVerdict({ detail }: { detail: RunDetail }) {
   const putRun = useStudio((s) => s.putRun);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
   const p = sel.jsonPointer;
   if (!p || p.startsWith("req:") || !sel.fieldKey || detail.run.parsed_json === undefined) return null;
   const vm = detail.run.view_model;
@@ -508,6 +510,19 @@ function FieldVerdict({ detail }: { detail: RunDetail }) {
   const coverage = vm ? fieldInputCoverage(refs.map((id) => vm.evidence.find((e) => e.id === id)).filter((e) => !!e), detail.run.input_manifest, detail.run.mode) : [];
   const target = [sel.tableId, sel.rowId, sel.fieldKey].filter(Boolean).join(" / ");
   const done = detail.annotations.find((a) => a.target_json_pointer === p && a.assessment === "CORRECT");
+  const wrong = detail.annotations.find((a) => a.target_json_pointer === p && a.assessment === "WRONG");
+  function copyDiagnosis() {
+    const text = diagnosisPrompt({
+      runId: detail.run.run_id,
+      stage: detail.run.prompt_kind.replace(/^JIULI_/, ""),
+      objectRef: sel.rowId ? { table_id: sel.tableId ?? undefined, row_id: sel.rowId, field: sel.fieldKey ?? undefined } : { json_pointer: p! },
+      expectedValue: wrong?.expected_value,
+    });
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }
   async function markCorrect() {
     setErr(null);
     setBusy(true);
@@ -577,8 +592,12 @@ function FieldVerdict({ detail }: { detail: RunDetail }) {
         >
           ✗ 这个值错
         </Btn>
+        <Btn onClick={copyDiagnosis} data-testid="btn-copy-diagnosis" title="在已接入 Prompt Studio MCP 的 Codex / Claude Code 里粘贴，Agent 会按 Run 读取证据并给出带引用的诊断">
+          {copied ? "已复制" : "复制 Agent 诊断指令"}
+        </Btn>
       </div>
       <p className="mt-1.5 text-[11px] text-ink-400">「这个值错」要在下方选错误原因、可填正确值。标注单独保存，不改模型原始输出。</p>
+      <p className="mt-0.5 text-[11px] text-ink-400">网页内还不能直接启动 Agent：复制指令后粘贴到已接入 MCP 的 Codex / Claude Code（见 docs/MCP接入说明.md）。</p>
       {err && <p className="mt-1 text-stamp">{err}</p>}
     </div>
   );
