@@ -235,13 +235,16 @@ export function Playground({ projectId }: { projectId: string }) {
   useEffect(() => {
     loadProjects();
     loadPrompts();
-    api<{ items: FixtureSummary[] }>("/api/fixtures").then((r) => setFixtures(r.items));
     api<ProviderInfoDTO>("/api/models").then(setProvider);
     api<CapabilityDTO>("/api/connectors/jiuli/capabilities").then(setCapability).catch(() => setCapability(null));
   }, [loadProjects, loadPrompts]);
   useEffect(() => {
     loadRuns();
   }, [loadRuns]);
+  // 样本列表带本项目的运行统计；运行记录变化后刷新
+  useEffect(() => {
+    api<{ items: FixtureSummary[] }>(`/api/fixtures?project=${projectId}`).then((r) => setFixtures(r.items));
+  }, [projectId, runs.length]);
   useEffect(() => {
     loadSnapshots();
   }, [loadSnapshots]);

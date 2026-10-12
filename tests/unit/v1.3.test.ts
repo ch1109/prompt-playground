@@ -9,7 +9,7 @@ import { getFixture } from "@/lib/fixtures/catalog";
 import { snapshotForFixture } from "@/lib/fixtures/snapshot";
 import { OpenAICompatibleProvider, setProviderForTests } from "@/lib/models/openai-compatible";
 import { db, resetDbForTests } from "@/lib/repositories/db";
-import { addAnnotation, checkAssessment, deleteAnnotation, getAnnotation, listAnnotations, updateAnnotation } from "@/lib/repositories/runs";
+import { addAnnotation, checkAssessment, deleteAnnotation, fixtureRunStats, getAnnotation, listAnnotations, updateAnnotation } from "@/lib/repositories/runs";
 import { buildInputManifest } from "@/lib/runs/input-manifest";
 import { captureQuality, diagnosticStates, fieldInputCoverage } from "@/lib/runs/run-evidence";
 import type { EvidenceView } from "@/lib/contracts/view-model";
@@ -241,5 +241,21 @@ describe("M1-5 字段级实际输入", () => {
     expect(absent.status).toBe("NOT_SENT");
     expect(fieldInputCoverage([ev({})], null, "MODEL_RUN")[0]).toMatchObject({ status: "UNKNOWN", text: expect.stringContaining("未记录") });
     expect(fieldInputCoverage([ev({})], manifest, "RENDER_ONLY")[0].text).toContain("没有调用模型");
+  });
+});
+
+describe("M1-6 样本运行统计", () => {
+  it("按项目统计样本的运行次数、最近运行时间与标为错误的标注数", () => {
+    const f = fx("constructed/p4-v3-conflict.json");
+    const snap = snapshotForFixture("stats-proj", f)!;
+    const r1 = renderOnly({ projectId: "stats-proj", promptId: "jiuli-p4", raw: f.raw, snapshotId: snap.snapshot_id });
+    const r2 = renderOnly({ projectId: "stats-proj", promptId: "jiuli-p4", raw: f.raw, snapshotId: snap.snapshot_id });
+    addAnnotation({ run_id: r1.run_id, target_json_pointer: null, target: null, issue_type: "ASSESSMENT", expected_value: null, note: null, assessment: "WRONG", error_category: "UNKNOWN" });
+    addAnnotation({ run_id: r2.run_id, target_json_pointer: null, target: null, issue_type: "ASSESSMENT", expected_value: null, note: null, assessment: "CORRECT", error_category: null });
+    const st = fixtureRunStats("stats-proj").get(f.id)!;
+    expect(st).toMatchObject({ run_count: 2, wrong_count: 1 });
+    expect(st.last_run_at).toBe(r2.started_at);
+    // 其他项目的运行不计入
+    expect(fixtureRunStats("other-proj").get(f.id)).toBeUndefined();
   });
 });

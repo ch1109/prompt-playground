@@ -238,16 +238,23 @@ function FixtureList({ kind, fixtures, open, onOpen, onPick }: { kind: PromptKin
   const [origin, setOrigin] = useState<"" | FixtureSummary["origin"]>("");
   const [gold, setGold] = useState(false);
   const [schema, setSchema] = useState("");
+  const [usage, setUsage] = useState<"" | "runnable" | "render">("");
+  const [ranOnly, setRanOnly] = useState(false);
   const all = fixtures.filter((f) => f.promptKind === kind);
   const schemas = useMemo(() => [...new Set(all.map((f) => f.schemaVersion ?? "（无）"))], [all]);
   const needle = q.trim().toLowerCase();
-  const list = all.filter(
-    (f) =>
-      (!origin || f.origin === origin) &&
-      (!gold || f.hasGold) &&
-      (!schema || (f.schemaVersion ?? "（无）") === schema) &&
-      (!needle || [f.title, f.id, f.group, ...f.tags].some((x) => x.toLowerCase().includes(needle))),
-  );
+  const list = all
+    .filter(
+      (f) =>
+        (!origin || f.origin === origin) &&
+        (!gold || f.hasGold) &&
+        (!schema || (f.schemaVersion ?? "（无）") === schema) &&
+        (!usage || (usage === "runnable") === f.hasRequest) &&
+        (!ranOnly || (f.stats?.run_count ?? 0) > 0) &&
+        (!needle || [f.title, f.id, f.group, ...f.tags].some((x) => x.toLowerCase().includes(needle))),
+    )
+    // 「只看运行过的」按最近运行时间排序
+    .sort((a, b) => (ranOnly ? (b.stats?.last_run_at ?? "").localeCompare(a.stats?.last_run_at ?? "") : 0));
   const picked = all.find((f) => f.id === ws.fixtureId);
   if (!all.length) return <Empty>当前提示词没有示例。可以直接「上传文件」，或在「更多 → 粘贴 JSON」粘贴模型输出。</Empty>;
   if (picked && !open) {
@@ -280,9 +287,18 @@ function FixtureList({ kind, fixtures, open, onOpen, onPick }: { kind: PromptKin
             </option>
           ))}
         </select>
+        <select value={usage} onChange={(e) => setUsage(e.target.value as typeof usage)} aria-label="能否真实运行" className="rounded-lg border border-ink-700 bg-ink-900 px-1 py-1 text-[11.5px]">
+          <option value="">可运行 + 仅渲染</option>
+          <option value="runnable">可真实运行（带输入）</option>
+          <option value="render">只能仅渲染</option>
+        </select>
         <label className="flex items-center gap-1 text-[11.5px] text-ink-300">
           <input type="checkbox" checked={gold} onChange={(e) => setGold(e.target.checked)} aria-label="只看有 Gold" />
           只看有 Gold
+        </label>
+        <label className="flex items-center gap-1 text-[11.5px] text-ink-300">
+          <input type="checkbox" checked={ranOnly} onChange={(e) => setRanOnly(e.target.checked)} aria-label="只看运行过的" />
+          只看运行过的（最近的在前）
         </label>
       </div>
       {picked && <FixtureDetailCard f={picked} />}
@@ -306,6 +322,7 @@ function FixtureList({ kind, fixtures, open, onOpen, onPick }: { kind: PromptKin
                     className={cx("flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-[12px] hover:bg-ink-800", ws.fixtureId === f.id && "bg-accent/[0.07] ring-1 ring-accent/40")}
                   >
                     <span className="min-w-0 flex-1 truncate">{f.title}</span>
+                    <FixtureStats f={f} />
                     {f.hasRequest ? <Badge title="带请求上下文：可真实运行，也可解析 evidence_key / 当前值">ctx</Badge> : <Badge tone="mute" title="没有请求上下文：只能仅渲染">仅渲染</Badge>}
                     {f.hasGold && <Badge tone="ok">Gold</Badge>}
                     {f.covers?.length ? <Badge tone="mute">{f.covers.join(" ")}</Badge> : null}
@@ -322,6 +339,17 @@ function FixtureList({ kind, fixtures, open, onOpen, onPick }: { kind: PromptKin
   );
 }
 
+/** 样本在本项目里运行过几次、有几处被标为错误；没有输入快照的样本无法关联运行 */
+function FixtureStats({ f }: { f: FixtureSummary }) {
+  if (!f.stats) return <span className="text-[10.5px] text-ink-600" title="这个示例没有输入快照（只有模型输出），无法统计运行次数">—</span>;
+  return (
+    <span className="text-[10.5px] whitespace-nowrap text-ink-400" data-testid="fixture-stats" title={f.stats.last_run_at ? `最近运行 ${f.stats.last_run_at.slice(0, 16).replace("T", " ")}` : "还没有运行过"}>
+      运行 {f.stats.run_count}
+      {f.stats.wrong_count > 0 && <span className="ml-1 text-stamp">标错 {f.stats.wrong_count}</span>}
+    </span>
+  );
+}
+
 function FixtureDetailCard({ f }: { f: FixtureSummary }) {
   return (
     <div className="rounded-lg border border-ink-700 bg-ink-900 p-2 text-[11.5px]" data-testid="fixture-detail">
@@ -331,6 +359,10 @@ function FixtureDetailCard({ f }: { f: FixtureSummary }) {
         <Badge tone={f.hasGold ? "ok" : "mute"}>{f.hasGold ? "有独立 Gold" : "无 Gold"}</Badge>
         <Badge>{f.schemaVersion ?? "无 schema_version"}</Badge>
         <Badge tone={f.detail.runnable ? "info" : "warn"}>{f.detail.runnable ? "可真实运行 / 仅渲染" : "只能仅渲染"}</Badge>
+      </div>
+      <div className="text-ink-400" data-testid="fixture-summary">
+        文件 {f.detail.materials.length} 个 · 输入{f.hasRequest ? "完整（带请求上下文）" : "缺失（只有模型输出）"} ·{" "}
+        {f.stats ? `运行 ${f.stats.run_count} 次${f.stats.last_run_at ? `（最近 ${f.stats.last_run_at.slice(0, 16).replace("T", " ")}）` : ""} · 标为错误 ${f.stats.wrong_count} 处` : "无法关联运行"}
       </div>
       {f.detail.provenance && <div className="text-ink-400">{f.detail.provenance}</div>}
       {f.detail.materials.length > 0 && (

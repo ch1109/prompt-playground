@@ -178,3 +178,19 @@ test("M1 验收：P1~P4 各选一个字段，不离开结果页即可看字段�
     await expect(page.getByTestId("annotation-form")).toContainText(`正确值：期望-${c.prompt}`);
   }
 });
+
+test("M1 样本抽屉：每个示例显示运行次数与标错数；可按「只能仅渲染」「只看运行过的」筛选", async ({ page }) => {
+  await pickInDrawer(page, "jiuli-p4", "constructed/p4-v3-conflict.json");
+  await page.getByTestId("btn-change-input").click();
+  const drawer = page.getByTestId("input-drawer");
+  await expect(drawer.getByTestId("fixture-summary")).toContainText(/运行 \d+ 次/);
+  await drawer.getByTestId("btn-change-fixture").click();
+  const list = drawer.getByTestId("fixture-list");
+  await expect(list.locator('[data-fixture-id="constructed/p4-v3-conflict.json"]').getByTestId("fixture-stats")).toContainText(/运行 [1-9]/);
+  await list.getByLabel("能否真实运行").selectOption("render");
+  await expect(list.locator('[data-fixture-id="constructed/p4-v3-conflict.json"]')).toHaveCount(0);
+  await list.getByLabel("能否真实运行").selectOption("");
+  await list.getByLabel("只看运行过的").check();
+  await expect(list.locator('[data-fixture-id="constructed/p4-v3-conflict.json"]')).toBeVisible();
+  for (const stats of await list.getByTestId("fixture-stats").allTextContents()) expect(stats).not.toMatch(/运行 0/);
+});

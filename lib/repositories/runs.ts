@@ -92,6 +92,20 @@ export function listRuns(projectId: string, promptId?: string, limit = 100): Run
   });
 }
 
+/** 每个样本在本项目中的运行次数、最近运行时间与「标为错误」的标注数（经 FIXTURE 快照关联） */
+export function fixtureRunStats(projectId: string): Map<string, { run_count: number; last_run_at: string | null; wrong_count: number }> {
+  const rows = db()
+    .prepare(
+      `SELECT json_extract(s.body, '$.source_ids.fixture_id') AS fixture_id, COUNT(DISTINCT r.run_id) AS run_count, MAX(r.started_at) AS last_run_at,
+         COUNT(DISTINCT CASE WHEN a.assessment = 'WRONG' THEN a.annotation_id END) AS wrong_count
+       FROM input_snapshots s JOIN runs r ON r.input_snapshot_id = s.snapshot_id AND r.project_id = ?
+       LEFT JOIN annotations a ON a.run_id = r.run_id AND a.deleted_at IS NULL
+       WHERE s.source_type = 'FIXTURE' GROUP BY fixture_id`,
+    )
+    .all(projectId) as { fixture_id: string | null; run_count: number; last_run_at: string | null; wrong_count: number }[];
+  return new Map(rows.filter((r) => r.fixture_id).map((r) => [r.fixture_id!, { run_count: r.run_count, last_run_at: r.last_run_at, wrong_count: r.wrong_count }]));
+}
+
 /** ASSESSMENT = v1.1 的评判型标注（错误 / 正确 / 不确定 + 错误归因）；其余为旧类型与 P3 关系类型 */
 export const ANNOTATION_TYPES = ["ASSESSMENT", "MODEL_WRONG", "CORRECT_VALUE", "ERROR_REASON", "CORRECT_CANDIDATE", "WRONG_RELATION", "NOTE"];
 export const ASSESSMENTS = ["WRONG", "CORRECT", "UNSURE"] as const;

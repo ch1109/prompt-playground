@@ -34,6 +34,8 @@ export interface FixtureSummary {
   schemaVersion: string | null;
   tags: string[];
   detail: { materials: { file_id: string; type: string | null; segments: string[] }[]; provenance: string | null; upstream: string | null; runnable: boolean };
+  /** 本项目里的运行统计；样本没有输入快照、无法关联运行时为 null */
+  stats?: { run_count: number; last_run_at: string | null; wrong_count: number } | null;
 }
 
 export interface AnnotationDTO {
