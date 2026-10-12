@@ -72,6 +72,26 @@ CREATE TRIGGER IF NOT EXISTS prompt_stable_history_no_update BEFORE UPDATE ON pr
 BEGIN SELECT RAISE(ABORT, '正式版本记录只追加不修改'); END;
 CREATE TRIGGER IF NOT EXISTS prompt_stable_history_no_delete BEFORE DELETE ON prompt_stable_history
 BEGIN SELECT RAISE(ABORT, '正式版本记录只追加不删除'); END;
+-- 隔离的提示词候选（v1.3 §10 / §11.4）：不进入 prompt_versions，不影响正式版本；只有人工采纳才生成新版本
+CREATE TABLE IF NOT EXISTS prompt_candidates (
+  candidate_id TEXT PRIMARY KEY, prompt_id TEXT NOT NULL, base_version_id TEXT NOT NULL,
+  system_prompt TEXT NOT NULL, user_prompt_template TEXT NOT NULL, content_hash TEXT NOT NULL,
+  reason TEXT NOT NULL, diagnosis_ref TEXT, created_by TEXT NOT NULL, created_at TEXT NOT NULL,
+  status TEXT NOT NULL, decided_by TEXT, decided_at TEXT, decision_note TEXT, promoted_version_id TEXT
+);
+-- 候选内容不可改；状态只能从 DRAFT 改一次（采纳 / 拒绝）
+CREATE TRIGGER IF NOT EXISTS prompt_candidates_guard BEFORE UPDATE ON prompt_candidates
+WHEN OLD.status != 'DRAFT' OR NEW.system_prompt != OLD.system_prompt OR NEW.user_prompt_template != OLD.user_prompt_template
+  OR NEW.base_version_id != OLD.base_version_id OR NEW.reason != OLD.reason OR NEW.prompt_id != OLD.prompt_id
+BEGIN SELECT RAISE(ABORT, '候选内容不可修改；已采纳或已拒绝的候选不能再改'); END;
+CREATE TRIGGER IF NOT EXISTS prompt_candidates_no_delete BEFORE DELETE ON prompt_candidates
+BEGIN SELECT RAISE(ABORT, '候选不可删除（拒绝后保留历史）'); END;
+-- 候选实验：固定样本上跑候选（和必要的基线），body 记录计划、预算、运行与评判报告
+CREATE TABLE IF NOT EXISTS experiments (
+  experiment_id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL, prompt_id TEXT NOT NULL, project_id TEXT NOT NULL,
+  idempotency_key TEXT UNIQUE, status TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL,
+  finished_at TEXT, body TEXT NOT NULL
+);
 CREATE TRIGGER IF NOT EXISTS raw_responses_immutable BEFORE UPDATE ON raw_responses
 BEGIN SELECT RAISE(ABORT, 'raw_responses 不可修改'); END;
 -- 只有运行中（RUNNING）的 Run 可以更新为终态；结束后不可修改

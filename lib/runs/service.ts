@@ -243,7 +243,7 @@ export function cancelRun(runId: string) {
   ac.abort();
 }
 
-type ModelRunInput = Base & { snapshotId: string; system: string; userTemplate: string; promptVersionId?: string | null; params: ModelParams; attachImages?: boolean; retryOfRunId?: string | null };
+type ModelRunInput = Base & { snapshotId: string; system: string; userTemplate: string; promptVersionId?: string | null; params: ModelParams; attachImages?: boolean; retryOfRunId?: string | null; experimentRef?: Run["experiment_ref"] };
 
 /** MODEL_RUN：服务端代理真实模型调用；失败保存失败 Run，绝不回退为 Mock */
 export async function modelRun(input: ModelRunInput): Promise<Run> {
@@ -309,6 +309,7 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
     built_input: built.request,
     ...upstreamOf(prompt.prompt_kind),
     retry_of_run_id: input.retryOfRunId ?? null,
+    ...(input.experimentRef ? { experiment_ref: input.experimentRef } : {}),
     input_manifest: null as Run["input_manifest"],
     timing: null as Run["timing"],
   };

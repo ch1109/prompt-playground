@@ -188,4 +188,6 @@ export interface Run {
   /** P3 / P4 的上游 Run；本系统的 P3/P4 输入取自快照，不由上游 Run 生成，故为空并在 upstream_note 说明 */
   upstream_run_ids?: string[];
   upstream_note?: string | null;
+  /** 隔离实验中的运行（v1.3 M3）：属于哪个实验、是候选还是基线、哪个样本 */
+  experiment_ref?: { experiment_id: string; candidate_id: string; role: "BASELINE" | "CANDIDATE"; sample_id: string } | null;
 }
