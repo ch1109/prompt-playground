@@ -1,8 +1,9 @@
 // v1.3 M2：Run Debug Bundle + 只读 MCP（授权、审计、证据读取、缺证据坦白）。真实 Agent 客户端的验收见 docs/audit/v1.3-gap-matrix.md。
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import * as XLSX from "xlsx";
 import { POST } from "@/app/api/mcp/route";
 import type { Run } from "@/lib/contracts/run";
 import { getFixture } from "@/lib/fixtures/catalog";
@@ -176,6 +177,53 @@ describe("M2 Debug Bundle 读取", () => {
     const cmp = await call(t, "compare_runs", { base_run_id: otherRun.run_id, candidate_run_id: run.run_id });
     expect(cmp.data.input_comparability.comparable).toBe(false);
     expect(cmp.data.note).toMatch(/不可直接比较/);
+  });
+});
+
+describe("原件核对（get_source_evidence view=original）", () => {
+  /** 一个只有 Sheet「12-10-2」的委托 Excel：F7 = 产地，H7 = 带千分位格式的数量 */
+  function orderXlsx(origin: string) {
+    const ws = XLSX.utils.aoa_to_sheet([[], [], [], [], [], ["序号", "货物名称", "品牌", "型号", "参数", "产地", "单位", "数量"], [1, "晶圆", "SK HYNIX", "H25G9TCXXCX702A#9", "64GB", origin, "个", 12081]]);
+    ws["H7"].z = "#,##0";
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "12-10-2");
+    return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  }
+
+  /** 上传原件 → 用录制的 SC-08 P1 输出（file_id 换成上传原件）跑一次模型运行 */
+  async function runOnUpload(buf: Buffer, claimedFileId?: string) {
+    const { createFileSnapshot } = await import("@/lib/materials/store");
+    const snap = await createFileSnapshot({ projectId: "jiuli", files: [{ name: "委托.xlsx", buffer: buf, materialType: "ORDER" }] });
+    const fileId = snap.materials[0].file_id;
+    setProviderForTests(fakeProvider(fx("v3/SC-08/P1").raw.replaceAll("F-3c3cc10bd26b", claimedFileId ?? fileId)));
+    const r = await modelRun({ projectId: "jiuli", promptId: "jiuli-p1", snapshotId: snap.snapshot_id, system: "S", userTemplate: "{{input_json}}", params: {} });
+    return { r, fileId };
+  }
+  const ORIGIN_REF = "/output/rows/0/evidence/5/source";
+
+  it("打开原件读出来源单元格，与构造输入、模型原文对照；原件 Hash 与记录一致", async () => {
+    const { r, fileId } = await runOnUpload(orderXlsx("韩国"));
+    const ev = await call(token(), "get_source_evidence", { run_id: r.run_id, source_ref: ORIGIN_REF, view: "original" });
+    expect(ev.data.original).toMatchObject({
+      file: { file_id: fileId, hash_matches_record: true },
+      original_at_location: { found: true, sheet: "12-10-2", row: 7, column: "F", value_at_location: "韩国", raw_text_matches: true, row_values: { D: "H25G9TCXXCX702A#9", H: "12,081" } },
+      comparison: { original_equals_input: true, original_matches_model_raw_text: true },
+    });
+  });
+
+  it("模型声称的文件不在这次运行的输入里：不打开（即使那个文件本身有权限读）", async () => {
+    const { fileId: elsewhere } = await runOnUpload(orderXlsx("美国"));
+    const { r } = await runOnUpload(orderXlsx("韩国 "), elsewhere);
+    const ev = await call(token(), "get_source_evidence", { run_id: r.run_id, source_ref: ORIGIN_REF, view: "original" });
+    expect(ev.data.original).toEqual({ found: false, reason: expect.stringMatching(/不在这次运行的输入里/) });
+  });
+
+  it("运行后原件被替换：照常读出，但标明 Hash 与记录不一致", async () => {
+    const { r, fileId } = await runOnUpload(orderXlsx("日本"));
+    const { resolveUploadedFile } = await import("@/lib/materials/store");
+    writeFileSync(resolveUploadedFile(fileId)!.absolutePath, orderXlsx("德国"));
+    const ev = await call(token(), "get_source_evidence", { run_id: r.run_id, source_ref: ORIGIN_REF, view: "original" });
+    expect(ev.data.original).toMatchObject({ file: { hash_matches_record: false }, original_at_location: { value_at_location: "德国" }, comparison: { original_equals_input: false } });
   });
 });
 

@@ -3,6 +3,7 @@ import type { InputSnapshot } from "@/lib/contracts/snapshot";
 import type { Cell, EvidenceView } from "@/lib/contracts/view-model";
 import { getByPointer, isWithin } from "@/lib/pipeline/json-pointer";
 import { getPrompt, getVersion, type PromptVersion } from "@/lib/repositories/prompts";
+import { readOriginalAt } from "@/lib/materials/original-reader";
 import { getRun, listAnnotations } from "@/lib/repositories/runs";
 import { getSnapshot } from "@/lib/repositories/snapshots";
 import { compareRuns, diffSummary } from "./compare";
@@ -356,6 +357,44 @@ export function sourceEvidence(c: RunContext, sourceRef: string, view: "snippet"
         }
       : null,
   };
+}
+
+/** 这次运行输入里真实存在的文件（清单、快照材料、构造输入），用于决定能否打开原件 */
+function runFileIds(c: RunContext): Set<string> {
+  const input = obj(obj(c.request).input);
+  const fromRequest = [...(Array.isArray(input.materials) ? input.materials : []), ...(Array.isArray(input.files) ? input.files : [])].map((x) => obj(x).file_id);
+  return new Set([...(c.run.input_manifest?.files.map((f) => f.file_id) ?? []), ...(c.snapshot?.materials.map((m) => m.file_id) ?? []), ...fromRequest].filter((x): x is string => typeof x === "string"));
+}
+
+/**
+ * 原件核对：在 snippet 的基础上打开原件，读来源指向的单元格 / 页，并与构造输入、模型声称的原文对照。
+ * 只打开这次运行输入里确实有的文件——模型声称的 file_id 可能是编造的，不能据此读别的文件。
+ */
+export async function sourceEvidenceOriginal(c: RunContext, sourceRef: string) {
+  const base = sourceEvidence(c, sourceRef, "snippet");
+  const e = c.run.view_model!.evidence.find((x) => x.id === sourceRef)!;
+  const withOriginal = (original: unknown) => ({ ...base, view: "original" as const, original });
+  if (!e.fileId) return withOriginal({ found: false, reason: "这条来源在请求数据里，不对应原件" });
+  if (!runFileIds(c).has(e.fileId)) return withOriginal({ found: false, reason: "模型声称的文件不在这次运行的输入里，不打开（可能是模型编造的 file_id）" });
+  try {
+    const r = await readOriginalAt(e.fileId, { page: e.page, sheet: e.sheet, row: e.row, column: e.column, rawText: e.rawText }, base.file?.sha256 ?? null);
+    const orig = r.original_at_location as { value_at_location?: string | null; raw_value?: unknown };
+    const inputValue = (base.input_at_location as { value_at_location?: unknown }).value_at_location;
+    // 显示文本或底层值任一与输入相同即视为一致（数字单元格的显示文本带千分位等格式）
+    const sameAsInput = (v: unknown) => [orig.value_at_location, orig.raw_value].some((o) => o !== null && o !== undefined && String(o).trim() === String(v).trim());
+    return withOriginal({
+      ...r,
+      comparison:
+        orig.value_at_location !== undefined
+          ? {
+              original_equals_input: inputValue === undefined || inputValue === null ? null : sameAsInput(inputValue),
+              original_matches_model_raw_text: (r.original_at_location as { raw_text_matches?: boolean | null }).raw_text_matches ?? null,
+            }
+          : null,
+    });
+  } catch (err) {
+    return withOriginal({ found: false, reason: err instanceof Error ? err.message : String(err), code: (err as { code?: string }).code ?? null });
+  }
 }
 
 /** 提示词里的章节标题（Markdown 标题、【】、编号行），给出行号便于引用 */
