@@ -236,3 +236,18 @@ test("M1 版本对比：两次运行用的样本不同时，明确提示「输�
   await expect(banner).toContainText("输入不可直接比较");
   await expect(banner).toContainText("输入不同");
 });
+
+test("修复：切换提示词时，较慢返回的旧历史请求不会覆盖当前提示词的运行历史", async ({ page }) => {
+  await pickInDrawer(page, "jiuli-p1", "v3/SC-08/P1");
+  const p1Count = await page.request.get("/api/runs?project=jiuli&promptId=jiuli-p1").then(async (r) => (await r.json()).data.length as number);
+  // 通用提示词的历史请求故意慢 1.5 秒返回
+  await page.route(/\/api\/runs\?.*promptId=generic-json/, async (r) => {
+    await new Promise((res) => setTimeout(res, 1500));
+    await r.continue();
+  });
+  await page.click('[data-prompt="generic-json"]');
+  await page.click('[data-prompt="jiuli-p1"]');
+  await page.waitForTimeout(2500);
+  await expect(page.getByRole("button", { name: /运行历史（/ })).toContainText(`运行历史（${p1Count >= 100 ? "100+" : p1Count}`);
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});

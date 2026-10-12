@@ -199,10 +199,15 @@ export function Playground({ projectId }: { projectId: string }) {
   const RUN_PAGE = 100;
   const [runLimit, setRunLimit] = useState(RUN_PAGE);
   useEffect(() => setRunLimit(RUN_PAGE), [promptId]);
-  const loadRuns = useCallback(
-    () => api<RunListItem[]>(`/api/runs?project=${projectId}&promptId=${encodeURIComponent(promptId)}&limit=${runLimit}`).then(setRuns),
-    [projectId, promptId, runLimit],
-  );
+  // 切换提示词后，较慢返回的旧请求不能覆盖当前提示词的历史：只采用最新一次请求的结果
+  const runsRequest = useRef("");
+  const loadRuns = useCallback(() => {
+    const url = `/api/runs?project=${projectId}&promptId=${encodeURIComponent(promptId)}&limit=${runLimit}`;
+    runsRequest.current = url;
+    return api<RunListItem[]>(url).then((list) => {
+      if (runsRequest.current === url) setRuns(list);
+    });
+  }, [projectId, promptId, runLimit]);
   const moreRuns = runs.length >= runLimit;
   // 打开的 Run 仍在运行（例如刷新前发起）：轮询直到结束后自动显示结果
   const runningRunId = detail?.run.status === "RUNNING" ? detail.run.run_id : null;
