@@ -66,6 +66,8 @@ export interface PageImageCoverage {
   total_pages: number | null;
   sent_pages: (number | null)[];
   skipped_reason: string | null;
+  /** 读取或转图出错（不是页数上限、不是格式不支持） */
+  conversion_failed?: boolean;
 }
 
 /** 只规划不转换（请求预览用）：按与运行时相同的页数上限，算出每个原件将发送哪些页 */
@@ -121,6 +123,7 @@ async function collect(fileIds: string[], convert: boolean): Promise<{ images: P
       if (convert) for (const x of pages) images.push({ file_id: id, page: x.page, media_type: x.type, sha256: sha256(x.buf!.toString("base64")), base64: x.buf!.toString("base64") });
     } catch (e) {
       cov.skipped_reason = `无法读取原件（${e instanceof Error ? e.message : String(e)}）`;
+      cov.conversion_failed = true;
       warnings.push(`原件 ${id} 无法转为图片（${e instanceof Error ? e.message : String(e)}），未附带`);
     }
   }

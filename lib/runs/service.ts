@@ -61,7 +61,13 @@ function diagByPhase(result: PipelineResult) {
   return {
     parse_diagnostics: result.diagnostics.filter((d) => d.phase === "PARSE"),
     schema_diagnostics: result.diagnostics.filter((d) => d.phase === "SCHEMA"),
+    adapter_diagnostics: result.diagnostics.filter((d) => d.phase === "ADAPTER" || d.phase === "RENDER"),
   };
+}
+
+/** P3/P4 的上游说明：输入来自快照（九立只读或录制请求），不是本系统某次 P1/P2 Run 的输出 */
+function upstreamOf(kind: PromptKind) {
+  return kind === "JIULI_P3" || kind === "JIULI_P4" ? { upstream_run_ids: [] as string[], upstream_note: "输入来自快照，不是本系统上游 Run 的输出，无法关联上游 Run" } : {};
 }
 
 interface Base {
@@ -300,6 +306,8 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
     input_builder_id: `${built.builderId}@${INPUT_BUILDER_VERSION}`,
     input_builder_warnings: built.warnings,
     prompt_source: { system: input.system, user_template: input.userTemplate },
+    built_input: built.request,
+    ...upstreamOf(prompt.prompt_kind),
     retry_of_run_id: input.retryOfRunId ?? null,
     input_manifest: null as Run["input_manifest"],
     timing: null as Run["timing"],
@@ -334,7 +342,7 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
       const manifest = await manifestFor(request, snapshot, builtOk, attach, pages?.coverage ?? null, input.system, user, info.capabilities);
       const preprocessMs = pages ? Date.now() - t0 : null;
       if (abort.signal.aborted) return cancelled();
-      const images = pages?.images.map((i) => ({ mediaType: i.media_type, base64: i.base64 }));
+      const images = pages?.images.map((i) => ({ mediaType: i.media_type, base64: i.base64, ref: { file_id: i.file_id, page: i.page, sha256: i.sha256 } }));
       const result = await provider.complete({ system: input.system, user, params: input.params, images, signal: abort.signal });
       if (abort.signal.aborted) return cancelled();
       const done = {
@@ -345,6 +353,7 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
         actual_prompt_hash: pages?.images.length ? contentHash(input.system, `${user}\n${pages.images.map((i) => i.sha256).join(",")}`) : common.actual_prompt_hash,
         attached_images: pages ? pages.images.map(({ base64: _b, ...m }) => m) : null,
         input_builder_warnings: [...builderWarnings, ...(pages?.warnings ?? [])],
+        request_actual: result.request ?? null,
         ended_at: new Date().toISOString(),
         latency_ms: result.latencyMs,
       };
@@ -374,6 +383,8 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
         parsed_json: pr.parse.value,
         parse_diagnostics: [...truncated, ...diag.parse_diagnostics],
         schema_diagnostics: diag.schema_diagnostics,
+        adapter_diagnostics: diag.adapter_diagnostics,
+        response_meta: result.responseMeta,
         view_model: pr.viewModel ? { ...pr.viewModel, diagnostics: [...truncated, ...pr.viewModel.diagnostics] } : null,
         token_usage: result.usage,
         finish_reason: finishReason,

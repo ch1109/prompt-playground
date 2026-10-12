@@ -337,7 +337,7 @@ function SchemaTab({ detail }: { detail: RunDetail }) {
   const run = detail.run;
   const select = useStudio((s) => s.select);
   const setStore = useStudio((s) => s.set);
-  const diags = run.view_model?.diagnostics ?? [...run.parse_diagnostics, ...run.schema_diagnostics];
+  const diags = run.view_model?.diagnostics ?? [...run.parse_diagnostics, ...run.schema_diagnostics, ...(run.adapter_diagnostics ?? [])];
   const status = run.status === "PARSE_ERROR" ? "NOT_RUN" : !run.schema_id ? "UNKNOWN_SCHEMA" : run.schema_diagnostics.some((d) => d.level === "ERROR") ? "INVALID" : "VALID";
   const goto = (p?: string) => {
     if (p === undefined) return;

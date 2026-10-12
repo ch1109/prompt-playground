@@ -90,6 +90,8 @@ export interface ManifestFile {
   /** 实际发送的页图页码（图片文件为 [null]）；null = 未开启附带图片 */
   image_pages_sent: (number | null)[] | null;
   image_skipped_reason: string | null;
+  /** 既没作为文本也没作为图片进入模型的页码；总页数未知为 null（input-manifest@1.1.0 起） */
+  omitted_pages?: number[] | null;
 }
 
 /** 输入覆盖清单（R-02）：这次实际发出了哪些文件、页、Sheet、文本和图片 */
@@ -106,6 +108,8 @@ export interface InputManifest {
   page_coverage: string | null;
   truncation_reason: string | null;
   visual_evidence: "SENT" | "PARTIAL" | "NOT_SENT" | "NOT_APPLICABLE";
+  /** 原件转图失败的文件与原因（input-manifest@1.1.0 起） */
+  conversion_failures?: { file_id: string; reason: string }[];
   /** 没有缺页、解析失败、能力不足时才为 true */
   complete: boolean;
   gaps: string[];
@@ -172,4 +176,16 @@ export interface Run {
   prompt_source?: { system: string; user_template: string } | null;
   /** 重试时指向被重试的 Run */
   retry_of_run_id?: string | null;
+  // —— v1.3 起的新 Run 才有；旧 Run 没有这些字段，读取时按「未采集」处理，不回填 ——
+  /** 构造出的输入（运行时的副本，快照被删除后仍可查） */
+  built_input?: unknown;
+  /** 实际发给服务商的请求结构（脱敏：正文只记长度与 hash，图片只记原件引用，不含密钥） */
+  request_actual?: Record<string, unknown> | null;
+  /** 服务商响应元数据：请求 ID、回报的模型名、结束原因、原样 usage、思考内容长度（不存思考内容） */
+  response_meta?: Record<string, unknown> | null;
+  /** Adapter / 渲染阶段的诊断；Adapter 出错没有 view_model 时也保留 */
+  adapter_diagnostics?: Diagnostic[];
+  /** P3 / P4 的上游 Run；本系统的 P3/P4 输入取自快照，不由上游 Run 生成，故为空并在 upstream_note 说明 */
+  upstream_run_ids?: string[];
+  upstream_note?: string | null;
 }

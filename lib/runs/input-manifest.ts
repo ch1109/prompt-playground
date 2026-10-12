@@ -5,7 +5,8 @@ import type { PageImageCoverage } from "./page-images";
 // 输入覆盖清单（R-02）：回答"这次 Run 实际发出了哪些文件、页、Sheet、文本和图片"。
 // 只根据构造好的请求、快照登记的材料和页图转换结果统计，不做推测；拿不到的数字记 null（未知）。
 
-export const INPUT_MANIFEST_VERSION = "input-manifest@1.0.0";
+// 1.1.0：每个文件记录 omitted_pages（未进入模型的页），清单记录 conversion_failures；未发送文本时 text_pages 为空
+export const INPUT_MANIFEST_VERSION = "input-manifest@1.1.0";
 
 type Rec = Record<string, unknown>;
 const rec = (v: unknown): Rec => (v && typeof v === "object" && !Array.isArray(v) ? (v as Rec) : {});
@@ -79,7 +80,7 @@ export function buildInputManifest(m: ManifestInput): InputManifest {
     if (prev) {
       prev.roles = [...new Set([...prev.roles, String(f.material_type ?? "")].filter(Boolean))];
       prev.text_chars += chars;
-      prev.text_pages = [...new Set([...prev.text_pages, ...textPages(content, segments)])].sort((a, b) => a - b);
+      if (hasText) prev.text_pages = [...new Set([...prev.text_pages, ...textPages(content, segments)])].sort((a, b) => a - b);
       prev.text_sent ||= hasText;
       continue;
     }
@@ -93,7 +94,7 @@ export function buildInputManifest(m: ManifestInput): InputManifest {
       preprocessor_version: typeof um?.preprocessor_version === "string" ? um.preprocessor_version : m.snapshot.source_type === "FILE_IMPORT" ? null : "上游已抽取（九立 Demo / 录制请求，版本未知）",
       text_sent: hasText,
       text_chars: chars,
-      text_pages: textPages(content, segments),
+      text_pages: hasText ? textPages(content, segments) : [],
       sheets: sheets(content),
       total_pages: c?.total_pages ?? null,
       image_pages_sent: c ? c.sent_pages : null,
@@ -101,6 +102,19 @@ export function buildInputManifest(m: ManifestInput): InputManifest {
     });
   }
   const files = [...byId.values()];
+  // 总页数已知时，既没发文本也没发页图的页 = 未进入模型；总页数未知、或发了文本却不知道是哪几页时记 null（不猜）
+  for (const f of files) {
+    if (f.total_pages === null || (f.text_sent && !f.text_pages.length && !f.media_type?.startsWith("image/"))) {
+      f.omitted_pages = null;
+      continue;
+    }
+    if (f.media_type?.startsWith("image/")) {
+      f.omitted_pages = f.text_sent || f.image_pages_sent?.length ? [] : [1];
+      continue;
+    }
+    const seen = new Set<number | null>([...f.text_pages, ...(f.image_pages_sent ?? [])]);
+    f.omitted_pages = Array.from({ length: f.total_pages }, (_, i) => i + 1).filter((p) => !seen.has(p));
+  }
 
   for (const id of m.blockedFiles) gaps.push(`材料 ${id} 没有预处理文本，当前方式无法发送给模型`);
   for (const f of files) if (!f.text_sent && !(f.image_pages_sent?.length)) gaps.push(`材料 ${f.file_id} 既没有发送文本也没有发送图片`);
@@ -142,6 +156,7 @@ export function buildInputManifest(m: ManifestInput): InputManifest {
     sent_image_count: imageCount,
     page_coverage: pageCoverage,
     truncation_reason: truncation,
+    conversion_failures: (m.imageCoverage ?? []).filter((c) => c.conversion_failed).map((c) => ({ file_id: c.file_id, reason: c.skipped_reason ?? "转换失败" })),
     visual_evidence: visual,
     complete: gaps.length === 0,
     gaps,
