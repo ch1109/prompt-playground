@@ -11,7 +11,8 @@ import { OpenAICompatibleProvider, setProviderForTests } from "@/lib/models/open
 import { db, resetDbForTests } from "@/lib/repositories/db";
 import { addAnnotation, checkAssessment, deleteAnnotation, getAnnotation, listAnnotations, updateAnnotation } from "@/lib/repositories/runs";
 import { buildInputManifest } from "@/lib/runs/input-manifest";
-import { captureQuality, diagnosticStates } from "@/lib/runs/run-evidence";
+import { captureQuality, diagnosticStates, fieldInputCoverage } from "@/lib/runs/run-evidence";
+import type { EvidenceView } from "@/lib/contracts/view-model";
 import { modelRun, renderOnly } from "@/lib/runs/service";
 
 beforeAll(() => {
@@ -214,5 +215,31 @@ describe("M1-4 标注修订留痕 + 13 类错误归因", () => {
     expect(checkAssessment({ assessment: "WRONG", error_category: "MATCH_JUDGEMENT" })).toBeNull();
     expect(checkAssessment({ assessment: "WRONG", error_category: "SOMETHING_ELSE" as never })).toMatch(/UNKNOWN/);
     expect(checkAssessment({ assessment: "WRONG", error_category: null })).toMatch(/UNKNOWN/);
+  });
+});
+
+describe("M1-5 字段级实际输入", () => {
+  const ev = (over: Partial<EvidenceView>): EvidenceView => ({ id: "ev", fileId: "F1", fileName: "查货.pdf", page: 2, availability: "AVAILABLE", ...over }) as EvidenceView;
+  const manifest = buildInputManifest({
+    request: { input: { files: [{ file_id: "F1", content: null }] } },
+    snapshot: { snapshot_id: "s", source_type: "FILE_IMPORT", content_hash: "h", normalized_payload: {}, materials: [] } as unknown as InputSnapshot,
+    builderId: "b",
+    builderVersion: "1",
+    blockedFiles: [],
+    attachImages: true,
+    imageCoverage: [{ file_id: "F1", media_type: "application/pdf", total_pages: 3, sent_pages: [1, 2], skipped_reason: null }],
+    fileMeta: [],
+    userChars: 1,
+    systemChars: 1,
+    visionSupported: true,
+  });
+
+  it("页图发了 / 页没进模型 / 文件不在请求里 / 旧 Run 没有清单，分别说明", () => {
+    const [sent, omitted, absent] = fieldInputCoverage([ev({ id: "a", page: 2 }), ev({ id: "b", page: 3 }), ev({ id: "c", fileId: "F9", fileName: "发票.pdf" })], manifest, "MODEL_RUN");
+    expect(sent).toMatchObject({ status: "IMAGE_SENT", text: "查货.pdf 第 2 页：页图已发送给模型" });
+    expect(omitted).toMatchObject({ status: "NOT_SENT", text: "查货.pdf 第 3 页：这一页没有进入模型" });
+    expect(absent.status).toBe("NOT_SENT");
+    expect(fieldInputCoverage([ev({})], null, "MODEL_RUN")[0]).toMatchObject({ status: "UNKNOWN", text: expect.stringContaining("未记录") });
+    expect(fieldInputCoverage([ev({})], manifest, "RENDER_ONLY")[0].text).toContain("没有调用模型");
   });
 });

@@ -2,11 +2,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/client/api";
 import type { AnnotationDTO, FixtureSummary, RunDetail, RunListItem } from "@/lib/client/types";
-import type { ViewModel } from "@/lib/contracts/view-model";
+import type { CellState, ViewModel } from "@/lib/contracts/view-model";
 import { explainModelError } from "@/lib/models/error-hints";
 import { getByPointer } from "@/lib/pipeline/json-pointer";
 import { useStudio, type ResultTab } from "@/lib/state/studio-store";
-import { EvidenceViewer } from "@/components/renderers/evidence-viewer";
+import { EvidenceViewer, selectedRefIds } from "@/components/renderers/evidence-viewer";
+import { fieldInputCoverage } from "@/lib/runs/run-evidence";
 import { BusinessView } from "@/components/views/business-view";
 import { Badge, Btn, cx, Empty, runStatusView } from "@/components/ui";
 import { JsonTree, RawText } from "./json-tree";
@@ -494,8 +495,17 @@ function FieldVerdict({ detail }: { detail: RunDetail }) {
   const [busy, setBusy] = useState(false);
   const p = sel.jsonPointer;
   if (!p || p.startsWith("req:") || !sel.fieldKey || detail.run.parsed_json === undefined) return null;
-  const col = detail.run.view_model?.tables.find((t) => t.id === sel.tableId)?.columns.find((c) => c.key === sel.fieldKey);
+  const vm = detail.run.view_model;
+  const table = vm?.tables.find((t) => t.id === sel.tableId);
+  const col = table?.columns.find((c) => c.key === sel.fieldKey);
+  const cell = table?.rows.find((r) => r.id === sel.rowId)?.cells[sel.fieldKey];
   const hit = getByPointer(detail.run.parsed_json, p);
+  // 业务表显示的值与模型原始输出不同 → 是 Adapter 整理时转换的
+  const converted = cell && hit.found && JSON.stringify(cell.value) !== JSON.stringify(hit.value);
+  const parentPointer = p.slice(0, p.lastIndexOf("/"));
+  const parent = parentPointer ? getByPointer(detail.run.parsed_json, parentPointer) : undefined;
+  const refs = vm ? (selectedRefIds(vm, sel) ?? []) : [];
+  const coverage = vm ? fieldInputCoverage(refs.map((id) => vm.evidence.find((e) => e.id === id)).filter((e) => !!e), detail.run.input_manifest, detail.run.mode) : [];
   const target = [sel.tableId, sel.rowId, sel.fieldKey].filter(Boolean).join(" / ");
   const done = detail.annotations.find((a) => a.target_json_pointer === p && a.assessment === "CORRECT");
   async function markCorrect() {
@@ -516,6 +526,43 @@ function FieldVerdict({ detail }: { detail: RunDetail }) {
     <div className="rounded-lg border border-ink-700 bg-ink-900 p-2.5 text-[12px]" data-testid="field-verdict">
       <div className="text-ink-400">{col?.title ?? sel.fieldKey}</div>
       <div className="mt-0.5 font-semibold break-words text-ink-100">{hit.found ? (typeof hit.value === "string" ? hit.value || "（空）" : JSON.stringify(hit.value)) : "（模型输出里没有这个位置）"}</div>
+      <dl className="mt-1.5 grid grid-cols-[64px_1fr] gap-x-1.5 gap-y-0.5 text-[11px]">
+        <dt className="text-ink-400">字段状态</dt>
+        <dd data-testid="field-state">{cell?.state ? `${CELL_STATE_LABEL[cell.state]}（${cell.state}）` : "模型没有标注状态"}</dd>
+        {converted && (
+          <>
+            <dt className="text-ink-400">表格显示</dt>
+            <dd className="text-risk" data-testid="field-converted">
+              {JSON.stringify(cell.value)}（Adapter 整理时转换，原始输出见上）
+            </dd>
+          </>
+        )}
+        <dt className="text-ink-400">实际输入</dt>
+        <dd data-testid="field-input-coverage">
+          {coverage.length ? (
+            coverage.map((c) => (
+              <div key={c.refId} className={cx(c.status === "NOT_SENT" && "text-stamp", c.status === "UNKNOWN" && "text-ink-400")}>
+                {c.text}
+              </div>
+            ))
+          ) : (
+            <span className="text-risk">不可追溯：模型没有给出这个字段的来源</span>
+          )}
+        </dd>
+      </dl>
+      {parent?.found && (
+        <details className="mt-1 text-[11px]" data-testid="field-raw-node">
+          <summary className="cursor-pointer text-ink-400">原始输出中的所在节点</summary>
+          <pre className="mt-1 max-h-48 overflow-auto rounded border border-ink-700 bg-ink-950 p-1.5 font-mono text-[10.5px] whitespace-pre-wrap">
+            {parentPointer}
+            {"\n"}
+            {(() => {
+              const text = JSON.stringify(parent.value, null, 1);
+              return text.length > 800 ? `${text.slice(0, 800)}…（已截断，完整内容见「原始输出」）` : text;
+            })()}
+          </pre>
+        </details>
+      )}
       <div className="mt-2 flex gap-1.5">
         <Btn tone="outline" onClick={markCorrect} disabled={busy || !!done} data-testid="btn-mark-correct">
           {done ? "✓ 已标为正确" : "✓ 这个值对"}
@@ -536,6 +583,15 @@ function FieldVerdict({ detail }: { detail: RunDetail }) {
     </div>
   );
 }
+
+const CELL_STATE_LABEL: Record<CellState, string> = {
+  PRESENT: "有值",
+  EXPLICIT_NONE: "明确无牌",
+  SOURCE_BLANK: "原件空白",
+  NOT_DETECTED: "未识别到",
+  UNREADABLE: "无法辨认",
+  AMBIGUOUS: "有歧义",
+};
 
 /** 全部类型的显示名（含旧数据里的"正确值""错误原因"，照常显示与导出） */
 const ANN_LABEL: Record<string, string> = {

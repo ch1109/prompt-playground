@@ -146,7 +146,7 @@ export function EvidenceViewer({ vm, canPreview, snapshotSource, request }: { vm
   if (sel.tableId && sel.rowId && !vm.tables.find((t) => t.id === sel.tableId)?.rows.some((r) => r.id === sel.rowId) && !sel.issueId) {
     return <p className="text-[12px] text-risk">无法定位：所选对象在当前结果中不存在。</p>;
   }
-  if (refs.length === 0) return <p className="text-[12px] text-risk">未提供来源（这不代表证据通过）。</p>;
+  if (refs.length === 0) return <p className="text-[12px] text-risk">不可追溯：模型没有给出来源（这不代表证据通过）。</p>;
   return (
     <div className="space-y-2">
       {refs.map((id) => {

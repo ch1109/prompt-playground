@@ -1,4 +1,5 @@
-import type { Run } from "@/lib/contracts/run";
+import type { InputManifest, Run } from "@/lib/contracts/run";
+import type { EvidenceView } from "@/lib/contracts/view-model";
 
 // 运行证据的读取时推导（v1.3 §5）：只看 Run 里真实保存了什么，不回填、不重新生成。
 // 纯函数，不依赖 node 模块；服务端接口与浏览器都可以用。
@@ -75,4 +76,32 @@ export interface RunEvidence {
   capture: CaptureReport;
   states: DiagnosticState[];
   warnings: DiagnosticState[];
+}
+
+export interface FieldInputCoverage {
+  refId: string;
+  status: "TEXT_SENT" | "IMAGE_SENT" | "NOT_SENT" | "UNKNOWN";
+  text: string;
+}
+
+/**
+ * 字段级「实际输入」：这个字段的每条来源，对应的原件页 / Sheet 当时有没有进入模型。
+ * 只根据 Run 的输入覆盖清单判断；没有清单（旧 Run、仅渲染）就如实说未记录，不推测。
+ */
+export function fieldInputCoverage(evidence: EvidenceView[], manifest: InputManifest | null | undefined, mode: string): FieldInputCoverage[] {
+  return evidence.map((e) => {
+    const where = [e.fileName ?? e.fileId, e.page != null ? `第 ${e.page} 页` : null, e.sheet ? `Sheet「${e.sheet}」` : null].filter(Boolean).join(" ");
+    const out = (status: FieldInputCoverage["status"], text: string) => ({ refId: e.id, status, text: `${where || "来源"}：${text}` });
+    if (!e.fileId) return out("UNKNOWN", "来源在请求数据里，不对应原件页");
+    if (mode !== "MODEL_RUN") return out("UNKNOWN", "没有调用模型，没有实际输入记录");
+    if (!manifest) return out("UNKNOWN", "未记录（这条 Run 没有输入覆盖清单）");
+    const f = manifest.files.find((x) => x.file_id === e.fileId);
+    if (!f) return out("NOT_SENT", "这个文件不在本次请求里，没有进入模型");
+    if (e.page != null && f.image_pages_sent?.includes(e.page)) return out("IMAGE_SENT", "页图已发送给模型");
+    if (e.page != null && f.text_pages.includes(e.page)) return out("TEXT_SENT", "这一页的文本已发送");
+    if (e.page != null && f.omitted_pages?.includes(e.page)) return out("NOT_SENT", "这一页没有进入模型");
+    if (f.image_pages_sent?.includes(null)) return out("IMAGE_SENT", "图片已发送给模型");
+    if (f.text_sent) return out("TEXT_SENT", e.page != null ? "文件文本已发送，但记录里没有逐页信息" : "文件文本已发送");
+    return out("NOT_SENT", "这个文件既没发文本也没发图片");
+  });
 }

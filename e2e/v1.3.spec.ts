@@ -151,3 +151,30 @@ test("M1 运行证据：详情顶部显示采集完整度与诊断状态；输�
   await pickInDrawer(page, "jiuli-p1", "v2/p1-original-output-example.json");
   await expect(page.getByTestId("schema-version-mismatch")).toContainText("jiuli-ai-v3");
 });
+
+test("M1 验收：P1~P4 各选一个字段，不离开结果页即可看字段状态、实际输入、来源并标注错误；刷新后标注仍在", async ({ page }) => {
+  const cases = [
+    { prompt: "jiuli-p1", fixture: "v3/SC-08/P1", table: "orderRows", row: "row-1", field: "brand" },
+    { prompt: "jiuli-p2", fixture: "v3/SC-08/P2", table: "inspectionRawRows", row: "rec-1", field: "brand" },
+    { prompt: "jiuli-p3", fixture: "constructed/p3-v3-multi-candidate.json", table: "orderRows", row: "OR_001", field: "match_status" },
+    { prompt: "jiuli-p4", fixture: "constructed/p4-v3-conflict.json", table: "fieldDecisions", row: "OR_001:brand", field: "result_value" },
+  ];
+  for (const c of cases) {
+    await pickInDrawer(page, c.prompt, c.fixture);
+    await page.locator(`[data-table-id="${c.table}"] [data-row-id="${c.row}"] [data-field="${c.field}"]`).first().click();
+    const verdict = page.getByTestId("field-verdict");
+    await expect(verdict.getByTestId("field-state")).not.toBeEmpty();
+    // 仅渲染没有模型输入记录：如实说明，不假装已发送
+    await expect(verdict.getByTestId("field-input-coverage")).toContainText(/没有调用模型|不可追溯|请求数据/);
+    await expect(page.getByTestId("result-pane").getByRole("tab", { name: "结果" })).toHaveAttribute("aria-selected", "true");
+    await verdict.getByTestId("btn-mark-wrong").click();
+    await page.getByLabel("错误归因").selectOption("UNKNOWN");
+    await page.getByLabel("正确值").fill(`期望-${c.prompt}`);
+    await page.getByRole("button", { name: "保存标注" }).click();
+    await expect(page.getByTestId("annotation-form")).toContainText(`正确值：期望-${c.prompt}`);
+    // 刷新页面：回到同一条结果，标注仍在
+    await page.reload();
+    await page.locator(`[data-table-id="${c.table}"] [data-row-id="${c.row}"] [data-field="${c.field}"]`).first().click();
+    await expect(page.getByTestId("annotation-form")).toContainText(`正确值：期望-${c.prompt}`);
+  }
+});
