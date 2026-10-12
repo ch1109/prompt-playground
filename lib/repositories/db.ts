@@ -63,6 +63,15 @@ CREATE TRIGGER IF NOT EXISTS agent_audit_log_no_update BEFORE UPDATE ON agent_au
 BEGIN SELECT RAISE(ABORT, '审计记录只追加不修改'); END;
 CREATE TRIGGER IF NOT EXISTS agent_audit_log_no_delete BEFORE DELETE ON agent_audit_log
 BEGIN SELECT RAISE(ABORT, '审计记录只追加不删除'); END;
+-- 正式版本变更记录（v1.3 §11.4）：每次设定 / 晋升正式版本追加一条，只追加
+CREATE TABLE IF NOT EXISTS prompt_stable_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, prompt_id TEXT NOT NULL, version_id TEXT NOT NULL, previous_version_id TEXT,
+  candidate_id TEXT, experiment_id TEXT, decided_by TEXT, at TEXT NOT NULL, note TEXT
+);
+CREATE TRIGGER IF NOT EXISTS prompt_stable_history_no_update BEFORE UPDATE ON prompt_stable_history
+BEGIN SELECT RAISE(ABORT, '正式版本记录只追加不修改'); END;
+CREATE TRIGGER IF NOT EXISTS prompt_stable_history_no_delete BEFORE DELETE ON prompt_stable_history
+BEGIN SELECT RAISE(ABORT, '正式版本记录只追加不删除'); END;
 CREATE TRIGGER IF NOT EXISTS raw_responses_immutable BEFORE UPDATE ON raw_responses
 BEGIN SELECT RAISE(ABORT, 'raw_responses 不可修改'); END;
 -- 只有运行中（RUNNING）的 Run 可以更新为终态；结束后不可修改
@@ -99,6 +108,9 @@ export function db(): DatabaseSync {
     // 迁移（v1.1 R-14）：评判、错误归因、是否已核实、保存时的模型原值、来源引用、标注人；旧标注这些列为空
     for (const [col, type] of [["assessment", "TEXT"], ["error_category", "TEXT"], ["category_confirmed", "INTEGER"], ["model_value", "TEXT"], ["source_ref_ids", "TEXT"], ["author", "TEXT"]])
       if (!annCols.includes(col)) d.exec(`ALTER TABLE annotations ADD COLUMN ${col} ${type}`);
+    // 迁移（v1.3 M3）：正式版本指针；为空表示还没设定，首次读取时取当时最新版本
+    const promptCols = (d.prepare("PRAGMA table_info(prompts)").all() as { name: string }[]).map((c) => c.name);
+    if (!promptCols.includes("stable_version_id")) d.exec("ALTER TABLE prompts ADD COLUMN stable_version_id TEXT");
     // 迁移（v1.1 R-06）：Prompt 版本变更说明
     const pvCols = (d.prepare("PRAGMA table_info(prompt_versions)").all() as { name: string }[]).map((c) => c.name);
     if (!pvCols.includes("change_note")) d.exec("ALTER TABLE prompt_versions ADD COLUMN change_note TEXT");

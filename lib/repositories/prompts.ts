@@ -11,6 +11,8 @@ export interface PromptDefinition {
   name: string;
   active_schema_version: string | null;
   renderer_id: string | null;
+  /** 正式版本（v1.3 M3）：只有人工审批采纳候选时才移动；为空表示尚未设定 */
+  stable_version_id?: string | null;
 }
 
 export interface PromptVersion {
@@ -52,7 +54,7 @@ export function ensureSeed() {
   const now = new Date().toISOString();
   d.prepare("INSERT OR IGNORE INTO projects (project_id, name, description, created_at) VALUES (?,?,?,?)").run(DEFAULT_PROJECT_ID, "九立 AI 核对", "P1~P4 结构化提示词调试", now);
   for (const s of SEED) {
-    d.prepare("INSERT OR IGNORE INTO prompts VALUES (?,?,?,?,?,?)").run(
+    d.prepare("INSERT OR IGNORE INTO prompts (prompt_id, project_id, prompt_kind, name, active_schema_version, renderer_id) VALUES (?,?,?,?,?,?)").run(
       s.id,
       DEFAULT_PROJECT_ID,
       s.kind,
@@ -122,7 +124,7 @@ export function createProject(input: { name: string; description?: string; templ
   const sources = input.template === "JIULI" ? listPrompts(DEFAULT_PROJECT_ID) : listPrompts(DEFAULT_PROJECT_ID).filter((x) => x.prompt_kind === "GENERIC_JSON");
   for (const src of sources) {
     const promptId = `${project.project_id}-${src.prompt_id.replace(/^jiuli-/, "")}`;
-    d.prepare("INSERT INTO prompts VALUES (?,?,?,?,?,?)").run(promptId, project.project_id, src.prompt_kind, src.name, src.active_schema_version, src.renderer_id);
+    d.prepare("INSERT INTO prompts (prompt_id, project_id, prompt_kind, name, active_schema_version, renderer_id) VALUES (?,?,?,?,?,?)").run(promptId, project.project_id, src.prompt_kind, src.name, src.active_schema_version, src.renderer_id);
     copyLatestVersion(src.prompt_id, promptId, project.created_at);
   }
   return project;
@@ -180,7 +182,7 @@ export function createPrompt(input: { projectId: string; name: string; kind: Pro
   const src = listPrompts(DEFAULT_PROJECT_ID).find((p) => p.prompt_kind === input.kind);
   if (!src) throw new Error(`不支持的提示词种类 ${input.kind}`);
   const prompt: PromptDefinition = { prompt_id: newId("prm"), project_id: input.projectId, prompt_kind: input.kind, name, active_schema_version: src.active_schema_version, renderer_id: src.renderer_id };
-  d.prepare("INSERT INTO prompts VALUES (?,?,?,?,?,?)").run(prompt.prompt_id, prompt.project_id, prompt.prompt_kind, prompt.name, prompt.active_schema_version, prompt.renderer_id);
+  d.prepare("INSERT INTO prompts (prompt_id, project_id, prompt_kind, name, active_schema_version, renderer_id) VALUES (?,?,?,?,?,?)").run(prompt.prompt_id, prompt.project_id, prompt.prompt_kind, prompt.name, prompt.active_schema_version, prompt.renderer_id);
   if (input.kind === "GENERIC_JSON") insertSeed(prompt.prompt_id, "默认", "只输出一个合法 JSON 对象。", "studio-editor", null);
   else copyLatestVersion(src.prompt_id, prompt.prompt_id, new Date().toISOString());
   return prompt;
@@ -204,6 +206,41 @@ export function listVersions(promptId: string): PromptVersion[] {
 
 export function getVersion(versionId: string): PromptVersion | undefined {
   return db().prepare("SELECT * FROM prompt_versions WHERE version_id = ?").get(versionId) as unknown as PromptVersion | undefined;
+}
+
+/**
+ * 正式版本 ID。从未设定过时，取当时最新的版本作为初始正式版本并记一笔；之后只有 setStableVersion 能移动它。
+ * 用户在编辑器里保存新版本不会改变正式版本。
+ */
+export function stableVersionId(promptId: string): string | null {
+  const p = getPrompt(promptId);
+  if (!p) return null;
+  if (p.stable_version_id) return p.stable_version_id;
+  const latest = listVersions(promptId)[0];
+  if (!latest) return null;
+  setStableVersion(promptId, latest.version_id, { decided_by: "system", note: "初始化：取当时最新的版本作为正式版本" });
+  return latest.version_id;
+}
+
+/** 移动正式版本指针并追加变更记录（调用方负责审批校验） */
+export function setStableVersion(promptId: string, versionId: string, meta: { candidate_id?: string | null; experiment_id?: string | null; decided_by: string; note?: string | null }) {
+  const d = db();
+  const prev = (d.prepare("SELECT stable_version_id FROM prompts WHERE prompt_id = ?").get(promptId) as { stable_version_id: string | null } | undefined)?.stable_version_id ?? null;
+  d.prepare("UPDATE prompts SET stable_version_id = ? WHERE prompt_id = ?").run(versionId, promptId);
+  d.prepare("INSERT INTO prompt_stable_history (prompt_id, version_id, previous_version_id, candidate_id, experiment_id, decided_by, at, note) VALUES (?,?,?,?,?,?,?,?)").run(
+    promptId,
+    versionId,
+    prev,
+    meta.candidate_id ?? null,
+    meta.experiment_id ?? null,
+    meta.decided_by,
+    new Date().toISOString(),
+    meta.note ?? null,
+  );
+}
+
+export function stableHistory(promptId: string) {
+  return db().prepare("SELECT * FROM prompt_stable_history WHERE prompt_id = ? ORDER BY id DESC").all(promptId) as Record<string, unknown>[];
 }
 
 /** 创建不可变 PromptVersion（不覆盖历史） */

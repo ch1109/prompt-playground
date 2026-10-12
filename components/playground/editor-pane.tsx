@@ -100,11 +100,17 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
         >
           {versions.map((v) => (
             <option key={v.version_id} value={v.version_id}>
+              {v.is_stable ? "【正式】" : ""}
               {v.label} · {v.created_at.slice(0, 16).replace("T", " ")}
             </option>
           ))}
         </select>
         {isDraft ? <Badge tone="warn">未保存草稿</Badge> : <Badge tone="ok">与版本一致</Badge>}
+        {current?.is_stable && (
+          <span title="正式版本只有在「候选与实验」里人工采纳候选时才会改变；保存新版本不会改变它" data-testid="stable-badge">
+            <Badge tone="ok">正式版本</Badge>
+          </span>
+        )}
       </div>
       {current && (
         <p className="text-[11px] text-ink-400" data-testid="version-meta">

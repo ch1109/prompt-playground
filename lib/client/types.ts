@@ -20,6 +20,8 @@ export interface PromptVersionDTO {
   source: string | null;
   parent_version_id?: string | null;
   change_note?: string | null;
+  /** 是否为正式版本（v1.3 M3）；新保存的版本为 false */
+  is_stable?: boolean;
 }
 
 export interface FixtureSummary {
