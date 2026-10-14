@@ -346,11 +346,15 @@ test("M3 修改建议：先看一句结论和计数，详情里有修改内容�
   expect(after.versions.find((v) => v.is_stable)?.label).toBe(`采纳-${tag}`);
 });
 
-test("结果页规则检查：P3 / P4 显示九立硬规则对照结果；有违反时逐条列出，点一条定位到对应格子；P1 不显示", async ({ page }) => {
+test("结果页规则检查：P2 / P3 / P4 显示九立硬规则对照结果；有违反时逐条列出，点一条定位到对应格子；P1 不显示", async ({ page }) => {
   await pickInDrawer(page, "jiuli-p3", "v3/SC-08/P3");
   const ok = page.getByTestId("rule-check");
   await expect(ok).toHaveAttribute("data-state", "pass");
   await expect(ok).toContainText("已对照 5 条九立硬规则");
+
+  await pickInDrawer(page, "jiuli-p2", "v3/SC-08/P2");
+  await expect(page.getByTestId("rule-check")).toHaveAttribute("data-state", "pass");
+  await expect(page.getByTestId("rule-check")).toContainText("已对照 8 条九立硬规则");
 
   await pickInDrawer(page, "jiuli-p4", "constructed/p4-v3-conflict.json");
   const box = page.getByTestId("rule-check");

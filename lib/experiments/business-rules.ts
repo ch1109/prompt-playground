@@ -1,5 +1,6 @@
-// P3 / P4 业务硬规则（v1.3 §10.3「硬性回归检查」）：只拿请求输入和模型输出对照，确定性判断，不猜。
-// 规则全部出自九立 v3.0 提示词本身的约束（P3「三、1/4/6」与末尾自检清单；P4「三、2/4/5/6」与「五」字段规则）。
+// P2 / P3 / P4 业务硬规则（v1.3 §10.3「硬性回归检查」）：只拿请求输入和模型输出对照，确定性判断，不猜。
+// 规则全部出自九立 v3.0 提示词本身的约束（P2「一」与末尾自检清单；P3「三、1/4/6」与末尾自检清单；P4「三、2/4/5/6」与「五」字段规则）。
+// 手写是否认错、两件商品是否被错合成一行，需要看原件图像，规则判断不了，留给人工标注。
 // 用于试运行评判：某条规则在修改后违反得比原来多 → 判为变差。
 
 export interface RuleViolation {
@@ -16,6 +17,14 @@ const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const str = (v: unknown) => (v === null || v === undefined ? "" : typeof v === "string" ? v : JSON.stringify(v));
 
 export const RULE_LABELS: Record<string, string> = {
+  P2_FAKE_WAREHOUSE_NO: "入仓号在输入原文里找不到或不是 8 位数字",
+  P2_DUPLICATE_LOGICAL: "同一入仓号重复建了逻辑查货单",
+  P2_ORPHAN_WAREHOUSE: "商品行的入仓号没有对应的逻辑查货单",
+  P2_RECORD_NO_DUP: "同一行号出现了多次",
+  P2_UNKNOWN_MEMBER: "包装范围引用了不存在的行",
+  P2_ROW_COPIED: "同一条原始记录被复制到多个入仓号",
+  P2_SHARED_VALUE_COPIED: "整箱 / 整单的共享重量被复制到了每一行",
+  P2_READ_CLAIMED_COMPLETE: "有没读的页却说读完了",
   P3_CROSS_CUSTOMER: "跨客户匹配",
   P3_UNKNOWN_ID: "引用了输入里没有的行",
   P3_OCCUPIED_REUSED: "复用了已被占用的查货行",
@@ -30,6 +39,89 @@ export const RULE_LABELS: Record<string, string> = {
 };
 
 const v = (rule: string, message: string, json_pointer: string): RuleViolation => ({ rule, label: RULE_LABELS[rule], message, json_pointer });
+
+const num = (x: unknown) => str(x).replace(/[,\s]/g, "");
+
+export function p2Violations(request: unknown, parsed: unknown): RuleViolation[] {
+  const out: RuleViolation[] = [];
+  const files = arr(obj(obj(request).input).files).map(obj);
+  const o = obj(obj(parsed).output);
+  const rows = arr(o.raw_rows).map(obj);
+  const logical = arr(o.logical_inspections).map(obj);
+  const scopes = arr(o.scope_records).map(obj);
+
+  // 入仓号无伪造（「一、1」「一、2」自检清单）：必须是 8 位数字且能在输入原文里找到；有只发了图片的文件时找不到不算（号码可能在图里）
+  const text = files.map((f) => JSON.stringify(f.content ?? "")).join("\n");
+  const imageOnly = files.some((f) => f.content === null || f.content === undefined);
+  const seen = new Set<string>();
+  // 确定的入仓号必须是 8 位数字；候选号码（candidate_warehouse_nos）是原文线索，只要求能在原文里找到
+  const checkNo = (no: unknown, ptr: string, candidate = false) => {
+    const n = str(no);
+    if (!n || seen.has(n)) return;
+    seen.add(n);
+    if (!candidate && !/^\d{8}$/.test(n)) out.push(v("P2_FAKE_WAREHOUSE_NO", `入仓号「${n}」不是 8 位数字`, ptr));
+    else if (!imageOnly && !text.includes(n)) out.push(v("P2_FAKE_WAREHOUSE_NO", `入仓号「${n}」在输入原文里找不到`, ptr));
+  };
+  logical.forEach((l, i) => checkNo(l.warehouse_no, `/output/logical_inspections/${i}/warehouse_no`));
+  rows.forEach((r, i) => {
+    checkNo(r.warehouse_no, `/output/raw_rows/${i}/warehouse_no`);
+    arr(r.candidate_warehouse_nos).forEach((n, k) => checkNo(n, `/output/raw_rows/${i}/candidate_warehouse_nos/${k}`, true));
+  });
+  scopes.forEach((sc, i) => checkNo(sc.warehouse_no, `/output/scope_records/${i}/warehouse_no`));
+
+  // 可靠号码不重复建单；行的入仓号要有对应逻辑单
+  const logicalNos = logical.map((l) => str(l.warehouse_no)).filter(Boolean);
+  for (const n of new Set(logicalNos)) if (logicalNos.filter((x) => x === n).length > 1) out.push(v("P2_DUPLICATE_LOGICAL", `入仓号 ${n} 建了 ${logicalNos.filter((x) => x === n).length} 个逻辑查货单`, "/output/logical_inspections"));
+  rows.forEach((r, i) => {
+    const n = str(r.warehouse_no);
+    if (n && !logicalNos.includes(n)) out.push(v("P2_ORPHAN_WAREHOUSE", `第 ${str(r.record_no)} 行的入仓号 ${n} 没有对应的逻辑查货单`, `/output/raw_rows/${i}/warehouse_no`));
+  });
+
+  // 一个原始行只定义一次；包装范围只能引用存在的行
+  const recordNos = rows.map((r) => str(r.record_no));
+  for (const n of new Set(recordNos)) if (recordNos.filter((x) => x === n).length > 1) out.push(v("P2_RECORD_NO_DUP", `行号 ${n} 出现了 ${recordNos.filter((x) => x === n).length} 次`, "/output/raw_rows"));
+  scopes.forEach((sc, i) =>
+    arr(sc.member_record_nos).forEach((m, k) => {
+      if (!recordNos.includes(str(m))) out.push(v("P2_UNKNOWN_MEMBER", `${str(sc.kind)}「${str(sc.identifier)}」引用了不存在的第 ${str(m)} 行`, `/output/scope_records/${i}/member_record_nos/${k}`));
+    }),
+  );
+
+  // 不能把同一记录复制到多个逻辑单（「一、4」）：来源位置和字段完全相同、入仓号不同
+  const byRecord = new Map<string, { i: number; no: string }[]>();
+  rows.forEach((r, i) => {
+    const src = obj(r.source);
+    const key = JSON.stringify([src.file_id, src.page, src.sheet, src.row, r.fields]);
+    byRecord.set(key, [...(byRecord.get(key) ?? []), { i, no: str(r.warehouse_no) }]);
+  });
+  for (const list of byRecord.values()) if (new Set(list.map((x) => x.no)).size > 1) out.push(v("P2_ROW_COPIED", `同一条原始记录被放进了入仓号 ${[...new Set(list.map((x) => x.no))].join("、")}`, `/output/raw_rows/${list[1].i}`));
+
+  // 共享值未复制到行（自检清单）：多个成员共享的整箱 / 整单重量，不能原样写进每个成员行
+  const byNo = new Map(rows.map((r) => [str(r.record_no), r]));
+  scopes.forEach((sc, i) => {
+    const members = arr(sc.member_record_nos).map((m) => byNo.get(str(m))).filter((r): r is Obj => !!r);
+    if (members.length < 2) return;
+    arr(sc.measurements).forEach((m0, k) => {
+      const m = obj(m0);
+      const field = str(m.field);
+      if (!["net_weight", "gross_weight"].includes(field) || !num(m.value)) return;
+      if (members.every((r) => num(obj(r.fields)[field]) === num(m.value)))
+        out.push(v("P2_SHARED_VALUE_COPIED", `${str(sc.kind)}「${str(sc.identifier)}」共享的 ${field}=${str(m.value)} 被写进了全部 ${members.length} 个成员行`, `/output/scope_records/${i}/measurements/${k}`));
+    });
+  });
+
+  // 读取状态（「通用执行约定」）：每个文件都要报告；说读完了就不能有未读段，也要覆盖请求给的全部段
+  const reads = new Map(arr(o.read_status).map((x) => [str(obj(x).file_id), obj(x)]));
+  files.forEach((f) => {
+    const id = str(f.file_id);
+    const rs = reads.get(id);
+    if (!rs) return out.push(v("P2_READ_CLAIMED_COMPLETE", `文件 ${id} 没有报告读取状态`, "/output/read_status"));
+    if (rs.status !== "COMPLETE") return;
+    const missing = arr(f.segments).map(str).filter((sg) => !arr(rs.read_segments).map(str).includes(sg));
+    if (arr(rs.unread_segments).length || missing.length) out.push(v("P2_READ_CLAIMED_COMPLETE", `文件 ${id} 标为读完，但 ${[...arr(rs.unread_segments).map(str), ...missing].join("、")} 没读`, "/output/read_status"));
+  });
+  if (o.processing_status === "SUCCESS" && [...reads.values()].some((x) => x.status !== "COMPLETE")) out.push(v("P2_READ_CLAIMED_COMPLETE", "有文件没有读完，处理状态却是 SUCCESS（应为 PARTIAL）", "/output/processing_status"));
+  return out;
+}
 
 /** 能证明「是同一件商品」的证据字段；数量、PO、产地、顺序等不能单独证明（P3「三、4」） */
 const IDENTITY_FIELDS = new Set(["model", "business_row_marker", "material_no", "sku", "lot", "dc"]);
@@ -112,12 +204,13 @@ export function p4Violations(request: unknown, parsed: unknown): RuleViolation[]
 
 /** 某个阶段会检查哪些规则（给页面列出规则名）；没有规则的阶段返回空数组 */
 export function rulesFor(kind: string): string[] {
-  const prefix = kind === "JIULI_P3" ? "P3_" : kind === "JIULI_P4" ? "P4_" : null;
+  const prefix = kind === "JIULI_P2" ? "P2_" : kind === "JIULI_P3" ? "P3_" : kind === "JIULI_P4" ? "P4_" : null;
   return prefix ? Object.entries(RULE_LABELS).filter(([k]) => k.startsWith(prefix)).map(([, label]) => label) : [];
 }
 
 export function businessViolations(kind: string, request: unknown, parsed: unknown): RuleViolation[] | null {
   if (parsed === undefined || request === null || request === undefined) return null;
+  if (kind === "JIULI_P2") return p2Violations(request, parsed);
   if (kind === "JIULI_P3") return p3Violations(request, parsed);
   if (kind === "JIULI_P4") return p4Violations(request, parsed);
   return null;

@@ -5,7 +5,7 @@ import { businessViolations, rulesFor, type RuleViolation } from "@/lib/experime
 import { isWithin } from "@/lib/pipeline/json-pointer";
 import { useStudio } from "@/lib/state/studio-store";
 
-// 结果页的「九立硬规则检查」（P3 / P4）：打开结果时用这次的输入对照输出现算，不改任何已保存的数据。
+// 结果页的「九立硬规则检查」（P2 / P3 / P4）：打开结果时用这次的输入对照输出现算，不改任何已保存的数据。
 // 没问题一行绿字；有问题逐条列出，点一条就选中对应的表格格子（右侧字段面板随之打开）。
 
 export function RuleCheck({ detail }: { detail: RunDetail }) {

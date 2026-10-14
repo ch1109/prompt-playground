@@ -348,6 +348,55 @@ describe("P3 / P4 业务硬规则", () => {
     expect(rules(p4Violations(partial.request, partial.out))).toContain("P4_INCOMPLETE_SCOPE_WRITE");
   });
 
+  it("P2：真实录制输出没有违反；逐条改坏后各自被抓到；只发了图片的文件不判入仓号伪造", async () => {
+    const { p2Violations } = await import("@/lib/experiments/business-rules");
+    const p2 = load("v3/SC-08/P2");
+    expect(p2Violations(p2.request, p2.out)).toEqual([]);
+    const o = (x: any) => x.out.output;
+    const check = (mutate: (x: any) => void) => {
+      const x = clone(p2);
+      mutate(x);
+      return rules(p2Violations(x.request, x.out));
+    };
+    // 入仓号：原文里没有 / 不是 8 位；候选号码只要求原文里有
+    expect(check((x) => (o(x).logical_inspections[0].warehouse_no = "12345678"))).toContain("P2_FAKE_WAREHOUSE_NO");
+    expect(check((x) => (o(x).raw_rows[0].warehouse_no = "2512033"))).toContain("P2_FAKE_WAREHOUSE_NO");
+    expect(check((x) => (o(x).raw_rows[0].candidate_warehouse_nos = ["2512100302"]))).not.toContain("P2_FAKE_WAREHOUSE_NO");
+    // 只发了图片的文件：号码可能在图里，不判伪造
+    expect(
+      check((x) => {
+        o(x).logical_inspections[0].warehouse_no = "12345678";
+        x.request.input.files.push({ file_id: "F-img", segments: ["page:1"], content: null });
+        o(x).read_status.push({ file_id: "F-img", read_segments: ["page:1"], unread_segments: [], status: "COMPLETE" });
+      }),
+    ).not.toContain("P2_FAKE_WAREHOUSE_NO");
+    // 重复建单、行的入仓号没有逻辑单
+    expect(check((x) => o(x).logical_inspections.push(clone(o(x).logical_inspections[0])))).toContain("P2_DUPLICATE_LOGICAL");
+    expect(check((x) => (o(x).logical_inspections = []))).toContain("P2_ORPHAN_WAREHOUSE");
+    // 行号重复、包装范围引用不存在的行
+    expect(check((x) => (o(x).raw_rows[1].record_no = 1))).toContain("P2_RECORD_NO_DUP");
+    expect(check((x) => o(x).scope_records[0].member_record_nos.push(99))).toContain("P2_UNKNOWN_MEMBER");
+    // 同一记录复制到另一个入仓号
+    expect(
+      check((x) => {
+        const copy = clone(o(x).raw_rows[0]);
+        copy.record_no = 3;
+        copy.warehouse_no = "2512100302".slice(0, 8);
+        o(x).raw_rows.push(copy);
+      }),
+    ).toContain("P2_ROW_COPIED");
+    // 整单共享净重被复制到每一行
+    expect(
+      check((x) => {
+        const total = o(x).scope_records[0].measurements.find((m: any) => m.field === "net_weight").value;
+        o(x).raw_rows.forEach((r: any) => (r.fields.net_weight = total));
+      }),
+    ).toContain("P2_SHARED_VALUE_COPIED");
+    // 有没读的页却说读完了
+    expect(check((x) => x.request.input.files[0].segments.push("page:2"))).toContain("P2_READ_CLAIMED_COMPLETE");
+    expect(check((x) => (o(x).read_status[0].status = "INCOMPLETE"))).toContain("P2_READ_CLAIMED_COMPLETE");
+  });
+
   it("试运行：P4 修改后把数量这个交易字段改了 → 判为变差，结论建议拒绝", async () => {
     const f = getFixture("v3/SC-08/P4")!;
     const out = JSON.parse(f.raw);
