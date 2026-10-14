@@ -74,9 +74,11 @@ test("AT-26 请求预览：显示输入覆盖；模板有未登记变量时明�
   await expect(page.getByTestId("preview-blockers")).toContainText("UNRESOLVED_TEMPLATE_VARIABLE");
 });
 
-test("模型页列出能力声明，未声明的如实显示", async ({ page }) => {
+test("请求预览里的「模型与参数」列出能力声明，未声明的如实显示", async ({ page }) => {
   await page.goto("/projects/jiuli/playground");
-  await page.getByRole("button", { name: "模型", exact: true }).click();
+  // 「模型」并进了「请求预览」顶部的「模型与参数」折叠区
+  await page.getByRole("button", { name: "请求预览" }).click();
+  await page.getByTestId("model-settings").locator("summary").click();
   await expect(page.getByTestId("capability-table")).toContainText("图片输入");
   await expect(page.getByTestId("capability-table")).toContainText("未声明");
 });

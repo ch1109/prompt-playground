@@ -12,7 +12,7 @@ import { PromptEditor } from "./prompt-editor";
 import { CandidatesTab } from "./candidates-tab";
 import { Hunks, textHunks } from "./run-compare";
 
-type EditorTab = "prompt" | "input" | "model" | "preview" | "candidates";
+type EditorTab = "prompt" | "input" | "preview" | "candidates";
 
 
 export function EditorPane(props: {
@@ -44,7 +44,6 @@ export function EditorPane(props: {
           [
             ["input", "输入"],
             ["prompt", "提示词"],
-            ["model", "模型"],
             ["preview", "请求预览"],
             ["candidates", "修改建议"],
           ] as [EditorTab, string][]
@@ -69,8 +68,12 @@ export function EditorPane(props: {
             onMoreSnapshots={props.onMoreSnapshots}
           />
         )}
-        {tab === "model" && <ModelTab provider={props.provider} />}
-        {tab === "preview" && <PreviewTab fixtures={props.fixtures} isDraft={isDraft} versionLabel={version?.label} />}
+        {tab === "preview" && (
+          <div className="space-y-3">
+            <ModelTab provider={props.provider} />
+            <PreviewTab fixtures={props.fixtures} isDraft={isDraft} versionLabel={version?.label} />
+          </div>
+        )}
         {tab === "candidates" && <CandidatesTab promptId={props.promptId} onVersionsChanged={props.onVersionsChanged} />}
       </div>
       <div className="border-t border-ink-700 px-3 py-1 text-[11px] text-ink-400">
@@ -971,48 +974,57 @@ function JiuliImport({ projectId, capability, onCreated }: { projectId: string; 
   );
 }
 
+/** 模型与参数：收在「请求预览」顶部，默认折叠；摘要行写明模型、是否已配置和两个常用参数 */
 function ModelTab({ provider }: { provider: ProviderInfoDTO | null }) {
   const [ws, patch] = useWorkspace();
   return (
-    <div className="space-y-3 text-[12px]">
-      <div className={cx("rounded-lg border p-2", provider?.configured ? "border-verify/40" : "border-risk/40 bg-risk/10")}>
-        <div className="flex items-center gap-2">
-          <Badge tone={provider?.configured ? "ok" : "warn"}>{provider?.configured ? "已配置" : "未配置"}</Badge>
-          <span className="font-mono">{provider?.provider}</span>
-          <span className="font-mono text-ink-300">{provider?.model || "—"}</span>
-        </div>
-        <p className="mt-1 text-ink-400">
-          {provider?.configured
-            ? `点击运行后，提示词与构造输入将发送到 ${provider.provider}。API Key 只在服务端使用。`
-            : "在项目根目录 .env.local 填写 MODEL_BASE_URL / MODEL_NAME / MODEL_API_KEY 后重启。未配置时只能「仅渲染」。"}
-        </p>
-        <p className="text-ink-400">文件直传：{provider?.supportsFileInput ? "支持" : "不支持（默认只发送预处理文本；缺文本的材料会被阻断。看图请勾选下方「附带原件图片」）"}</p>
-      </div>
-      {provider?.capabilities && <CapabilityTable caps={provider.capabilities} />}
-      <label className="flex items-start gap-2">
-        <input type="checkbox" checked={ws.attachImages ?? provider?.capabilities?.images === true} onChange={(e) => patch({ attachImages: e.target.checked })} aria-label="附带原件图片" className="mt-0.5" />
-        <span>
-          附带原件图片
-          <span className="block text-ink-400">
-            把输入里的 PDF / 图片原件逐页转成图片，和文字一起发送（默认最多 20 页，可用 MODEL_MAX_IMAGE_PAGES 调整）。Excel 不转图。
-            {ws.attachImages === null ? "当前跟随模型能力：模型支持看图时，有 PDF / 图片就自动附带。" : ""}
-          </span>
-          {ws.attachImages !== null && (
-            <button type="button" onClick={() => patch({ attachImages: null })} className="text-info hover:underline">
-              恢复默认（跟随模型能力）
-            </button>
-          )}
+    <details className="rounded-lg border border-ink-700 bg-ink-900 text-[12px]" data-testid="model-settings">
+      <summary className="cursor-pointer px-2.5 py-1.5">
+        <span className="font-semibold text-ink-100">模型与参数</span>
+        <span className={cx("ml-2", provider?.configured ? "text-ink-400" : "text-risk")}>
+          {provider?.configured ? provider.model : "模型未配置"} · temperature {ws.params.temperature} · max_tokens {ws.params.max_tokens}
         </span>
-      </label>
-      <label className="flex items-center gap-2">
-        <span className="w-28 text-ink-400">temperature</span>
-        <input type="number" step="0.1" min={0} max={2} value={ws.params.temperature} onChange={(e) => patch({ params: { ...ws.params, temperature: Number(e.target.value) } })} aria-label="temperature" className="w-24 rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5" />
-      </label>
-      <label className="flex items-center gap-2">
-        <span className="w-28 text-ink-400">max_tokens</span>
-        <input type="number" step="1000" min={1} value={ws.params.max_tokens} onChange={(e) => patch({ params: { ...ws.params, max_tokens: Number(e.target.value) } })} aria-label="max_tokens" className="w-24 rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5" />
-      </label>
-    </div>
+      </summary>
+      <div className="space-y-3 border-t border-ink-700/70 p-2.5">
+        <div className={cx("rounded-lg border p-2", provider?.configured ? "border-verify/40" : "border-risk/40 bg-risk/10")}>
+          <div className="flex items-center gap-2">
+            <Badge tone={provider?.configured ? "ok" : "warn"}>{provider?.configured ? "已配置" : "未配置"}</Badge>
+            <span className="font-mono">{provider?.provider}</span>
+            <span className="font-mono text-ink-300">{provider?.model || "—"}</span>
+          </div>
+          <p className="mt-1 text-ink-400">
+            {provider?.configured
+              ? `点击运行后，提示词与构造输入将发送到 ${provider.provider}。API Key 只在服务端使用。`
+              : "在项目根目录 .env.local 填写 MODEL_BASE_URL / MODEL_NAME / MODEL_API_KEY 后重启。未配置时只能「仅渲染」。"}
+          </p>
+          <p className="text-ink-400">文件直传：{provider?.supportsFileInput ? "支持" : "不支持（默认只发送预处理文本；缺文本的材料会被阻断。看图请勾选下方「附带原件图片」）"}</p>
+        </div>
+        {provider?.capabilities && <CapabilityTable caps={provider.capabilities} />}
+        <label className="flex items-start gap-2">
+          <input type="checkbox" checked={ws.attachImages ?? provider?.capabilities?.images === true} onChange={(e) => patch({ attachImages: e.target.checked })} aria-label="附带原件图片" className="mt-0.5" />
+          <span>
+            附带原件图片
+            <span className="block text-ink-400">
+              把输入里的 PDF / 图片原件逐页转成图片，和文字一起发送（默认最多 20 页，可用 MODEL_MAX_IMAGE_PAGES 调整）。Excel 不转图。
+              {ws.attachImages === null ? "当前跟随模型能力：模型支持看图时，有 PDF / 图片就自动附带。" : ""}
+            </span>
+            {ws.attachImages !== null && (
+              <button type="button" onClick={() => patch({ attachImages: null })} className="text-info hover:underline">
+                恢复默认（跟随模型能力）
+              </button>
+            )}
+          </span>
+        </label>
+        <label className="flex items-center gap-2">
+          <span className="w-28 text-ink-400">temperature</span>
+          <input type="number" step="0.1" min={0} max={2} value={ws.params.temperature} onChange={(e) => patch({ params: { ...ws.params, temperature: Number(e.target.value) } })} aria-label="temperature" className="w-24 rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5" />
+        </label>
+        <label className="flex items-center gap-2">
+          <span className="w-28 text-ink-400">max_tokens</span>
+          <input type="number" step="1000" min={1} value={ws.params.max_tokens} onChange={(e) => patch({ params: { ...ws.params, max_tokens: Number(e.target.value) } })} aria-label="max_tokens" className="w-24 rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5" />
+        </label>
+      </div>
+    </details>
   );
 }
 
