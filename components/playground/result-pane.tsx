@@ -545,6 +545,7 @@ function FieldVerdict({ detail }: { detail: RunDetail }) {
           </pre>
         </details>
       )}
+      <FieldDiagnoses diagnoses={(detail.diagnoses ?? []).filter((d) => d.target.json_pointer === p)} />
       <button
         onClick={copyDiagnosis}
         className="mt-1 text-[11px] text-ink-400 hover:text-info hover:underline"
@@ -553,6 +554,57 @@ function FieldVerdict({ detail }: { detail: RunDetail }) {
       >
         {copied ? "已复制" : "复制 Agent 诊断指令"}
       </button>
+    </div>
+  );
+}
+
+/** 结论没确认时补一句；归因本身就是「证据不足 / 无法归因」的不重复说 */
+const diagSuffix = (status: string, category: string) => (status === "CONFIRMED" || category === "EVIDENCE_INSUFFICIENT" || category === "UNKNOWN" ? "" : "（未确认）");
+
+/** Agent 提交的诊断：每条一行结论，依据与局限展开才显示；是推测，不改人工标注 */
+function FieldDiagnoses({ diagnoses }: { diagnoses: NonNullable<RunDetail["diagnoses"]> }) {
+  if (!diagnoses.length) return null;
+  const list = (title: string, items: string[], mono = false) =>
+    items.length > 0 && (
+      <div className="mt-1">
+        <div className="text-ink-400">{title}</div>
+        <ul className={cx("list-disc pl-4", mono && "font-mono text-[10.5px] break-all")}>
+          {items.map((x, i) => (
+            <li key={i}>{x}</li>
+          ))}
+        </ul>
+      </div>
+    );
+  return (
+    <div className="mt-1.5 border-t border-ink-800 pt-1.5 text-[11px]" data-testid="field-diagnoses">
+      {diagnoses.map((d) => {
+        const rc = d.report.root_cause;
+        return (
+          <details key={d.diagnosis_id} data-testid="field-diagnosis" data-status={d.result_status}>
+            <summary className="cursor-pointer">
+              <span className="text-ink-400" title="Agent 读取证据后的推测，未经人工核实；不会改动你的标注">
+                AI 诊断
+              </span>
+              ：{categoryText(d.root_cause_category)}
+              {diagSuffix(d.result_status, d.root_cause_category)} · {rc.summary}
+            </summary>
+            <div className="mt-1 rounded border border-ink-800 bg-ink-950 p-1.5">
+              <div>
+                <span className="text-ink-400">建议：</span>
+                {d.report.proposed_change.summary}
+              </div>
+              {list("已核实", d.report.verified_facts)}
+              {list("依据", rc.supporting_evidence_refs, true)}
+              {list("反证", rc.counter_evidence_refs, true)}
+              {list("还没证实", rc.unverified_assumptions)}
+              {list("局限", d.report.limitations)}
+              <div className="mt-1 text-ink-400">
+                {d.created_by} · {d.created_at.slice(0, 16).replace("T", " ")}
+              </div>
+            </div>
+          </details>
+        );
+      })}
     </div>
   );
 }

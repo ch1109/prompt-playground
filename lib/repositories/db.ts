@@ -92,6 +92,16 @@ CREATE TABLE IF NOT EXISTS experiments (
   idempotency_key TEXT UNIQUE, status TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL,
   finished_at TEXT, body TEXT NOT NULL
 );
+-- Agent 诊断报告（v1.3 §8.1 / §8.2）：Agent 的推测，与人工标注分开存放、不改写标注；只追加，再诊断就新增一条
+CREATE TABLE IF NOT EXISTS diagnoses (
+  diagnosis_id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(run_id), project_id TEXT NOT NULL,
+  target_json_pointer TEXT, target TEXT NOT NULL, root_cause_category TEXT NOT NULL, result_status TEXT NOT NULL,
+  report TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS diagnoses_no_update BEFORE UPDATE ON diagnoses
+BEGIN SELECT RAISE(ABORT, '诊断报告只追加不修改'); END;
+CREATE TRIGGER IF NOT EXISTS diagnoses_no_delete BEFORE DELETE ON diagnoses
+BEGIN SELECT RAISE(ABORT, '诊断报告只追加不删除'); END;
 CREATE TRIGGER IF NOT EXISTS raw_responses_immutable BEFORE UPDATE ON raw_responses
 BEGIN SELECT RAISE(ABORT, 'raw_responses 不可修改'); END;
 -- 只有运行中（RUNNING）的 Run 可以更新为终态；结束后不可修改

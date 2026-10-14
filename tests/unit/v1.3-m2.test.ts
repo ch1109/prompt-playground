@@ -10,7 +10,7 @@ import { getFixture } from "@/lib/fixtures/catalog";
 import { snapshotForFixture } from "@/lib/fixtures/snapshot";
 import { newId } from "@/lib/hash";
 import { OpenAICompatibleProvider, setProviderForTests } from "@/lib/models/openai-compatible";
-import { createGrant, listAudit, revokeGrant, verifyToken, type Scope } from "@/lib/repositories/agent-access";
+import { createGrant, listAudit, READ_SCOPES, revokeGrant, verifyToken, type Scope } from "@/lib/repositories/agent-access";
 import { db, resetDbForTests } from "@/lib/repositories/db";
 import { addAnnotation, getRun, saveRun, startRun } from "@/lib/repositories/runs";
 import { modelRun, renderOnly } from "@/lib/runs/service";
@@ -60,7 +60,7 @@ describe("M2 访问授权与审计", () => {
   it("令牌只存 hash；撤销、过期后失效", () => {
     const { grant, token: t } = createGrant({ principal: "codex", projectIds: ["jiuli"] });
     expect(JSON.stringify(db().prepare("SELECT * FROM agent_access_grants").all())).not.toContain(t);
-    expect(verifyToken(t)).toMatchObject({ ok: true, grant: { principal: "codex", scopes: ["runs:read", "prompts:read", "evidence:read", "annotations:read", "eval:read"] } });
+    expect(verifyToken(t)).toMatchObject({ ok: true, grant: { principal: "codex", scopes: ["runs:read", "prompts:read", "evidence:read", "annotations:read", "eval:read", "diagnoses:write"] } });
     revokeGrant(grant.grant_id);
     expect(verifyToken(t)).toMatchObject({ ok: false, reason: expect.stringMatching(/撤销/) });
     const t2 = token();
@@ -68,8 +68,8 @@ describe("M2 访问授权与审计", () => {
     expect(verifyToken(t2)).toMatchObject({ ok: false, reason: expect.stringMatching(/过期/) });
   });
 
-  it("默认只发只读权限；没有修改正式版本之类的权限可发（M3 起实验权限须显式加上）", () => {
-    expect(createGrant({ principal: "x", projectIds: ["jiuli"] }).grant.scopes.every((s) => s.endsWith(":read"))).toBe(true);
+  it("默认只发只读权限 + 提交诊断报告；没有修改正式版本之类的权限可发（M3 起实验权限须显式加上）", () => {
+    expect(createGrant({ principal: "x", projectIds: ["jiuli"] }).grant.scopes.filter((s) => !s.endsWith(":read"))).toEqual(["diagnoses:write"]);
     expect(() => createGrant({ principal: "x", projectIds: ["jiuli"], scopes: ["prompts:promote" as Scope] })).toThrow(/不支持的权限/);
   });
 
@@ -80,11 +80,17 @@ describe("M2 访问授权与审计", () => {
     expect((await post({ jsonrpc: "2.0", id: 1, method: "tools/list" }, { host: "evil.example.com", authorization: `Bearer ${token()}` })).status).toBe(403);
   });
 
-  it("AG-09 只有 8 个只读工具，没有任何写入入口", async () => {
-    const res = await post({ jsonrpc: "2.0", id: 1, method: "tools/list" }, { authorization: `Bearer ${token()}` });
-    const tools = ((await res.json()) as { result: { tools: { name: string; annotations?: { readOnlyHint?: boolean } }[] } }).result.tools;
-    expect(tools.map((t) => t.name).sort()).toEqual(["compare_runs", "get_annotations", "get_evaluation", "get_prompt_snapshot", "get_run_manifest", "get_run_trace", "get_source_evidence", "list_runs"]);
-    expect(tools.every((t) => t.annotations?.readOnlyHint === true)).toBe(true);
+  it("AG-09 只读令牌只有 9 个只读工具；默认令牌只多一个「提交诊断报告」，没有其他写入入口", async () => {
+    const list = async (tok: string) => {
+      const res = await post({ jsonrpc: "2.0", id: 1, method: "tools/list" }, { authorization: `Bearer ${tok}` });
+      return ((await res.json()) as { result: { tools: { name: string; annotations?: { readOnlyHint?: boolean } }[] } }).result.tools;
+    };
+    const readOnly = await list(token({ scopes: [...READ_SCOPES] }));
+    expect(readOnly.map((t) => t.name).sort()).toEqual(["compare_runs", "get_annotations", "get_diagnoses", "get_evaluation", "get_prompt_snapshot", "get_run_manifest", "get_run_trace", "get_source_evidence", "list_runs"]);
+    expect(readOnly.every((t) => t.annotations?.readOnlyHint === true)).toBe(true);
+    const tools = await list(token());
+    expect(tools.filter((t) => t.annotations?.readOnlyHint !== true).map((t) => t.name)).toEqual(["submit_diagnosis_report"]);
+    expect(tools).toHaveLength(10);
   });
 
   it("AG-08 越权项目 / 越权客户 / 缺权限范围：返回权限错误并审计", async () => {

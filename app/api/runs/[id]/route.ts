@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { fail, handle, ok } from "@/lib/api/respond";
+import { listDiagnoses } from "@/lib/repositories/diagnoses";
 import { getPrompt, getVersion } from "@/lib/repositories/prompts";
 import { listAnnotations, getRun } from "@/lib/repositories/runs";
 import { getSnapshot, snapshotDeletedAt } from "@/lib/repositories/snapshots";
@@ -16,6 +17,8 @@ export const GET = (_req: NextRequest, ctx: RouteContext<"/api/runs/[id]">) =>
       run,
       renderer: rendererFor(run) ?? null,
       annotations: listAnnotations(run.run_id),
+      // Agent 诊断报告（推测，与人工标注分开）
+      diagnoses: listDiagnoses(run.run_id),
       prompt_version_label: run.prompt_version_id ? (getVersion(run.prompt_version_id)?.label ?? null) : null,
       snapshot_deleted_at: run.input_snapshot_id && !snapshot ? snapshotDeletedAt(run.input_snapshot_id) : null,
       // 读取时推导的采集完整度与诊断状态（不回填历史 Run）

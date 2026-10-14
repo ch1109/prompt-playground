@@ -65,6 +65,8 @@ export interface RunDetail {
   run: Run & { label?: string; input_builder_id?: string; input_builder_warnings?: string[] };
   renderer: RendererConfig | null;
   annotations: AnnotationDTO[];
+  /** Agent 诊断报告，新的在前 */
+  diagnoses?: import("@/lib/repositories/diagnoses").Diagnosis[];
   snapshot: { snapshot_id: string; label: string; source_type: string; content_hash: string; imported_at: string; warnings: string[]; source_ids: Record<string, unknown> } | null;
   request: unknown;
   /** 引用的快照已删除/到期的时间 */

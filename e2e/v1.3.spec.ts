@@ -285,6 +285,52 @@ test("M2 字段抽屉：复制 Agent 诊断指令，内容带 Run ID、字段定
   expect(text).toMatch(/只读诊断/);
 });
 
+test("诊断落库：Agent 经 MCP 提交的诊断显示在字段面板，一行结论，依据展开才显示；没有诊断的字段不显示", async ({ page }) => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const { createHash, randomBytes } = await import("node:crypto");
+  await pickInDrawer(page, "jiuli-p1", "v3/SC-08/P1");
+  const currentRun = () => page.evaluate(() => JSON.parse(localStorage.getItem("prompt-studio:workspace") ?? "{}").state?.workspaces?.["jiuli-p1"]?.runId ?? null);
+  await expect.poll(currentRun).not.toBeNull();
+  const runId: string = await currentRun();
+  // 直接在 e2e 库里发一个默认权限的令牌（等同 pnpm mcp:grant create）
+  const token = `psk_${randomBytes(24).toString("hex")}`;
+  const d = new DatabaseSync("data/e2e.db");
+  d.prepare("INSERT INTO agent_access_grants (grant_id, principal, scopes, project_ids, customer_ids, token_hash, created_at, expires_at, revoked_at) VALUES (?,?,?,?,?,?,?,?,?)").run(
+    `grant_e2e_${Date.now()}`, "e2e-agent", JSON.stringify(["runs:read", "prompts:read", "evidence:read", "annotations:read", "eval:read", "diagnoses:write"]), JSON.stringify(["jiuli"]), null,
+    createHash("sha256").update(token).digest("hex"), new Date().toISOString(), new Date(Date.now() + 86400_000).toISOString(), null);
+  d.close();
+  const report = {
+    observed_problem: "产地可能读错",
+    verified_facts: ["原件这一格是手写字"],
+    root_cause: { category: "OCR_VISION_ERROR", summary: "手写体被认成别的国家", supporting_evidence_refs: [`${runId}#trace/raw_response`], counter_evidence_refs: [], unverified_assumptions: [] },
+    limitations: ["只看了一个样本"],
+    proposed_change: { target_layer: "INPUT_PREPROCESSING", action_type: "VERIFY_PIPELINE", summary: "附带原件图片再跑一次" },
+    impact_scope: "手写产地",
+    verification_plan: "带图重跑 SC-08",
+    result_status: "CONFIRMED",
+  };
+  const res = await page.request.post("/api/mcp", {
+    headers: { authorization: `Bearer ${token}`, accept: "application/json, text/event-stream" },
+    data: { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "submit_diagnosis_report", arguments: { run_id: runId, object_ref: { table_id: "orderRows", row_id: "row-2", field: "origin" }, report } } },
+  });
+  const rpc = (await res.json()) as { result: { isError?: boolean; content: { text: string }[] } };
+  expect(rpc.result.isError, rpc.result.content[0].text).toBeFalsy();
+
+  await page.reload();
+  await page.locator('[data-table-id="orderRows"] [data-row-id="row-2"] [data-field="origin"]').first().click();
+  const diag = page.getByTestId("field-diagnosis");
+  await expect(diag).toHaveCount(1);
+  await expect(diag.locator("summary")).toContainText("AI 诊断：看图识字");
+  await expect(diag.locator("summary")).toContainText("手写体被认成别的国家");
+  await expect(diag.getByText(`${runId}#trace/raw_response`)).toBeHidden();
+  await diag.locator("summary").click();
+  await expect(diag.getByText(`${runId}#trace/raw_response`)).toBeVisible();
+  await expect(diag).toContainText("附带原件图片再跑一次");
+  // 另一个字段没有诊断：不显示任何诊断区域
+  await page.locator('[data-table-id="orderRows"] [data-row-id="row-1"] [data-field="origin"]').first().click();
+  await expect(page.getByTestId("field-diagnoses")).toHaveCount(0);
+});
+
 test("M3 修改建议：先看一句结论和计数，详情里有修改内容与逐样本说明；证据不足时须勾选确认才能采纳；采纳后成为正式版本，拒绝不影响正式版本", async ({ page }) => {
   const { DatabaseSync } = await import("node:sqlite");
   const prompt = (await (await page.request.get("/api/prompts/jiuli-p1")).json()).data as { versions: { version_id: string; label: string; system_prompt: string; user_prompt_template: string; content_hash: string; is_stable: boolean }[] };
