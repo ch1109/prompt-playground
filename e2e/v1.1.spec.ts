@@ -100,7 +100,7 @@ test("R-01 样本库：搜索与来源筛选，选中后显示详情", async ({ 
   await expect(page.getByTestId("fixture-detail")).toContainText("上游");
 });
 
-test("R-06 提示词编辑：搜索计数、规则目录跳转、行号与变量检查", async ({ page }) => {
+test("R-06 提示词编辑：搜索计数、行号与变量检查", async ({ page }) => {
   await page.goto("/projects/jiuli/playground");
   await page.click('[data-prompt="jiuli-p2"]');
   await page.getByRole("button", { name: /^提示词/ }).click();
@@ -111,8 +111,7 @@ test("R-06 提示词编辑：搜索计数、规则目录跳转、行号与变量
   await expect(page.getByTestId("search-count")).toHaveText("1/2 处 · 第 4 行");
   await page.getByRole("button", { name: "下一个匹配" }).click();
   await expect(page.getByTestId("search-count")).toHaveText("2/2 处 · 第 5 行");
-  await page.getByRole("navigation", { name: "规则目录" }).getByText("三、输出").click();
-  await expect(page.getByTestId("cursor-line")).toContainText("第 6 行 / 共 7 行");
+  await expect(page.getByTestId("cursor-line")).toContainText("第 5 行 / 共 7 行");
   await expect(page.getByTestId("variable-check")).toContainText("变量检查通过");
   await expect(page.getByLabel("System 提示词")).toHaveValue(text);
 });

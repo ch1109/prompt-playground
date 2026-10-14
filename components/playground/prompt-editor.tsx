@@ -1,23 +1,10 @@
 "use client";
-import { createElement, useMemo, useRef, useState, type ComponentProps } from "react";
-import Markdown, { type Components, type ExtraProps } from "react-markdown";
+import { useMemo, useRef, useState } from "react";
+import Markdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { TEMPLATE_VARIABLES, unresolvedVariables } from "@/lib/input-builders";
 import { Btn, cx } from "@/components/ui";
-
-/** 规则目录：Markdown 标题、「一、」式章节、【】标题（不解析正文条目，避免目录过长） */
-const HEADING = /^\s*(#{1,6}\s+\S.*|[一二三四五六七八九十]+、\S.*|【[^】]+】.*)$/;
-
-export function promptOutline(text: string): { line: number; title: string; offset: number }[] {
-  const out: { line: number; title: string; offset: number }[] = [];
-  let offset = 0;
-  text.split("\n").forEach((l, i) => {
-    if (HEADING.test(l)) out.push({ line: i + 1, title: l.trim().replace(/^#+\s*/, ""), offset });
-    offset += l.length + 1;
-  });
-  return out;
-}
 
 /** 所有匹配的起始位置（不区分大小写） */
 export function findAll(text: string, q: string): number[] {
@@ -31,38 +18,38 @@ export function findAll(text: string, q: string): number[] {
 
 const lineOf = (text: string, offset: number) => text.slice(0, offset).split("\n").length;
 
+/** 单独一行的短标题：前一行空、后一行有内容、不是编号条目、不以标点结尾，例如「通用执行约定」 */
+const SHORT_TITLE = /^[^\d\s\-*•#|{[(（"“].{0,23}$/;
+const ENDS_WITH_PUNCT = /[。；;：:，,、.!！？?）)」”"]$/;
+
 /**
- * 阅读视图用的 Markdown：九立提示词多用「一、」「【】」做章节标题，显示时升为 Markdown 标题。
- * 只在行首加 #，不增删行，渲染后的行号与原文一致（目录跳转靠它）。原文本身不改。
+ * 阅读视图用的 Markdown：九立提示词多用「一、」「【】」做章节标题，也有「通用执行约定」这类单独成行的小标题，
+ * 显示时升为 Markdown 标题。只在行首加 #，原文本身不改。
  */
 export function readableMarkdown(text: string): string {
-  return text
-    .split("\n")
-    .map((l) => (/^\s*[一二三四五六七八九十]+、\S/.test(l) ? `## ${l.trim()}` : /^\s*【[^】]+】/.test(l) ? `### ${l.trim()}` : l))
+  const lines = text.split("\n");
+  return lines
+    .map((l, i) => {
+      const t = l.trim();
+      if (/^[一二三四五六七八九十]+、\S/.test(t)) return `## ${t}`;
+      if (/^【[^】]+】/.test(t)) return `### ${t}`;
+      const alone = (i === 0 || !lines[i - 1].trim()) && !!lines[i + 1]?.trim();
+      return alone && SHORT_TITLE.test(t) && !ENDS_WITH_PUNCT.test(t) ? `### ${t}` : l;
+    })
     .join("\n");
 }
 
-/** 标题带上原文行号，目录点击时据此滚动到位 */
-const heading =
-  (tag: "h1" | "h2" | "h3" | "h4" | "h5" | "h6") =>
-  ({ node, ...rest }: ComponentProps<typeof tag> & ExtraProps) =>
-    createElement(tag, { ...rest, "data-line": node?.position?.start.line });
-const MD_COMPONENTS: Components = { h1: heading("h1"), h2: heading("h2"), h3: heading("h3"), h4: heading("h4"), h5: heading("h5"), h6: heading("h6") };
-
 /**
  * System 提示词（R-06）：「编辑」是原文 textarea（搜索、光标行、变量检查）；「阅读」按 Markdown 渲染，只看不改。
- * 两种模式共用规则目录：编辑时选中并滚到该行，阅读时滚到对应标题。可一键复制全文。
+ * 可一键复制全文。
  */
 export function PromptEditor({ system, userTemplate, onSystem }: { system: string; userTemplate: string; onSystem: (v: string) => void }) {
   const ref = useRef<HTMLTextAreaElement>(null);
-  const readRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<"edit" | "read">("edit");
   const [q, setQ] = useState("");
   const [hit, setHit] = useState(0);
-  const [tocOpen, setTocOpen] = useState(true);
   const [cursorLine, setCursorLine] = useState(1);
   const [copied, setCopied] = useState(false);
-  const outline = useMemo(() => promptOutline(system), [system]);
   const matches = useMemo(() => findAll(system, q), [system, q]);
   const unresolved = useMemo(() => unresolvedVariables(system, userTemplate), [system, userTemplate]);
   const markdown = useMemo(() => readableMarkdown(system), [system]);
@@ -82,11 +69,6 @@ export function PromptEditor({ system, userTemplate, onSystem }: { system: strin
     const next = (hit + dir + matches.length) % matches.length;
     setHit(next);
     jump(matches[next], matches[next] + q.length);
-  }
-  function goHeading(h: { line: number; title: string; offset: number }) {
-    if (view === "edit") return jump(h.offset, h.offset + h.title.length);
-    setCursorLine(h.line);
-    readRef.current?.querySelector(`[data-line="${h.line}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" });
   }
   function copyAll() {
     navigator.clipboard?.writeText(system).then(() => {
@@ -139,50 +121,25 @@ export function PromptEditor({ system, userTemplate, onSystem }: { system: strin
             )}
           </>
         )}
-        <span className="ml-auto flex items-center gap-1">
-          <Btn onClick={copyAll} title="复制提示词正文（System）全文" data-testid="btn-copy-prompt">
-            {copied ? "已复制" : "复制全文"}
-          </Btn>
-          {outline.length > 0 && (
-            <Btn onClick={() => setTocOpen((v) => !v)} aria-pressed={tocOpen}>
-              {tocOpen ? "收起目录" : "目录"}
-            </Btn>
-          )}
-        </span>
+        <Btn onClick={copyAll} title="复制提示词正文（System）全文" data-testid="btn-copy-prompt" className="ml-auto">
+          {copied ? "已复制" : "复制全文"}
+        </Btn>
       </div>
-      <div className={cx("grid gap-2", tocOpen && outline.length ? "grid-cols-[160px_1fr]" : "grid-cols-1")}>
-        {tocOpen && outline.length > 0 && (
-          <nav aria-label="规则目录" className="max-h-[55vh] overflow-auto rounded-lg border border-ink-700 bg-ink-900 py-1 text-[12px]">
-            {outline.map((h) => (
-              <button
-                key={h.line}
-                onClick={() => goHeading(h)}
-                className={cx("block w-full truncate px-2.5 py-1 text-left hover:bg-ink-800", cursorLine >= h.line && !outline.some((x) => x.line > h.line && x.line <= cursorLine) && "bg-accent/[0.07] text-accent")}
-                title={`第 ${h.line} 行 · ${h.title}`}
-              >
-                {h.title}
-              </button>
-            ))}
-          </nav>
-        )}
-        {view === "edit" ? (
-          <textarea
-            ref={ref}
-            value={system}
-            onChange={(e) => onSystem(e.target.value)}
-            onSelect={(e) => setCursorLine(lineOf(system, e.currentTarget.selectionStart))}
-            aria-label="System 提示词"
-            spellCheck={false}
-            className="h-[55vh] w-full resize-y rounded-lg border border-ink-700 bg-ink-900 p-2.5 font-mono text-[12.5px] leading-6 outline-none focus:border-ink-400"
-          />
-        ) : (
-          <div ref={readRef} className="prompt-md h-[55vh] overflow-auto rounded-lg border border-ink-700 bg-ink-900 px-4 py-3" data-testid="prompt-read">
-            <Markdown remarkPlugins={[remarkGfm, remarkBreaks]} components={MD_COMPONENTS}>
-              {markdown}
-            </Markdown>
-          </div>
-        )}
-      </div>
+      {view === "edit" ? (
+        <textarea
+          ref={ref}
+          value={system}
+          onChange={(e) => onSystem(e.target.value)}
+          onSelect={(e) => setCursorLine(lineOf(system, e.currentTarget.selectionStart))}
+          aria-label="System 提示词"
+          spellCheck={false}
+          className="h-[55vh] w-full resize-y rounded-lg border border-ink-700 bg-ink-900 p-2.5 font-mono text-[12.5px] leading-6 outline-none focus:border-ink-400"
+        />
+      ) : (
+        <div className="prompt-md h-[55vh] overflow-auto rounded-lg border border-ink-700 bg-ink-900 px-4 py-3" data-testid="prompt-read">
+          <Markdown remarkPlugins={[remarkGfm, remarkBreaks]}>{markdown}</Markdown>
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-3 text-[11px] text-ink-400">
         <span data-testid="cursor-line">
           {view === "edit" ? `第 ${cursorLine} 行 / ` : ""}共 {totalLines} 行 · {system.length.toLocaleString()} 字

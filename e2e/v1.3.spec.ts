@@ -403,7 +403,7 @@ test("示例可以用当前提示词重新运行：卡片上的按钮发起真�
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
-test("提示词可切到「阅读」按 Markdown 显示（章节标题、编号列表），目录可跳转；可一键复制全文", async ({ page, context }) => {
+test("提示词可切到「阅读」按 Markdown 显示（章节标题、编号列表）；没有目录；可一键复制全文", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/projects/jiuli/playground");
   await page.click('[data-prompt="jiuli-p1"]');
@@ -417,10 +417,8 @@ test("提示词可切到「阅读」按 Markdown 显示（章节标题、编号�
   await expect(read.locator("h2").first()).toContainText("一、");
   await expect(read.locator("ol li").first()).toBeVisible();
   await expect(page.getByLabel("System 提示词")).toHaveCount(0);
-  const last = page.getByRole("navigation", { name: "规则目录" }).locator("button").last();
-  const title = (await last.textContent())!;
-  await last.click();
-  await expect(read.locator("h2, h3", { hasText: title }).first()).toBeInViewport();
+  await expect(read.locator("h3", { hasText: "通用执行约定" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "规则目录" })).toHaveCount(0);
   // 复制全文：剪贴板里是提示词原文（不是渲染后的文字）
   await page.getByTestId("btn-copy-prompt").click();
   await expect(page.getByTestId("btn-copy-prompt")).toHaveText("已复制");
