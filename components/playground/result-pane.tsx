@@ -23,7 +23,6 @@ const TABS: { id: ResultTab; label: string }[] = [
   { id: "details", label: "详情" },
 ];
 
-const MODE_LABEL: Record<string, string> = { RENDER_ONLY: "仅渲染", MODEL_RUN: "模型运行", REPLAY: "重新渲染" };
 
 function cellIndex(vm?: ViewModel | null) {
   const m = new Map<string, { tableId: string; rowId: string; fieldKey: string }>();
@@ -68,8 +67,6 @@ export function ResultPane({
   onOpenRun,
   example,
   onOpenExample,
-  onCompare,
-  onEditPrompt,
 }: {
   detail?: RunDetail;
   dirty: boolean;
@@ -86,9 +83,6 @@ export function ResultPane({
   /** 空状态示例样本（明确标为 Fixture） */
   example?: FixtureSummary;
   onOpenExample?: (fixtureId: string) => void;
-  /** 结果里的下一步动作：对比历史运行 / 编辑提示词 */
-  onCompare?: () => void;
-  onEditPrompt?: () => void;
 }) {
   const tab = useStudio((s) => s.resultTab);
   const setStore = useStudio((s) => s.set);
@@ -111,13 +105,11 @@ export function ResultPane({
           </button>
         ))}
         <div className="ml-auto flex items-center gap-2">
-          {run && (
-            <>
-              <Badge tone="mute" title={run.mode}>{MODE_LABEL[run.mode] ?? run.mode}</Badge>
-              <Badge tone={runStatusView(run.status, run.schema_id, run.prompt_kind, run.mode).tone} title={run.status}>
-                {runStatusView(run.status, run.schema_id, run.prompt_kind, run.mode).label}
-              </Badge>
-            </>
+          {/* 有业务视图时，结果头部第一句已说明是哪种结果，这里不再重复 */}
+          {run && !(run.view_model && detail?.renderer) && (
+            <Badge tone={runStatusView(run.status, run.schema_id, run.prompt_kind, run.mode).tone} title={run.status}>
+              {runStatusView(run.status, run.schema_id, run.prompt_kind, run.mode).label}
+            </Badge>
           )}
           <Btn onClick={() => setStore("evidenceOpen", !evidenceOpen)} aria-pressed={evidenceOpen}>
             来源
@@ -208,7 +200,7 @@ export function ResultPane({
             </div>
           </div>
         )}
-        {run && tab === "visual" && <ResultTab detail={detail!} canPreview={canPreview} onCompare={onCompare} onEditPrompt={onEditPrompt} />}
+        {run && tab === "visual" && <ResultTab detail={detail!} canPreview={canPreview} />}
         {run && tab === "json" && <JsonTab detail={detail!} />}
         {run && tab === "details" && (
           <div className="space-y-5">
@@ -246,10 +238,10 @@ export function ResultPane({
 }
 
 /** 「结果」：九立预设显示业务视图；其他情况按 JSON 树（回答是 JSON）或文本（回答是文字）显示 */
-function ResultTab({ detail, canPreview, onCompare, onEditPrompt }: { detail: RunDetail; canPreview: boolean; onCompare?: () => void; onEditPrompt?: () => void }) {
+function ResultTab({ detail, canPreview }: { detail: RunDetail; canPreview: boolean }) {
   const run = detail.run;
   const select = useStudio((s) => s.select);
-  if (run.view_model && detail.renderer) return <BusinessView vm={run.view_model} cfg={detail.renderer} canPreview={canPreview} status={run.status} mode={run.mode} onCompare={onCompare} onEditPrompt={onEditPrompt} afterHeadline={<RuleCheck detail={detail} />} />;
+  if (run.view_model && detail.renderer) return <BusinessView vm={run.view_model} cfg={detail.renderer} canPreview={canPreview} status={run.status} mode={run.mode} afterHeadline={<RuleCheck detail={detail} />} />;
   if (run.status !== "SUCCEEDED") return <Empty>没有可展示的结果，原因见上方提示。</Empty>;
   if (run.parsed_json !== undefined) {
     return (

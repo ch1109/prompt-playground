@@ -165,10 +165,9 @@ test("运行信息与运行对比显示版本名称，而不只是版本 ID", as
   await page.reload();
   await page.getByRole("tab", { name: "详情" }).click();
   await expect(page.getByTestId("tab-details")).toContainText("版本甲（pv_");
-  await page.getByRole("button", { name: /运行历史/ }).click();
+  await page.getByTestId("work-modes").getByRole("tab", { name: "版本对比" }).click();
   await page.getByLabel(`对比 ${id1}`).check();
   await page.getByLabel(`对比 ${id2}`).check();
-  await page.getByRole("button", { name: "对比 2/2" }).click();
   const row = page.getByTestId("compare-metrics").locator("tr", { hasText: "Prompt 版本" });
   await expect(row).toContainText("版本甲");
   await expect(row).toContainText("版本乙");
@@ -517,15 +516,14 @@ test("运行对比：显示关键指标、提示词差异区与输出差异", as
   await page.getByTestId("btn-change-fixture").click();
   await page.click('[data-fixture-id="constructed/p3-v3-unknown-enum.json"]');
   await page.click('[data-testid="btn-render"]');
-  await page.getByRole("button", { name: /运行历史/ }).click();
+  await page.getByTestId("work-modes").getByRole("tab", { name: "版本对比" }).click();
   // 等第二次渲染出现在历史顶部再勾选，避免列表刷新导致勾到同一行
-  const rows = page.getByTestId("history").locator("tbody tr");
+  const rows = page.getByTestId("compare-mode").locator("tbody tr");
   await expect(rows.nth(0)).toContainText("P3 未知枚举");
   await expect(rows.nth(1)).toContainText("P3 一对多");
-  const boxes = page.getByTestId("history").getByRole("checkbox");
+  const boxes = page.getByTestId("compare-mode").getByRole("checkbox");
   await boxes.nth(0).check();
   await boxes.nth(1).check();
-  await page.getByRole("button", { name: "对比 2/2" }).click();
   const dialog = page.getByRole("region", { name: "对比两次运行" });
   await expect(dialog.getByTestId("compare-metrics")).toContainText("Schema 错误数");
   await expect(dialog.getByTestId("compare-metrics")).toContainText("原始响应 Hash");

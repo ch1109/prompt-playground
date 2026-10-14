@@ -38,8 +38,6 @@ const MODES: [WorkMode, string, string][] = [
   ["compare", "版本对比", "选两次运行，看差在哪"],
 ];
 
-const FIXTURE_ORIGIN = { STRUCTURE_EXAMPLE: "格式示例", RECORDED_MODEL_OUTPUT: "真实录制 · 非标准答案", CONSTRUCTED: "人工构造" } as const;
-const SOURCE_LABEL: Record<string, string> = { FILE_IMPORT: "上传文件", JIULI_READONLY: "九立导入", FIXTURE: "示例", JSON_IMPORT: "粘贴导入" };
 
 const NEW_PROMPT_KINDS: [PromptKind, string][] = [
   ["GENERIC_JSON", "通用提示词"],
@@ -449,7 +447,7 @@ export function Playground({ projectId }: { projectId: string }) {
       <table className="w-full text-[12.5px]">
                 <thead className="sticky top-0 z-10 bg-ink-900/95 text-[11.5px] text-ink-400 backdrop-blur">
                   <tr className="border-b border-ink-700">
-                    {["对比", "时间", "Prompt", "模式", "状态", "标签", "模型", ""].map((h) => (
+                    {[...(mode === "compare" ? ["对比"] : []), "时间", "Prompt", "模式", "状态", "标签", "模型", ""].map((h) => (
                       <th key={h} className="px-3 py-2 text-left font-medium">
                         {h}
                       </th>
@@ -466,15 +464,17 @@ export function Playground({ projectId }: { projectId: string }) {
                   )}
                   {runs.map((r) => (
                     <tr key={r.run_id} className={cx("border-b border-ink-800 hover:bg-ink-850", ws.runId === r.run_id && "bg-accent/[0.06]")}>
-                      <td className="px-3">
-                        <input
-                          type="checkbox"
-                          aria-label={`对比 ${r.run_id}`}
-                          checked={compare.includes(r.run_id)}
-                          onChange={(e) => setCompare((c) => (e.target.checked ? [...c.slice(-1), r.run_id] : c.filter((x) => x !== r.run_id)))}
-                          className="accent-ink-100"
-                        />
-                      </td>
+                      {mode === "compare" && (
+                        <td className="px-3">
+                          <input
+                            type="checkbox"
+                            aria-label={`对比 ${r.run_id}`}
+                            checked={compare.includes(r.run_id)}
+                            onChange={(e) => setCompare((c) => (e.target.checked ? [...c.slice(-1), r.run_id] : c.filter((x) => x !== r.run_id)))}
+                            className="accent-ink-100"
+                          />
+                        </td>
+                      )}
                       <td className="px-3 font-mono text-[11.5px] text-ink-400">{r.started_at.slice(5, 19).replace("T", " ")}</td>
                       <td className="px-3 font-mono text-[11.5px]">{SHORT[r.prompt_kind]}</td>
                       <td className="px-3">
@@ -504,29 +504,22 @@ export function Playground({ projectId }: { projectId: string }) {
   );
   const moreSnapshots = snapshots.length >= snapshotLimit ? () => setSnapshotLimit((n) => n + SNAPSHOT_PAGE) : undefined;
 
-  /** 结果检查模式顶部：当前输入（名称 / 来源 / Gold）、提示词版本、模型，与三个常用动作 */
+  /** 结果检查模式顶部：当前输入，与「更换输入」「编辑提示词」两个动作；版本与模型已在顶栏显示 */
   function contextBar() {
     const fx = ws.inputMode === "fixture" ? fixtures.find((f) => f.id === ws.fixtureId) : undefined;
     const snap = snapshots.find((x) => x.snapshot_id === runSnapshotId(ws));
     const name = fx?.title ?? (ws.inputMode === "paste" ? "粘贴的 JSON" : snap?.label) ?? "还没选输入";
-    const source = fx ? FIXTURE_ORIGIN[fx.origin] : ws.inputMode === "paste" ? "粘贴" : snap ? (SOURCE_LABEL[snap.source_type] ?? snap.source_type) : null;
-    const gold = fx ? fx.hasGold : null;
     return (
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-ink-700 bg-ink-900 px-4 py-2 text-[12.5px]" data-testid="context-bar">
         <span className="text-ink-400">当前输入</span>
         <span className="max-w-[360px] truncate font-semibold text-ink-100" title={name}>
           {name}
         </span>
-        {source && <Badge tone="info">{source}</Badge>}
-        {gold !== null && <Badge tone={gold ? "ok" : "mute"}>{gold ? "有标准答案" : "无标准答案"}</Badge>}
+        {fx?.hasGold && <Badge tone="ok">有标准答案</Badge>}
         <Btn onClick={() => setInputDrawer(true)} data-testid="btn-change-input">
           更换输入
         </Btn>
-        <span className="ml-auto text-ink-400">
-          提示词 {currentVersion?.label ?? "—"}
-          {versionDraft ? "（未保存草稿）" : ""} · {provider?.configured ? provider.model : "模型未配置"}
-        </span>
-        <Btn onClick={() => s.set("workMode", "debug")} data-testid="btn-edit-prompt">
+        <Btn onClick={() => s.set("workMode", "debug")} data-testid="btn-edit-prompt" className="ml-auto">
           编辑提示词
         </Btn>
       </div>
@@ -771,9 +764,6 @@ export function Playground({ projectId }: { projectId: string }) {
               <span className={cx("h-1.5 w-1.5 rounded-full", provider?.configured ? "bg-verify" : "bg-risk")} />
               {provider?.configured ? provider.model : "模型未配置"}
             </span>
-            <Btn onClick={() => s.set("workMode", "compare")} disabled={compare.length !== 2} title="在运行历史中勾选两条记录后对比">
-              对比 {compare.length}/2
-            </Btn>
             <Btn tone="outline" onClick={renderOnly} disabled={busy} data-testid="btn-render" title="离线整理已有输出为表格，不调用模型，不花钱">
               <Icon d={ICONS.layers} />
               仅渲染
@@ -856,8 +846,6 @@ export function Playground({ projectId }: { projectId: string }) {
                       onOpenRun={replay}
                       example={exampleFixture}
                       onOpenExample={openExample}
-                      onCompare={() => s.set("workMode", "compare")}
-                      onEditPrompt={() => s.set("workMode", "debug")}
                     />
                   </div>
                 </>

@@ -351,16 +351,13 @@ export interface HeadlineProps {
   /** 运行状态与模式：区分「模型运行成功」「示例结果」，以及结构是否完全符合 */
   status: string;
   mode: string;
-  /** 下一步动作 */
-  onCompare?: () => void;
-  onEditPrompt?: () => void;
 }
 
 /**
  * 结果区第一屏的精简状态：运行是否成功、主表多少行、模型报告了几个问题、准确性能否评测。
  * 明确把"模型运行成功"和"识别结果正确"分开：没有标准答案时写「准确性未评测」。
  */
-export function ResultHeadline({ vm, cfg, status, mode, onCompare, onEditPrompt, onlyIssues, setOnlyIssues }: { vm: ViewModel; cfg: RendererConfig; onlyIssues?: boolean; setOnlyIssues?: (v: boolean) => void } & HeadlineProps) {
+export function ResultHeadline({ vm, cfg, status, mode, onlyIssues, setOnlyIssues }: { vm: ViewModel; cfg: RendererConfig; onlyIssues?: boolean; setOnlyIssues?: (v: boolean) => void } & HeadlineProps) {
   const h = vm.metadata?.headline;
   const mainId = cfg.regions.find((r) => r.component === "data-table")?.binding.slice(7);
   const main = vm.tables.find((t) => t.id === mainId);
@@ -387,9 +384,9 @@ export function ResultHeadline({ vm, cfg, status, mode, onCompare, onEditPrompt,
       {h?.gold ? (
         <Badge tone="ok">已对照标准答案</Badge>
       ) : (
-        <span className="text-ink-400" title="没有独立的标准答案（Gold），问题数 0 不代表字段都正确">
-          <Badge tone="warn">准确性未评测</Badge> 没有标准答案
-        </span>
+        <Badge tone="warn" title="没有独立的标准答案（Gold），问题数 0 不代表字段都正确">
+          准确性未评测
+        </Badge>
       )}
       {h && (
         <span className="text-ink-300">
@@ -401,16 +398,6 @@ export function ResultHeadline({ vm, cfg, status, mode, onCompare, onEditPrompt,
         {setOnlyIssues && vm.issues.length > 0 && (
           <Btn onClick={() => setOnlyIssues(!onlyIssues)} aria-pressed={onlyIssues} data-testid="btn-only-issues">
             {onlyIssues ? "显示全部行" : "只看有问题的行"}
-          </Btn>
-        )}
-        {onCompare && (
-          <Btn onClick={onCompare} title="选两次运行，看改提示词前后差在哪">
-            对比历史运行
-          </Btn>
-        )}
-        {onEditPrompt && (
-          <Btn onClick={onEditPrompt} title="切到提示词调试：左边改提示词，右边看结果">
-            编辑提示词
           </Btn>
         )}
       </span>

@@ -21,7 +21,6 @@ test("默认进入「结果检查」：编辑区收起，顶部显示当前输�
   await pickInDrawer(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
   const bar = page.getByTestId("context-bar");
   await expect(bar).toContainText("P1 冲突");
-  await expect(bar).toContainText("人工构造");
   await expect(bar).toContainText("有标准答案");
   await expect(page.locator('[data-table-id="orderRows"]')).toBeVisible();
   // 再次打开抽屉：已选示例收起成卡片，不再铺开整个列表
@@ -102,7 +101,7 @@ test("版本对比模式：在页面里勾选两次运行，直接显示对比�
   await page.getByTestId("input-drawer").getByTestId("btn-change-fixture").click();
   await page.getByTestId("input-drawer").locator('[data-fixture-id="constructed/p1-v3-xss.json"]').click();
   await expect(page.getByTestId("context-bar")).toContainText("恶意 HTML");
-  await page.getByTestId("headline-actions").getByRole("button", { name: "对比历史运行" }).click();
+  await page.getByTestId("work-modes").getByRole("tab", { name: "版本对比" }).click();
   const mode = page.getByTestId("compare-mode");
   await expect(mode).toBeVisible();
   const boxes = mode.getByRole("checkbox");
@@ -118,7 +117,7 @@ test("M1 状态用词：问题数按来源拆分；P2~P4 也显示准确性未�
   const head = page.getByTestId("result-headline");
   await expect(head).toContainText("3 条模型报告问题");
   await expect(head).toContainText("1 条规则 / 结构提示");
-  await expect(page.getByTestId("result-pane")).toContainText("已整理（未调用模型）");
+  await expect(head).toContainText("未调用模型");
   await expect(page.getByTestId("result-pane")).not.toContainText("模型运行成功");
   for (const [prompt, fixture] of [
     ["jiuli-p2", "v3/SC-08/P2"],
@@ -224,7 +223,7 @@ test("M1 提示词三层：编辑区与已保存版本的差异可展开；当�
 test("M1 版本对比：两次运行用的样本不同时，明确提示「输入不可直接比较」", async ({ page }) => {
   await pickInDrawer(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
   await pickInDrawer(page, "jiuli-p1", "v3/SC-08/P1");
-  await page.getByTestId("headline-actions").getByRole("button", { name: "对比历史运行" }).click();
+  await page.getByTestId("work-modes").getByRole("tab", { name: "版本对比" }).click();
   const boxes = page.getByTestId("compare-mode").getByRole("checkbox");
   await boxes.nth(0).check();
   await boxes.nth(1).check();
