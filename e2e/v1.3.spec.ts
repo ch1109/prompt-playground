@@ -366,3 +366,39 @@ test("结果页规则检查：P2 / P3 / P4 显示九立硬规则对照结果；�
   await expect(page.getByTestId("result-headline")).toBeVisible();
   await expect(page.getByTestId("rule-check")).toHaveCount(0);
 });
+
+test("示例可以用当前提示词重新运行：卡片上的按钮发起真实运行；没附带输入的示例不能重跑", async ({ page }) => {
+  await pickInDrawer(page, "jiuli-p1", "v3/SC-08/P1");
+  // 测试环境没配置模型：按钮不可点，并说明原因
+  await page.getByTestId("btn-change-input").click();
+  const drawer = page.getByTestId("input-drawer");
+  await expect(drawer.getByTestId("btn-rerun-fixture")).toBeDisabled();
+  await expect(drawer.getByTestId("btn-rerun-fixture")).toHaveAttribute("title", /未配置模型/);
+  // 模拟已配置模型与「发起运行」接口（不调用真实模型、不花钱），检查发出的是 MODEL_RUN 且带这个示例的输入
+  const current = await page.evaluate(() => JSON.parse(localStorage.getItem("prompt-studio:workspace") ?? "{}").state?.workspaces?.["jiuli-p1"]?.runId);
+  let body: Record<string, unknown> | null = null;
+  await page.route("**/api/models", (r) =>
+    r.fulfill({ json: { ok: true, data: { provider: "openai-compatible@fake", model: "fake", configured: true, supportsFileInput: false, adapterVersion: "1.0.0" }, request_id: "x" } }),
+  );
+  await page.route("**/api/runs", (r) => {
+    const b = r.request().method() === "POST" ? r.request().postDataJSON() : null;
+    if (b?.mode !== "MODEL_RUN") return r.continue();
+    body = b;
+    return r.fulfill({ status: 202, json: { ok: true, data: { run_id: current, status: "RUNNING" }, request_id: "x" } });
+  });
+  await page.reload();
+  await page.getByTestId("btn-change-input").click();
+  await drawer.getByTestId("btn-rerun-fixture").click();
+  await expect(drawer).toHaveCount(0);
+  await expect.poll(() => body?.mode).toBe("MODEL_RUN");
+  expect(body!.snapshotId).toBeTruthy();
+  expect(body!.promptId).toBe("jiuli-p1");
+  // 只有录下的模型输出、没附带输入的示例：按钮不可点
+  await page.getByTestId("btn-change-input").click();
+  await drawer.getByTestId("btn-change-fixture").click();
+  await drawer.locator('[data-fixture-id="constructed/p1-v3-schema-type-error.json"]').click();
+  await page.getByTestId("btn-change-input").click();
+  await expect(drawer.getByTestId("btn-rerun-fixture")).toBeDisabled();
+  await expect(drawer).toContainText("只能看录下的结果");
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});

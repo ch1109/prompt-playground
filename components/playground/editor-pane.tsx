@@ -31,6 +31,9 @@ export function EditorPane(props: {
   promptId: string;
   /** 候选被采纳后重新读取版本列表（正式版本标记会变） */
   onVersionsChanged: () => void;
+  /** 用当前输入与提示词真实运行一次（与顶栏「运行模型」相同）；runBlocked 为不能运行的原因 */
+  onRun: () => void;
+  runBlocked: string | null;
 }) {
   const [tab, setTab] = useState<EditorTab>("input");
   const [ws, patch] = useWorkspace();
@@ -66,6 +69,8 @@ export function EditorPane(props: {
             onPickFixture={props.onPickFixture}
             onSnapshotsChanged={props.onSnapshotsChanged}
             onMoreSnapshots={props.onMoreSnapshots}
+            onRun={props.onRun}
+            runBlocked={props.runBlocked}
           />
         )}
         {tab === "preview" && (
@@ -197,6 +202,8 @@ export function InputTab({
   onSnapshotsChanged,
   onMoreSnapshots,
   onPicked,
+  onRun,
+  runBlocked,
 }: {
   projectId: string;
   kind: PromptKind;
@@ -207,6 +214,8 @@ export function InputTab({
   onSnapshotsChanged: () => void;
   onMoreSnapshots?: () => void;
   onPicked?: () => void;
+  onRun: () => void;
+  runBlocked: string | null;
 }) {
   const [ws, patch] = useWorkspace();
   // 已选示例时列表默认收起；点「示例」或「更换示例」才展开
@@ -256,6 +265,8 @@ export function InputTab({
           fixtures={fixtures}
           open={fixtureOpen}
           onOpen={() => setFixtureOpen(true)}
+          onRun={onRun}
+          runBlocked={runBlocked}
           onPick={(id) => {
             setFixtureOpen(false);
             onPickFixture(id);
@@ -276,7 +287,23 @@ const ORIGIN_GROUP = { RECORDED_MODEL_OUTPUT: "真实运行录制（不是标准
 const ORIGIN_PLAIN = { RECORDED_MODEL_OUTPUT: "真实运行录制", CONSTRUCTED: "人工构造", STRUCTURE_EXAMPLE: "格式示例" } as const;
 
 /** 样本库（R-01）：按来源分组；平时只有搜索框，来源 / Gold / Schema 版本等筛选收在「筛选」里；已选示例时收起成一张卡片 */
-function FixtureList({ kind, fixtures, open, onOpen, onPick }: { kind: PromptKind; fixtures: FixtureSummary[]; open: boolean; onOpen: () => void; onPick: (fixtureId: string) => void }) {
+function FixtureList({
+  kind,
+  fixtures,
+  open,
+  onOpen,
+  onPick,
+  onRun,
+  runBlocked,
+}: {
+  kind: PromptKind;
+  fixtures: FixtureSummary[];
+  open: boolean;
+  onOpen: () => void;
+  onPick: (fixtureId: string) => void;
+  onRun: () => void;
+  runBlocked: string | null;
+}) {
   const [ws] = useWorkspace();
   const [q, setQ] = useState("");
   const [origin, setOrigin] = useState<"" | FixtureSummary["origin"]>("");
@@ -306,9 +333,22 @@ function FixtureList({ kind, fixtures, open, onOpen, onPick }: { kind: PromptKin
     return (
       <div className="space-y-2" data-testid="fixture-current">
         <FixtureDetailCard f={picked} />
-        <Btn onClick={onOpen} data-testid="btn-change-fixture">
-          更换示例（共 {all.length} 个）
-        </Btn>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* 示例结果是以前录下的；用当前提示词对同一份输入真实再跑一次，得到新结果 */}
+          <Btn
+            tone="primary"
+            onClick={onRun}
+            disabled={!picked.hasRequest || !!runBlocked}
+            title={!picked.hasRequest ? "这个示例没有附带输入，不能真实运行，只能看录下的结果" : (runBlocked ?? "用当前提示词对这个示例的输入真实调用一次模型，会产生费用")}
+            data-testid="btn-rerun-fixture"
+          >
+            ▷ 用当前提示词重新运行
+          </Btn>
+          <Btn onClick={onOpen} data-testid="btn-change-fixture">
+            更换示例（共 {all.length} 个）
+          </Btn>
+        </div>
+        {!picked.hasRequest && <p className="text-[11px] text-ink-400">这个示例没有附带输入，只能看录下的结果，不能重新运行。</p>}
       </div>
     );
   }

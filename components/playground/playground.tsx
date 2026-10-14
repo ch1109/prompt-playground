@@ -352,6 +352,9 @@ export function Playground({ projectId }: { projectId: string }) {
     }
   }
 
+  /** 现在不能真实运行的原因（与顶栏「运行模型」按钮的禁用条件一致）；null = 可以运行 */
+  const runBlocked = busy ? "正在处理上一个操作" : !provider?.configured ? "未配置模型：请先在 .env.local 填写模型信息" : runningRunId ? "当前提示词的上一次运行尚未结束" : null;
+
   const report = (e: unknown) => setError(e instanceof ApiError ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : String(e));
 
   /** 返回是否保存成功；失败时在顶栏显示错误 */
@@ -814,6 +817,8 @@ export function Playground({ projectId }: { projectId: string }) {
                     projectId={projectId}
                     promptId={promptId}
                     onVersionsChanged={() => api<{ versions: PromptVersionDTO[] }>(`/api/prompts/${promptId}`).then((r) => setVersions((v) => ({ ...v, [promptId]: r.versions })))}
+                    onRun={() => void modelRun()}
+                    runBlocked={runBlocked}
                   />
                 )}
               </div>
@@ -887,6 +892,11 @@ export function Playground({ projectId }: { projectId: string }) {
                     onSnapshotsChanged={loadSnapshots}
                     onMoreSnapshots={moreSnapshots}
                     onPicked={() => setInputDrawer(false)}
+                    onRun={() => {
+                      setInputDrawer(false);
+                      void modelRun();
+                    }}
+                    runBlocked={runBlocked}
                   />
                 </div>
               </aside>
