@@ -786,14 +786,15 @@ test("有未保存修改时切换版本先确认：取消则保留草稿，确�
 
 test("标注独立保存，不改原始输出", async ({ page }) => {
   await renderFixture(page, "jiuli-p4", "constructed/p4-v3-conflict.json");
-  await page.locator('[data-change-id="OR_001:gross_weight"]').click();
+  const cell = page.locator('[data-table-id="fieldDecisions"] [data-row-id="OR_001:gross_weight"] [data-field="result_value"]');
+  await cell.click();
   await page.getByLabel("正确值").fill("2.4");
   await page.getByLabel("标注备注").fill("模型应选箱单 GW");
   await page.getByLabel("错误归因").selectOption("PROMPT_RULE_ERROR");
   await page.getByRole("button", { name: "保存标注" }).click();
   await expect(page.getByTestId("annotation-form")).toContainText("正确值：2.4");
-  // 有标注的行显示角标；可导出 CSV
-  await expect(page.locator('[data-change-id="OR_001:gross_weight"]')).toHaveAttribute("data-annotated", "");
+  // 有标注的格子显示角标；可导出 CSV
+  await expect(cell).toHaveAttribute("data-annotated", "");
   const csv = await page.request.get("/api/annotations/export?project=jiuli&format=csv").then((r) => r.text());
   expect(csv.startsWith("﻿")).toBe(true);
   expect(csv).toContain("模型应选箱单 GW");
@@ -806,7 +807,7 @@ test("标注独立保存，不改原始输出", async ({ page }) => {
 
 test("标注可修改、可删除：删除后角标消失、导出中不再出现", async ({ page }) => {
   await renderFixture(page, "jiuli-p4", "constructed/p4-v3-conflict.json");
-  const row = page.locator('[data-change-id="OR_001:net_weight"]');
+  const row = page.locator('[data-table-id="fieldDecisions"] [data-row-id="OR_001:net_weight"] [data-field="result_value"]');
   await row.click();
   const marker = `标注-${Date.now()}`;
   await page.getByLabel("正确值").fill("错写的值");
@@ -862,7 +863,10 @@ test("P4 只看变化 / 仅风险 过滤", async ({ page }) => {
   await expect(rows).toHaveCount(4);
   await page.locator('[data-preset="risks"]').click();
   await expect(rows).toHaveCount(3);
-  await expect(page.getByText("SIMULATION_ONLY").first()).toBeVisible();
+  // 只做模拟、不写回：表头写明；「模拟新值」列在「全部列」里
+  await expect(page.getByText("只做模拟预览，不写回九立")).toBeVisible();
+  await page.locator('[data-table-id="fieldDecisions"]').getByRole("button", { name: "全部列" }).click();
+  await expect(page.locator('[data-table-id="fieldDecisions"]').getByText("模拟新值（SIMULATION_ONLY）").first()).toBeVisible();
 });
 
 test("9.1 性能：100 行 × 25 字段（记录实测，不预设达标）", async ({ page }) => {

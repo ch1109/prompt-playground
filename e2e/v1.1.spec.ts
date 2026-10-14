@@ -44,12 +44,14 @@ test("AT-02 冲突字段在「核心字段」下也显示，并带冲突角标",
 
 test("P3 请求候选池列出模型收到的全部候选", async ({ page }) => {
   await renderFixture(page, "jiuli-p3", "constructed/p3-v3-multi-candidate.json");
-  await expect(page.getByText("请求候选池（召回诊断：模型实际收到的全部候选）")).toBeVisible();
+  // 召回诊断默认收起，点开才看
+  await page.getByText("请求候选池（召回诊断：模型实际收到的全部候选）").click();
   await expect(page.locator('[data-table-id="requestCandidates"] tbody tr')).toHaveCount(6);
 });
 
 test("P4 委托行 × 25 字段矩阵：锁定与未核验字段如实显示", async ({ page }) => {
   await renderFixture(page, "jiuli-p4", "constructed/p4-v3-conflict.json");
+  await page.getByTestId("p4-matrix-details").locator("summary").click();
   const m = page.locator('[data-table-id="fieldMatrix"]');
   await expect(m.getByText(/【锁定】/).first()).toBeVisible();
   await expect(m.getByText(/^本轮未核验/).first()).toBeVisible();

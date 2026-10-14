@@ -7,6 +7,8 @@ import { Badge, CellValue, cx, Empty } from "@/components/ui";
 export interface DataTableOptions {
   frozenColumns?: string[];
   fieldPreset?: "core" | "all";
+  /** 「核心 / 全部」切换按钮的文字；默认「核心字段 / 全部 N 字段」（P1 首列是序号，不计入字段数） */
+  presetLabels?: [string, string];
   /** 外部行过滤（例如按入仓号分组、按委托行筛候选） */
   rowFilter?: (row: TableRow) => boolean;
   /** 额外的工具栏控件 */
@@ -120,7 +122,7 @@ export function DataTable({ table, options = {} }: { table: TableView; options?:
           <div className="flex gap-0.5 rounded-lg bg-ink-800 p-0.5 text-[11.5px]">
             {(["core", "all"] as const).map((p) => (
               <button key={p} onClick={() => setPreset(p)} className={cx("px-2.5 py-0.5", preset === p ? "rounded-md bg-ink-900 text-ink-100 shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-ink-400 hover:text-ink-100")}>
-                {p === "core" ? "核心字段" : `全部 ${table.columns.length - 1} 字段`}
+                {options.presetLabels ? options.presetLabels[p === "core" ? 0 : 1] : p === "core" ? "核心字段" : `全部 ${table.columns.length - 1} 字段`}
               </button>
             ))}
           </div>

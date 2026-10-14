@@ -29,12 +29,12 @@ const RISK_DECISIONS = new Set(["CONFLICT", "MISSING"]);
 const WRITE_DECISIONS = new Set(["FILL", "UPDATE"]);
 
 const DECISION_COLS: TableColumn[] = [
-  { key: "order_row_id", title: "委托行", fixed: true },
-  { key: "field", title: "字段", fixed: true },
-  { key: "current_value", title: "当前值（基准）" },
-  { key: "result_value", title: "模型结果值" },
-  { key: "decision", title: "决策", kind: "state" },
-  { key: "verification_status", title: "核验状态", kind: "state" },
+  { key: "order_row_id", title: "委托行", fixed: true, core: true },
+  { key: "field", title: "字段", fixed: true, core: true },
+  { key: "current_value", title: "当前值（基准）", core: true },
+  { key: "result_value", title: "模型结果值", core: true },
+  { key: "decision", title: "决策", kind: "state", core: true },
+  { key: "verification_status", title: "核验状态", kind: "state", core: true },
   { key: "simulated_value", title: "模拟新值（SIMULATION_ONLY）" },
 ];
 
@@ -160,7 +160,7 @@ function summary(b: VMBuilder, out: Obj, changes: ChangeView[]): AdapterOutput["
       { label: "CONFLICT/MISSING", value: by("CONFLICT") + by("MISSING") },
       { label: "可模拟应用", value: changes.filter((c) => c.simulation?.applicable).length },
     ],
-    notes: ["Patch 预览为 SIMULATION_ONLY：只在浏览器内存中模拟，禁止写回九立。"],
+    notes: ["「模拟新值」只在浏览器内存中模拟（SIMULATION_ONLY），禁止写回九立。"],
   };
 }
 
@@ -320,7 +320,7 @@ export const jiuliP4V3: BusinessAdapter = {
         { key: "missing_required", title: "必填缺失" },
         { key: "candidate_values", title: "冲突候选" },
         { key: "referenced_issue_ids", title: "引用问题" },
-        { key: "reason", title: "理由" },
+        { key: "reason", title: "理由", core: true },
         DECISION_COLS[6],
       ],
       rows: rowsOut,

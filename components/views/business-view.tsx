@@ -1,11 +1,10 @@
 "use client";
 import { useMemo, useState, type ReactNode } from "react";
 import type { RendererConfig, RendererRegion } from "@/lib/contracts/renderer-config";
-import type { ChangeView, TableRow, TableView, ViewModel } from "@/lib/contracts/view-model";
+import type { TableRow, TableView, ViewModel } from "@/lib/contracts/view-model";
 import { UNRESOLVED_GROUP } from "@/lib/adapters/jiuli-p2";
 import { useStudio } from "@/lib/state/studio-store";
 import { DataTable, IssuesContext, type DataTableOptions } from "@/components/renderers/data-table";
-import { FieldDiff } from "@/components/renderers/field-diff";
 import { IssueList } from "@/components/renderers/issue-list";
 import { RelationCanvas } from "@/components/renderers/relation-canvas";
 import { SummaryStrip } from "@/components/renderers/summary-strip";
@@ -44,12 +43,6 @@ function Region({ region, vm, extra }: { region: RendererRegion; vm: ViewModel; 
       );
     case "summary-strip":
       return <SummaryStrip items={vm.metadata?.summary} notes={vm.metadata?.notes} />;
-    case "field-diff":
-      return (
-        <Section title="字段差异" className="overflow-hidden">
-          <FieldDiff changes={vm.changes} />
-        </Section>
-      );
     case "relation-canvas":
       return (
         <Section title="关系图" className="overflow-hidden">
@@ -62,9 +55,9 @@ function Region({ region, vm, extra }: { region: RendererRegion; vm: ViewModel; 
   }
 }
 
-function OtherTables({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
+function OtherTables({ vm, cfg, shown = [] }: { vm: ViewModel; cfg: RendererConfig; shown?: string[] }) {
   const bound = boundTableIds(cfg);
-  const rest = vm.tables.filter((t) => !bound.has(t.id));
+  const rest = vm.tables.filter((t) => !bound.has(t.id) && !shown.includes(t.id));
   if (!rest.length) return null;
   return (
     <>
@@ -81,6 +74,22 @@ function byId(cfg: RendererConfig) {
   return new Map(cfg.regions.map((r) => [r.id, r]));
 }
 
+/** 统计卡片与说明小字：只是结构计数，默认收在页面底部 */
+function MoreStats({ vm, cfg }: { vm: ViewModel; cfg: RendererConfig }) {
+  const strip = cfg.regions.filter((r) => r.component === "summary-strip");
+  if (!strip.length) return null;
+  return (
+    <details className="rise overflow-hidden rounded-xl border border-ink-700 bg-ink-900" data-testid="more-stats">
+      <summary className="cursor-pointer px-3.5 py-2 text-[12.5px] font-semibold text-ink-100">更多统计</summary>
+      <div className="border-t border-ink-700/70 p-3">
+        {strip.map((r) => (
+          <Region key={r.id} region={r} vm={vm} />
+        ))}
+      </div>
+    </details>
+  );
+}
+
 /** 表名去掉括号里的补充说明，用于一句话概括 */
 const shortTitle = (t: string) => t.replace(/（.*$/, "");
 
@@ -91,7 +100,6 @@ function WideTableLayout({ vm, cfg, onlyIssues, setOnlyIssues }: { vm: ViewModel
     .slice(1)
     .map((r) => ({ region: r, table: resolveTable(vm, r.binding) }))
     .filter((x): x is { region: RendererRegion; table: TableView } => !!x.table);
-  const strip = cfg.regions.filter((r) => r.component === "summary-strip");
   return (
     <div className="space-y-3">
       {tableRegions.slice(0, 1).map((r) => <Region key={r.id} region={r} vm={vm} extra={{ maxHeight: 460, expandable: true, onlyIssues, onOnlyIssuesChange: setOnlyIssues }} />)}
@@ -121,16 +129,7 @@ function WideTableLayout({ vm, cfg, onlyIssues, setOnlyIssues }: { vm: ViewModel
           </div>
         </details>
       )}
-      {strip.length > 0 && (
-        <details className="rise overflow-hidden rounded-xl border border-ink-700 bg-ink-900" data-testid="more-stats">
-          <summary className="cursor-pointer px-3.5 py-2 text-[12.5px] font-semibold text-ink-100">更多统计</summary>
-          <div className="border-t border-ink-700/70 p-3">
-            {strip.map((r) => (
-              <Region key={r.id} region={r} vm={vm} />
-            ))}
-          </div>
-        </details>
-      )}
+      <MoreStats vm={vm} cfg={cfg} />
       <OtherTables vm={vm} cfg={cfg} />
     </div>
   );
@@ -170,7 +169,6 @@ function HierarchyLayout({ vm, cfg, onlyIssues, setOnlyIssues }: { vm: ViewModel
 
   return (
     <div className="space-y-3">
-      {regions.get("summary") && <Region region={regions.get("summary")!} vm={vm} />}
       <div className="grid grid-cols-[200px_1fr] gap-3">
         <Section title="入仓号">
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="查找入仓号…" aria-label="查找入仓号" className="m-2 w-[calc(100%-16px)] rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5 text-[12px] outline-none" />
@@ -233,7 +231,8 @@ function HierarchyLayout({ vm, cfg, onlyIssues, setOnlyIssues }: { vm: ViewModel
         </div>
       </div>
       {cfg.regions.filter((r) => r.component === "issue-list").map((r) => <Region key={r.id} region={r} vm={vm} />)}
-      <OtherTables vm={vm} cfg={cfg} />
+      <MoreStats vm={vm} cfg={cfg} />
+      <OtherTables vm={vm} cfg={cfg} shown={["logicalInspections", "mergedProducts", "inspectionRawRows", "scopeRecords"]} />
     </div>
   );
 }
@@ -253,7 +252,6 @@ function CandidateLayout({ vm, cfg, onlyIssues, setOnlyIssues }: { vm: ViewModel
 
   return (
     <div className="space-y-3">
-      {regions.get("summary") && <Region region={regions.get("summary")!} vm={vm} />}
       {/* 左：委托商品；中：候选表/关系图；右：证据详情由右侧「来源与标注」栏承担（与全局选择联动） */}
       <div className="@container">
         <div className="grid grid-cols-1 gap-3 @[860px]:grid-cols-[minmax(280px,0.85fr)_minmax(0,1.4fr)]">
@@ -291,29 +289,33 @@ function CandidateLayout({ vm, cfg, onlyIssues, setOnlyIssues }: { vm: ViewModel
           </Section>
         </div>
       </div>
-      {pool && (
-        <Section title="请求候选池（召回诊断：模型实际收到的全部候选）" className="overflow-hidden">
-          <DataTable table={pool} options={{ hideTitle: true, maxHeight: 320, highlightRowIds: new Set(pool.rows.filter((r) => !r.meta?.mentioned).map((r) => r.id)) }} />
-        </Section>
-      )}
       {cfg.regions.filter((r) => r.component === "issue-list").map((r) => <Region key={r.id} region={r} vm={vm} />)}
+      {pool && (
+        <details className="rise overflow-hidden rounded-xl border border-ink-700 bg-ink-900" data-testid="p3-pool-details">
+          <summary className="cursor-pointer px-3.5 py-2 text-[12.5px]">
+            <span className="font-semibold text-ink-100">请求候选池（召回诊断：模型实际收到的全部候选）</span>
+            <span className="ml-2 text-ink-400">{pool.rows.length} 条</span>
+          </summary>
+          <div className="border-t border-ink-700/70">
+            <DataTable table={pool} options={{ hideTitle: true, maxHeight: 320, highlightRowIds: new Set(pool.rows.filter((r) => !r.meta?.mentioned).map((r) => r.id)) }} />
+          </div>
+        </details>
+      )}
+      <MoreStats vm={vm} cfg={cfg} />
       <OtherTables vm={vm} cfg={cfg} />
     </div>
   );
 }
 
-// ---------------- P4：决策表 + Patch 预览 ----------------
+// ---------------- P4：一张逐字段决策表；25 字段矩阵与统计收起 ----------------
 function DecisionLayout({ vm, cfg, onlyIssues, setOnlyIssues }: { vm: ViewModel; cfg: RendererConfig; onlyIssues: boolean; setOnlyIssues: (v: boolean) => void }) {
   const regions = byId(cfg);
   const decisions = vm.tables.find((t) => t.id === "fieldDecisions");
+  const matrix = regions.has("matrix") ? vm.tables.find((t) => t.id === "fieldMatrix") : undefined;
   const presets = ((regions.get("decisions")?.options as { filterPresets?: string[] } | undefined)?.filterPresets ?? ["all", "changes", "risks"]) as ("all" | "changes" | "risks")[];
   const [preset, setPreset] = useState<"all" | "changes" | "risks">("all");
-  const LABEL = { all: "全部字段", changes: "只看变化", risks: "仅风险" };
+  const LABEL = { all: "全部", changes: "只看变化", risks: "仅风险" };
   const rowFilter = (r: TableRow) => preset === "all" || (preset === "changes" ? !!r.meta?.changed : !!r.meta?.risk);
-  const changeFilter = (c: ChangeView) => {
-    const row = decisions?.rows.find((r) => r.id === c.id);
-    return row ? rowFilter(row) : true;
-  };
   const toolbar = (
     <div className="flex gap-0.5 rounded-lg bg-ink-800 p-0.5 text-[11.5px]">
       {presets.map((p) => (
@@ -325,23 +327,26 @@ function DecisionLayout({ vm, cfg, onlyIssues, setOnlyIssues }: { vm: ViewModel;
   );
   return (
     <div className="space-y-3">
-      {regions.get("summary") && <Region region={regions.get("summary")!} vm={vm} />}
       {decisions && (
-        <Section title={decisions.title} className="overflow-hidden">
-          <DataTable table={decisions} options={{ hideTitle: true, rowFilter, toolbar, frozenColumns: ["order_row_id", "field"], onlyIssues, onOnlyIssuesChange: setOnlyIssues }} />
-        </Section>
-      )}
-      {regions.get("changes") && (
-        <Section title="字段差异" className="overflow-hidden">
-          <FieldDiff changes={vm.changes} filter={changeFilter} />
+        <Section title={decisions.title} right={<span className="text-[11.5px] text-ink-400">只做模拟预览，不写回九立</span>} className="overflow-hidden">
+          <DataTable table={decisions} options={{ hideTitle: true, rowFilter, toolbar, fieldPreset: "core", presetLabels: ["核心列", "全部列"], frozenColumns: ["order_row_id", "field"], onlyIssues, onOnlyIssuesChange: setOnlyIssues }} />
         </Section>
       )}
       {cfg.regions
-        .filter((r) => r.component === "data-table" && r.id !== "decisions")
+        .filter((r) => r.component === "data-table" && r.id !== "decisions" && r.id !== "matrix")
         .map((r) => (
           <Region key={r.id} region={r} vm={vm} />
         ))}
       {cfg.regions.filter((r) => r.component === "issue-list").map((r) => <Region key={r.id} region={r} vm={vm} />)}
+      {matrix && (
+        <details className="rise overflow-hidden rounded-xl border border-ink-700 bg-ink-900" data-testid="p4-matrix-details">
+          <summary className="cursor-pointer px-3.5 py-2 text-[12.5px] font-semibold text-ink-100">按委托行看全部 25 字段</summary>
+          <div className="border-t border-ink-700/70">
+            <DataTable table={matrix} options={{ hideTitle: true }} />
+          </div>
+        </details>
+      )}
+      <MoreStats vm={vm} cfg={cfg} />
       <OtherTables vm={vm} cfg={cfg} />
     </div>
   );

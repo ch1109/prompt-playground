@@ -73,7 +73,8 @@ export function runStatusView(status: string, schemaId: string | null | undefine
 }
 
 /** 业务状态词的颜色语义（不是准确率） */
-export function stateTone(v: string): keyof typeof TONES {
+export function stateTone(raw: string): keyof typeof TONES {
+  const v = raw.replace(/（.*$/, "");
   if (/^(MATCHED|COMPLETE|VERIFIED_CONSISTENT|SUCCESS|KEEP|DISJOINT)$/.test(v)) return "ok";
   if (/^(VERIFIED_UPDATED|FILL|UPDATE)$/.test(v)) return "info";
   if (/^(CONFLICT|MISSING|MISSING_REQUIRED|UNMATCHED|INVALID_INPUT|OVERLAPPING)$/.test(v)) return "bad";
