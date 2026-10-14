@@ -14,8 +14,6 @@ import { Hunks, textHunks } from "./run-compare";
 
 type EditorTab = "prompt" | "input" | "model" | "preview" | "candidates";
 
-const ORIGIN_TONE = { STRUCTURE_EXAMPLE: "mute", RECORDED_MODEL_OUTPUT: "info", CONSTRUCTED: "warn" } as const;
-const ORIGIN_SHORT = { STRUCTURE_EXAMPLE: "结构示例", RECORDED_MODEL_OUTPUT: "真实录制·非Gold", CONSTRUCTED: "人工构造" } as const;
 
 export function EditorPane(props: {
   kind: PromptKind;
@@ -271,8 +269,10 @@ export function InputTab({
 }
 
 const ORIGIN_GROUP = { RECORDED_MODEL_OUTPUT: "真实运行录制（不是标准答案）", CONSTRUCTED: "人工构造的异常示例", STRUCTURE_EXAMPLE: "格式示例" } as const;
+/** 卡片上的一句话来源（分组标题已写明来源，列表行里不再重复） */
+const ORIGIN_PLAIN = { RECORDED_MODEL_OUTPUT: "真实运行录制", CONSTRUCTED: "人工构造", STRUCTURE_EXAMPLE: "格式示例" } as const;
 
-/** 样本库（R-01）：按来源分组，支持搜索与来源 / Gold / Schema 版本筛选；已选示例时收起成一张卡片 */
+/** 样本库（R-01）：按来源分组；平时只有搜索框，来源 / Gold / Schema 版本等筛选收在「筛选」里；已选示例时收起成一张卡片 */
 function FixtureList({ kind, fixtures, open, onOpen, onPick }: { kind: PromptKind; fixtures: FixtureSummary[]; open: boolean; onOpen: () => void; onPick: (fixtureId: string) => void }) {
   const [ws] = useWorkspace();
   const [q, setQ] = useState("");
@@ -281,6 +281,7 @@ function FixtureList({ kind, fixtures, open, onOpen, onPick }: { kind: PromptKin
   const [schema, setSchema] = useState("");
   const [usage, setUsage] = useState<"" | "runnable" | "render">("");
   const [ranOnly, setRanOnly] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const all = fixtures.filter((f) => f.promptKind === kind);
   const schemas = useMemo(() => [...new Set(all.map((f) => f.schemaVersion ?? "（无）"))], [all]);
   const needle = q.trim().toLowerCase();
@@ -310,42 +311,45 @@ function FixtureList({ kind, fixtures, open, onOpen, onPick }: { kind: PromptKin
   }
   return (
     <div className="space-y-2" data-testid="fixture-list">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索示例名、样本号、验收项（如 AT09）…" aria-label="搜索样本" className="min-w-40 flex-1 rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-[12px] outline-none focus:border-ink-400" />
-        <select value={origin} onChange={(e) => setOrigin(e.target.value as typeof origin)} aria-label="示例来源" className="rounded-lg border border-ink-700 bg-ink-900 px-1 py-1 text-[11.5px]">
-          <option value="">全部来源</option>
-          {Object.entries(ORIGIN_GROUP).map(([k, v]) => (
-            <option key={k} value={k}>
-              {v}
-            </option>
-          ))}
-        </select>
-        <select value={schema} onChange={(e) => setSchema(e.target.value)} aria-label="结构版本" className="rounded-lg border border-ink-700 bg-ink-900 px-1 py-1 text-[11.5px]">
-          <option value="">全部结构版本</option>
-          {schemas.map((v) => (
-            <option key={v} value={v}>
-              {v}
-            </option>
-          ))}
-        </select>
-        <select value={usage} onChange={(e) => setUsage(e.target.value as typeof usage)} aria-label="能否真实运行" className="rounded-lg border border-ink-700 bg-ink-900 px-1 py-1 text-[11.5px]">
-          <option value="">可运行 + 仅渲染</option>
-          <option value="runnable">可真实运行（带输入）</option>
-          <option value="render">只能仅渲染</option>
-        </select>
-        <label className="flex items-center gap-1 text-[11.5px] text-ink-300">
-          <input type="checkbox" checked={gold} onChange={(e) => setGold(e.target.checked)} aria-label="只看有 Gold" />
-          只看有 Gold
-        </label>
-        <label className="flex items-center gap-1 text-[11.5px] text-ink-300">
-          <input type="checkbox" checked={ranOnly} onChange={(e) => setRanOnly(e.target.checked)} aria-label="只看运行过的" />
-          只看运行过的（最近的在前）
-        </label>
+      <div className="flex items-center gap-1.5">
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索示例…" aria-label="搜索样本" className="min-w-40 flex-1 rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-[12px] outline-none focus:border-ink-400" />
+        <Btn onClick={() => setShowFilters((v) => !v)} aria-expanded={showFilters} data-testid="btn-fixture-filters">
+          筛选{list.length < all.length ? `（${list.length}/${all.length}）` : ""}
+        </Btn>
       </div>
-      {picked && <FixtureDetailCard f={picked} />}
-      <p className="text-[11px] text-ink-400">
-        {list.length}/{all.length} 个示例。录制输出不是标准答案，构造示例不是真实单证，都不能用来说明准确率。
-      </p>
+      {showFilters && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <select value={origin} onChange={(e) => setOrigin(e.target.value as typeof origin)} aria-label="示例来源" className="rounded-lg border border-ink-700 bg-ink-900 px-1 py-1 text-[11.5px]">
+            <option value="">全部来源</option>
+            {Object.entries(ORIGIN_GROUP).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </select>
+          <select value={schema} onChange={(e) => setSchema(e.target.value)} aria-label="结构版本" className="rounded-lg border border-ink-700 bg-ink-900 px-1 py-1 text-[11.5px]">
+            <option value="">全部结构版本</option>
+            {schemas.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+          <select value={usage} onChange={(e) => setUsage(e.target.value as typeof usage)} aria-label="能否真实运行" className="rounded-lg border border-ink-700 bg-ink-900 px-1 py-1 text-[11.5px]">
+            <option value="">可运行 + 仅渲染</option>
+            <option value="runnable">可真实运行（带输入）</option>
+            <option value="render">只能仅渲染</option>
+          </select>
+          <label className="flex items-center gap-1 text-[11.5px] text-ink-300">
+            <input type="checkbox" checked={gold} onChange={(e) => setGold(e.target.checked)} aria-label="只看有 Gold" />
+            只看有标准答案
+          </label>
+          <label className="flex items-center gap-1 text-[11.5px] text-ink-300">
+            <input type="checkbox" checked={ranOnly} onChange={(e) => setRanOnly(e.target.checked)} aria-label="只看运行过的" />
+            只看运行过的（最近的在前）
+          </label>
+        </div>
+      )}
       {(Object.keys(ORIGIN_GROUP) as FixtureSummary["origin"][]).map((o) => {
         const items = list.filter((f) => f.origin === o);
         if (!items.length) return null;
@@ -360,14 +364,18 @@ function FixtureList({ kind, fixtures, open, onOpen, onPick }: { kind: PromptKin
                   <button
                     data-fixture-id={f.id}
                     onClick={() => onPick(f.id)}
+                    title={f.tags.length ? `标签：${f.tags.join("、")}` : undefined}
                     className={cx("flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-[12px] hover:bg-ink-800", ws.fixtureId === f.id && "bg-accent/[0.07] ring-1 ring-accent/40")}
                   >
                     <span className="min-w-0 flex-1 truncate">{f.title}</span>
+                    {/* 只标特殊情况：没附带输入（不能真实运行）、有标准答案 */}
+                    {!f.hasRequest && (
+                      <Badge tone="mute" title="没有附带输入，不能真实运行模型，只能整理已有输出">
+                        只能仅渲染
+                      </Badge>
+                    )}
+                    {f.hasGold && <Badge tone="ok">有标准答案</Badge>}
                     <FixtureStats f={f} />
-                    {f.hasRequest ? <Badge title="带请求上下文：可真实运行，也可解析 evidence_key / 当前值">ctx</Badge> : <Badge tone="mute" title="没有请求上下文：只能仅渲染">仅渲染</Badge>}
-                    {f.hasGold && <Badge tone="ok">Gold</Badge>}
-                    {f.covers?.length ? <Badge tone="mute">{f.covers.join(" ")}</Badge> : null}
-                    <Badge tone={ORIGIN_TONE[f.origin]}>{ORIGIN_SHORT[f.origin]}</Badge>
                   </button>
                 </li>
               ))}
@@ -382,11 +390,11 @@ function FixtureList({ kind, fixtures, open, onOpen, onPick }: { kind: PromptKin
 
 /** 样本在本项目里运行过几次、有几处被标为错误；没有输入快照的样本无法关联运行 */
 function FixtureStats({ f }: { f: FixtureSummary }) {
-  if (!f.stats) return <span className="text-[10.5px] text-ink-600" title="这个示例没有输入快照（只有模型输出），无法统计运行次数">—</span>;
+  if (!f.stats) return null;
   return (
-    <span className="text-[10.5px] whitespace-nowrap text-ink-400" data-testid="fixture-stats" title={f.stats.last_run_at ? `最近运行 ${f.stats.last_run_at.slice(0, 16).replace("T", " ")}` : "还没有运行过"}>
-      运行 {f.stats.run_count}
-      {f.stats.wrong_count > 0 && <span className="ml-1 text-stamp">标错 {f.stats.wrong_count}</span>}
+    <span className="min-w-16 text-right text-[10.5px] whitespace-nowrap text-ink-400" data-testid="fixture-stats" title={f.stats.last_run_at ? `最近运行 ${f.stats.last_run_at.slice(0, 16).replace("T", " ")}` : "还没有运行过"}>
+      {f.stats.wrong_count > 0 && <span className="mr-1 text-stamp">标错 {f.stats.wrong_count}</span>}
+      运行 {f.stats.run_count} 次
     </span>
   );
 }
@@ -394,25 +402,30 @@ function FixtureStats({ f }: { f: FixtureSummary }) {
 function FixtureDetailCard({ f }: { f: FixtureSummary }) {
   return (
     <div className="rounded-lg border border-ink-700 bg-ink-900 p-2 text-[11.5px]" data-testid="fixture-detail">
-      <div className="mb-0.5 flex flex-wrap items-center gap-1.5">
-        <span className="font-semibold text-ink-100">{f.title}</span>
-        <Badge tone={ORIGIN_TONE[f.origin]}>{ORIGIN_GROUP[f.origin]}</Badge>
-        <Badge tone={f.hasGold ? "ok" : "mute"}>{f.hasGold ? "有独立 Gold" : "无 Gold"}</Badge>
-        <Badge>{f.schemaVersion ?? "无 schema_version"}</Badge>
-        <Badge tone={f.detail.runnable ? "info" : "warn"}>{f.detail.runnable ? "可真实运行 / 仅渲染" : "只能仅渲染"}</Badge>
+      <div className="font-semibold text-ink-100">{f.title}</div>
+      <div className="mt-0.5 text-ink-400" data-testid="fixture-summary">
+        {[
+          ORIGIN_PLAIN[f.origin],
+          f.hasGold ? "有标准答案" : "没有标准答案",
+          f.detail.runnable ? null : "只能仅渲染",
+          f.stats ? `运行 ${f.stats.run_count} 次${f.stats.wrong_count ? `，标错 ${f.stats.wrong_count} 处` : ""}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
       </div>
-      <div className="text-ink-400" data-testid="fixture-summary">
-        文件 {f.detail.materials.length} 个 · 输入{f.hasRequest ? "完整（带请求上下文）" : "缺失（只有模型输出）"} ·{" "}
-        {f.stats ? `运行 ${f.stats.run_count} 次${f.stats.last_run_at ? `（最近 ${f.stats.last_run_at.slice(0, 16).replace("T", " ")}）` : ""} · 标为错误 ${f.stats.wrong_count} 处` : "无法关联运行"}
-      </div>
-      {f.detail.provenance && <div className="text-ink-400">{f.detail.provenance}</div>}
-      {f.detail.materials.length > 0 && (
-        <div className="text-ink-400">
-          素材：{f.detail.materials.map((m) => `${m.file_id}${m.type ? `（${m.type}）` : ""}${m.segments.length ? ` ${m.segments.join(",")}` : ""}`).join("；")}
+      <details className="mt-1">
+        <summary className="cursor-pointer text-[11px] text-ink-400">更多信息</summary>
+        <div className="mt-1 space-y-0.5 text-ink-400">
+          <div>
+            文件 {f.detail.materials.length} 个 · 输入{f.hasRequest ? "完整（带请求上下文）" : "缺失（只有模型输出）"} · 结构版本 {f.schemaVersion ?? "无"}
+            {f.stats?.last_run_at && ` · 最近运行 ${f.stats.last_run_at.slice(0, 16).replace("T", " ")}`}
+          </div>
+          {f.detail.provenance && <div>{f.detail.provenance}</div>}
+          {f.detail.materials.length > 0 && <div>素材：{f.detail.materials.map((m) => `${m.file_id}${m.type ? `（${m.type}）` : ""}${m.segments.length ? ` ${m.segments.join(",")}` : ""}`).join("；")}</div>}
+          {f.detail.upstream && <div>上游：{f.detail.upstream}</div>}
+          {f.tags.length > 0 && <div>标签：{f.tags.join("、")}</div>}
         </div>
-      )}
-      {f.detail.upstream && <div className="text-ink-400">上游：{f.detail.upstream}</div>}
-      {f.tags.length > 0 && <div className="text-ink-400">标签：{f.tags.join("、")}</div>}
+      </details>
     </div>
   );
 }

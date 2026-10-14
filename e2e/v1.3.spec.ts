@@ -182,6 +182,8 @@ test("M1 样本抽屉：每个示例显示运行次数与标错数；可按「�
   await drawer.getByTestId("btn-change-fixture").click();
   const list = drawer.getByTestId("fixture-list");
   await expect(list.locator('[data-fixture-id="constructed/p4-v3-conflict.json"]').getByTestId("fixture-stats")).toContainText(/运行 [1-9]/);
+  // 平时只有搜索框，其余筛选收在「筛选」里
+  await list.getByTestId("btn-fixture-filters").click();
   await list.getByLabel("能否真实运行").selectOption("render");
   await expect(list.locator('[data-fixture-id="constructed/p4-v3-conflict.json"]')).toHaveCount(0);
   await list.getByLabel("能否真实运行").selectOption("");

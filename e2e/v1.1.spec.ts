@@ -88,10 +88,11 @@ test("R-01 样本库：搜索与来源筛选，选中后显示详情", async ({ 
   await page.getByLabel("搜索样本").fill("AT09");
   await expect(page.locator("[data-fixture-id]")).toHaveCount(1);
   await page.getByLabel("搜索样本").fill("");
+  await page.getByTestId("btn-fixture-filters").click();
   await page.getByLabel("示例来源").selectOption("RECORDED_MODEL_OUTPUT");
   await expect(page.locator('[data-fixture-id^="constructed/"]')).toHaveCount(0);
   await page.click('[data-fixture-id="v3/SC-08/P3"]');
-  await expect(page.getByTestId("fixture-detail")).toContainText("无 Gold");
+  await expect(page.getByTestId("fixture-detail")).toContainText("没有标准答案");
   await expect(page.getByTestId("fixture-detail")).toContainText("上游");
 });
 
