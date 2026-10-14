@@ -48,6 +48,18 @@ async function pdfPages(path: string, limit: number): Promise<{ page: number; bu
   }
 }
 
+/** 只转 PDF 的某一页（给 Agent 核对原件用）；该页不存在返回 null */
+export async function renderPdfPage(path: string, page: number, scaleTo = 1600): Promise<Buffer | null> {
+  const dir = await mkdtemp(join(tmpdir(), "studio-page-"));
+  try {
+    await exec("pdftoppm", ["-jpeg", "-scale-to", String(scaleTo), "-f", String(page), "-l", String(page), path, join(dir, "p")], { timeout: 60000 });
+    const [f] = await readdir(dir);
+    return f ? await readFile(join(dir, f)) : null;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 /** PDF 总页数（pdfinfo）；读不出时为 null（未知），不猜 */
 export async function pdfPageCount(path: string): Promise<number | null> {
   try {

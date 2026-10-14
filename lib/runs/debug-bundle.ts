@@ -3,11 +3,15 @@ import type { InputSnapshot } from "@/lib/contracts/snapshot";
 import type { Cell, EvidenceView } from "@/lib/contracts/view-model";
 import { getByPointer, isWithin } from "@/lib/pipeline/json-pointer";
 import { getPrompt, getVersion, type PromptVersion } from "@/lib/repositories/prompts";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { readOriginalAt } from "@/lib/materials/original-reader";
+import { resolveMaterialFile } from "@/lib/materials/store";
 import { getRun, listAnnotations } from "@/lib/repositories/runs";
 import { getSnapshot } from "@/lib/repositories/snapshots";
 import { compareRuns, diffSummary } from "./compare";
 import { captureQuality, diagnosticStates, fieldInputCoverage } from "./run-evidence";
+import { pdfPageCount, renderPdfPage } from "./page-images";
 import { contextFromSnapshot } from "./service";
 
 // Run Debug Bundle（v1.3 §5.2）：按需动态组装，不复制一份目录。
@@ -332,7 +336,7 @@ export function sourceEvidence(c: RunContext, sourceRef: string, view: "snippet"
   const { run } = c;
   const e = run.view_model?.evidence.find((x) => x.id === sourceRef);
   if (!e) throw new BundleError("SOURCE_REF_NOT_IN_RUN", "这个 source_ref 不是该 Run 结果里登记的来源；只能读取本 Run 的来源", { hint: "先用 get_run_trace 的 object 部分拿到 evidence_refs" });
-  if (view === "region") return { source_ref: sourceRef, view, supported: false, reason: "暂不支持按区域裁剪原件图像；请用 snippet 或 page" };
+  if (view === "region") return { source_ref: sourceRef, view, supported: false, reason: "暂不支持按区域裁剪原件图像；请用 page_image 看整页，或用 snippet / page" };
   const mf = run.input_manifest?.files.find((f) => f.file_id === e.fileId);
   const material = c.snapshot?.materials.find((m) => m.file_id === e.fileId);
   let input: unknown;
@@ -400,6 +404,52 @@ export async function sourceEvidenceOriginal(c: RunContext, sourceRef: string) {
   } catch (err) {
     return withOriginal({ found: false, reason: err instanceof Error ? err.message : String(err), code: (err as { code?: string }).code ?? null });
   }
+}
+
+/** 页面图片的大小上限（原始字节）；超过就不返回，避免 Agent 客户端拒收 */
+export const MAX_PAGE_IMAGE_BYTES = 3_500_000;
+
+/**
+ * 原件页面图片（扫描件没有文字层时，让 Agent 自己看图核对）：来源所在页渲染成 JPEG（长边 1600px）。
+ * 与 view=original 同样的限制：source_ref 必须属于该 Run，文件必须在这次运行的输入里；同时核对原件 Hash。
+ * 返回的 _images 由 MCP 层转成图片内容块，不进 JSON 文本。
+ */
+export async function sourcePageImage(c: RunContext, sourceRef: string) {
+  const base = sourceEvidence(c, sourceRef, "snippet");
+  const e = c.run.view_model!.evidence.find((x) => x.id === sourceRef)!;
+  const out = (page_image: Record<string, unknown>, images: { media_type: string; base64: string }[] = []) => ({ ...base, view: "page_image" as const, page_image, _images: images });
+  if (!e.fileId) return out({ found: false, reason: "这条来源在请求数据里，不对应原件" });
+  if (!runFileIds(c).has(e.fileId)) return out({ found: false, reason: "模型声称的文件不在这次运行的输入里，不打开（可能是模型编造的 file_id）" });
+  let f: Awaited<ReturnType<typeof resolveMaterialFile>>;
+  try {
+    f = await resolveMaterialFile(e.fileId);
+  } catch (err) {
+    return out({ found: false, reason: `无法读取原件：${err instanceof Error ? err.message : String(err)}` });
+  }
+  const buf = await readFile(f.absolutePath);
+  const bytesHash = (b: Buffer) => createHash("sha256").update(b).digest("hex");
+  const recorded = base.file?.sha256 ?? null;
+  const fileHash = bytesHash(buf);
+  const fileInfo = { file_id: e.fileId, file_name: f.fileName, media_type: f.mediaType, sha256: fileHash, recorded_sha256: recorded, hash_matches_record: recorded ? fileHash === recorded : null };
+  let img: Buffer | null;
+  let page: number | null = null;
+  let media = "image/jpeg";
+  if (f.mediaType === "application/pdf") {
+    if (!e.page) return out({ found: false, file: fileInfo, reason: "这条来源没有页码，无法确定要看哪一页" });
+    const total = await pdfPageCount(f.absolutePath);
+    if (total !== null && e.page > total) return out({ found: false, file: fileInfo, reason: `原件只有 ${total} 页，来源指向第 ${e.page} 页` });
+    page = e.page;
+    img = await renderPdfPage(f.absolutePath, e.page);
+    if (!img) return out({ found: false, file: fileInfo, reason: `第 ${e.page} 页转图失败` });
+  } else if (f.mediaType.startsWith("image/")) {
+    img = buf;
+    media = f.mediaType;
+  } else return out({ found: false, file: fileInfo, reason: "原件不是 PDF 或图片；表格请用 view=original 按单元格核对" });
+  if (img.length > MAX_PAGE_IMAGE_BYTES) return out({ found: false, file: fileInfo, reason: `图片有 ${img.length} 字节，超过上限 ${MAX_PAGE_IMAGE_BYTES}` });
+  return out(
+    { found: true, file: fileInfo, page, media_type: media, image_bytes: img.length, image_sha256: bytesHash(img), note: "图片是原件这一页的渲染，随本结果作为图片内容返回；模型声称的原文与位置见 claimed_by_model" },
+    [{ media_type: media, base64: img.toString("base64") }],
+  );
 }
 
 /** 提示词里的章节标题（Markdown 标题、【】、编号行），给出行号便于引用 */
