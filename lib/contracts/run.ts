@@ -181,8 +181,10 @@ export interface Run {
   built_input?: unknown;
   /** 实际发给服务商的请求结构（脱敏：正文只记长度与 hash，图片只记原件引用，不含密钥） */
   request_actual?: Record<string, unknown> | null;
-  /** 服务商响应元数据：请求 ID、回报的模型名、结束原因、原样 usage、思考内容长度（不存思考内容） */
+  /** 服务商响应元数据：请求 ID、回报的模型名、结束原因、原样 usage、思考内容长度 */
   response_meta?: Record<string, unknown> | null;
+  /** 模型思考内容全文（2026-10-14 起保存；更早的运行没有，服务商不返回时为 null） */
+  reasoning_content?: string | null;
   /** Adapter / 渲染阶段的诊断；Adapter 出错没有 view_model 时也保留 */
   adapter_diagnostics?: Diagnostic[];
   /** P3 / P4 的上游 Run；本系统的 P3/P4 输入取自快照，不由上游 Run 生成，故为空并在 upstream_note 说明 */

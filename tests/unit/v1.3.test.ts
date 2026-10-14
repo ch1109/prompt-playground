@@ -38,7 +38,7 @@ function fakeProvider(raw: string, onCall?: (body: Record<string, unknown>) => v
         id: "chatcmpl-v13",
         model: "fake-model-2026-10",
         created: 1760000000,
-        choices: [{ message: { content: raw, reasoning_content: "思考过程不应被保存" }, finish_reason: "stop" }],
+        choices: [{ message: { content: raw, reasoning_content: "模型的思考过程" }, finish_reason: "stop" }],
         usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30, completion_tokens_details: { reasoning_tokens: 7 } },
       });
     }) as unknown as typeof fetch,
@@ -65,10 +65,11 @@ describe("M1-2 新 Run 采集完整执行证据", () => {
     const parts = user.content as Record<string, unknown>[];
     expect(parts[0]).toMatchObject({ type: "text", text_chars: run.actual_prompt!.user.length, sha256: expect.stringMatching(/^[0-9a-f]{64}$/) });
     expect(parts[1]).toMatchObject({ type: "image_url", media_type: "image/png", file_id: expect.any(String), page: null, sha256: run.attached_images![0].sha256 });
-    // 构造输入的副本、服务商回报的模型名与原样 usage；思考内容只记长度
+    // 构造输入的副本、服务商回报的模型名与原样 usage；思考内容全文单独保存（2026-10-14 起，用户要导出完整思考），实际请求副本里没有
     expect(run.built_input).toMatchObject({ input: expect.any(Object) });
-    expect(run.response_meta).toMatchObject({ id: "chatcmpl-v13", model: "fake-model-2026-10", finish_reason: "stop", reasoning_content_chars: 9, usage: { completion_tokens_details: { reasoning_tokens: 7 } } });
-    expect(JSON.stringify(run)).not.toContain("思考过程不应被保存");
+    expect(run.response_meta).toMatchObject({ id: "chatcmpl-v13", model: "fake-model-2026-10", finish_reason: "stop", reasoning_content_chars: 7, usage: { completion_tokens_details: { reasoning_tokens: 7 } } });
+    expect(run.reasoning_content).toBe("模型的思考过程");
+    expect(JSON.stringify(run.request_actual)).not.toContain("模型的思考过程");
   });
 
   it("模型调用失败时也保存实际请求副本与构造输入", async () => {

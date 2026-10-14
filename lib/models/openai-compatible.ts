@@ -6,7 +6,8 @@ import type { ModelRequest, ModelResult, ProviderAdapter, ProviderCapabilities, 
 
 // 1.1.0：能力声明（capabilities）
 // 1.2.0：返回实际请求的脱敏副本与完整响应元数据（usage、服务商回报的模型名、是否有思考内容）
-export const OPENAI_COMPATIBLE_VERSION = "1.2.0";
+// 1.3.0：返回思考内容全文（reasoning_content）
+export const OPENAI_COMPATIBLE_VERSION = "1.3.0";
 
 const flag = (v: string | undefined): boolean | null => (v === undefined || v === "" ? null : /^(1|true|yes)$/i.test(v));
 
@@ -148,7 +149,7 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
         raw: content,
         usage: u ? { prompt_tokens: u.prompt_tokens ?? null, completion_tokens: u.completion_tokens ?? null, total_tokens: u.total_tokens ?? null } : null,
         latencyMs: Date.now() - started,
-        // usage 原样保留（含服务商附加的明细，如思考 token）；思考内容本身不保存，只记是否有、多长
+        // usage 原样保留（含服务商附加的明细，如思考 token）；思考内容全文单独返回，由 Run 保存
         responseMeta: {
           id: body.id,
           model: body.model,
@@ -158,6 +159,7 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
           reasoning_content_chars: typeof choice?.message?.reasoning_content === "string" ? choice.message.reasoning_content.length : null,
         },
         request,
+        reasoning: typeof choice?.message?.reasoning_content === "string" ? choice.message.reasoning_content : null,
       };
     } catch (e) {
       const aborted = controller.signal.aborted;

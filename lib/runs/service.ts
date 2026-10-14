@@ -386,6 +386,7 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
         schema_diagnostics: diag.schema_diagnostics,
         adapter_diagnostics: diag.adapter_diagnostics,
         response_meta: result.responseMeta,
+        reasoning_content: result.reasoning ?? null,
         view_model: pr.viewModel ? { ...pr.viewModel, diagnostics: [...truncated, ...pr.viewModel.diagnostics] } : null,
         token_usage: result.usage,
         finish_reason: finishReason,
