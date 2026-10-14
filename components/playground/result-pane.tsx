@@ -10,6 +10,7 @@ import { EvidenceViewer, selectedRefIds } from "@/components/renderers/evidence-
 import { fieldInputCoverage } from "@/lib/runs/run-evidence";
 import { diagnosisPrompt } from "@/lib/mcp/task-template";
 import { BusinessView } from "@/components/views/business-view";
+import { RuleCheck } from "@/components/views/rule-check";
 import { Badge, Btn, cx, Empty, runStatusView } from "@/components/ui";
 import { JsonTree, RawText } from "./json-tree";
 import { InputCoverage } from "./input-coverage";
@@ -248,7 +249,7 @@ export function ResultPane({
 function ResultTab({ detail, canPreview, onCompare, onEditPrompt }: { detail: RunDetail; canPreview: boolean; onCompare?: () => void; onEditPrompt?: () => void }) {
   const run = detail.run;
   const select = useStudio((s) => s.select);
-  if (run.view_model && detail.renderer) return <BusinessView vm={run.view_model} cfg={detail.renderer} canPreview={canPreview} status={run.status} mode={run.mode} onCompare={onCompare} onEditPrompt={onEditPrompt} />;
+  if (run.view_model && detail.renderer) return <BusinessView vm={run.view_model} cfg={detail.renderer} canPreview={canPreview} status={run.status} mode={run.mode} onCompare={onCompare} onEditPrompt={onEditPrompt} afterHeadline={<RuleCheck detail={detail} />} />;
   if (run.status !== "SUCCEEDED") return <Empty>没有可展示的结果，原因见上方提示。</Empty>;
   if (run.parsed_json !== undefined) {
     return (

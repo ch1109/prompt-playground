@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { RendererConfig, RendererRegion } from "@/lib/contracts/renderer-config";
 import type { ChangeView, TableRow, TableView, ViewModel } from "@/lib/contracts/view-model";
 import { UNRESOLVED_GROUP } from "@/lib/adapters/jiuli-p2";
@@ -418,13 +418,14 @@ export function ResultHeadline({ vm, cfg, status, mode, onCompare, onEditPrompt,
   );
 }
 
-export function BusinessView({ vm, cfg, canPreview, ...headline }: { vm: ViewModel; cfg: RendererConfig; canPreview: boolean } & HeadlineProps) {
+export function BusinessView({ vm, cfg, canPreview, afterHeadline, ...headline }: { vm: ViewModel; cfg: RendererConfig; canPreview: boolean; afterHeadline?: ReactNode } & HeadlineProps) {
   // 「只看有问题的行」作用于各布局的主表（P1 委托行、P2 原始行、P3 委托商品、P4 字段决策）
   const [onlyIssues, setOnlyIssues] = useState(false);
   return (
     <IssuesContext.Provider value={vm.issues}>
       <div className="space-y-3">
         <ResultHeadline vm={vm} cfg={cfg} {...headline} onlyIssues={onlyIssues} setOnlyIssues={setOnlyIssues} />
+        {afterHeadline}
         <Layout vm={vm} cfg={cfg} canPreview={canPreview} onlyIssues={onlyIssues} setOnlyIssues={setOnlyIssues} />
       </div>
     </IssuesContext.Provider>

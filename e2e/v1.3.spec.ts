@@ -345,3 +345,23 @@ test("M3 修改建议：先看一句结论和计数，详情里有修改内容�
   const after = (await (await page.request.get("/api/prompts/jiuli-p1")).json()).data as { versions: { label: string; is_stable: boolean }[] };
   expect(after.versions.find((v) => v.is_stable)?.label).toBe(`采纳-${tag}`);
 });
+
+test("结果页规则检查：P3 / P4 显示九立硬规则对照结果；有违反时逐条列出，点一条定位到对应格子；P1 不显示", async ({ page }) => {
+  await pickInDrawer(page, "jiuli-p3", "v3/SC-08/P3");
+  const ok = page.getByTestId("rule-check");
+  await expect(ok).toHaveAttribute("data-state", "pass");
+  await expect(ok).toContainText("已对照 5 条九立硬规则");
+
+  await pickInDrawer(page, "jiuli-p4", "constructed/p4-v3-conflict.json");
+  const box = page.getByTestId("rule-check");
+  await expect(box).toHaveAttribute("data-state", "fail");
+  await expect(box).toContainText("改了人工锁定的字段");
+  await expect(box).toContainText("有阻止写入的未解决问题却改了值");
+  await box.getByTestId("rule-violation").filter({ hasText: "改了人工锁定的字段" }).click();
+  await expect(page.getByTestId("field-verdict")).toBeVisible();
+  await expect(page.getByTestId("field-verdict")).toContainText("韩国");
+
+  await pickInDrawer(page, "jiuli-p1", "v3/SC-08/P1");
+  await expect(page.getByTestId("result-headline")).toBeVisible();
+  await expect(page.getByTestId("rule-check")).toHaveCount(0);
+});

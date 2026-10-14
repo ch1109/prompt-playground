@@ -85,7 +85,8 @@ export function p4Violations(request: unknown, parsed: unknown): RuleViolation[]
       const d = obj(d0);
       const name = str(d.field);
       const f = obj(fields[name]);
-      const ptr = `/output/row_patches/${i}/field_decisions/${j}`;
+      // 指向被改动的结果值，页面上能直接定位到那一格
+      const ptr = `/output/row_patches/${i}/field_decisions/${j}/result_value`;
       if (!fields[name]) return;
       const current = str(f.current_value);
       const changed = d.result_value !== undefined && str(d.result_value) !== current;
@@ -107,6 +108,12 @@ export function p4Violations(request: unknown, parsed: unknown): RuleViolation[]
     });
   });
   return out;
+}
+
+/** 某个阶段会检查哪些规则（给页面列出规则名）；没有规则的阶段返回空数组 */
+export function rulesFor(kind: string): string[] {
+  const prefix = kind === "JIULI_P3" ? "P3_" : kind === "JIULI_P4" ? "P4_" : null;
+  return prefix ? Object.entries(RULE_LABELS).filter(([k]) => k.startsWith(prefix)).map(([, label]) => label) : [];
 }
 
 export function businessViolations(kind: string, request: unknown, parsed: unknown): RuleViolation[] | null {
