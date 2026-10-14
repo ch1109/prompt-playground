@@ -120,6 +120,7 @@ export function planExperiment(input: ExperimentInput) {
   if (new Set(input.samples.map((s) => s.sample_id)).size !== input.samples.length) fail("DUPLICATE_SAMPLE", "样本重复");
   if (!(Number.isInteger(input.maxModelRuns) && input.maxModelRuns > 0)) fail("BUDGET_REQUIRED", "必须给出本次实验最多调用模型的次数");
   if (input.maxModelRuns > MAX_EXPERIMENT_RUNS) fail("BUDGET_TOO_LARGE", `单次实验最多调用模型 ${MAX_EXPERIMENT_RUNS} 次`);
+  // 实验固定用默认模型（.env.local 的 MODEL_NAME），不跟提示词页的模型下拉框走：基线与候选、前后几次实验都可比（2026-10-14 用户决定）
   const info = getProvider().info();
   if (!info.configured) fail("MODEL_NOT_CONFIGURED", "未配置模型，无法做实验");
   const samples: ExperimentSample[] = input.samples.map((s) => {

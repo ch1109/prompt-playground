@@ -166,7 +166,7 @@ function ExperimentDetail({ e }: { e: ExperimentDTO }) {
   return (
     <div className="mt-2" data-testid="experiment-view">
       <h4 className="font-medium text-ink-300">
-        试运行 {e.created_at.slice(5, 16).replace("T", " ")}（调用模型 {e.budget.used_model_runs} 次，上限 {e.budget.max_model_runs} 次）
+        试运行 {e.created_at.slice(5, 16).replace("T", " ")}（用 {e.model}，调用 {e.budget.used_model_runs} 次，上限 {e.budget.max_model_runs} 次）
       </h4>
       {e.report?.samples.map((s) => (
         <div key={s.sample_id} className="mt-1 rounded border border-ink-800 p-1.5" data-testid="experiment-sample" data-verdict={s.verdict}>
