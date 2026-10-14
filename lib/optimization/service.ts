@@ -290,5 +290,5 @@ export function onCandidateDecided(candidateId: string, decision: "APPROVED" | "
 /** 给网页与 Agent 看的会话：状态、预算、各轮、下一步、事件 */
 export function sessionView(id: string) {
   const s = loadSession(id);
-  return { ...s, remaining_model_runs: s.budget.max_model_runs - s.budget.used_model_runs, next_action: nextAction(s), events: listEvents(s.session_id) };
+  return { ...s, stage: getPrompt(s.prompt_id)!.prompt_kind.replace(/^JIULI_/, ""), remaining_model_runs: s.budget.max_model_runs - s.budget.used_model_runs, next_action: nextAction(s), events: listEvents(s.session_id) };
 }

@@ -9,6 +9,7 @@ import { useStudio, type ResultTab } from "@/lib/state/studio-store";
 import { EvidenceViewer, selectedRefIds } from "@/components/renderers/evidence-viewer";
 import { fieldInputCoverage } from "@/lib/runs/run-evidence";
 import { diagnosisPrompt } from "@/lib/mcp/task-template";
+import { AutoFixEntry } from "./auto-fix";
 import { BusinessView } from "@/components/views/business-view";
 import { RuleCheck } from "@/components/views/rule-check";
 import { Badge, Btn, cx, Empty, runStatusView } from "@/components/ui";
@@ -546,6 +547,7 @@ function FieldVerdict({ detail }: { detail: RunDetail }) {
         </details>
       )}
       <FieldDiagnoses diagnoses={(detail.diagnoses ?? []).filter((d) => d.target.json_pointer === p)} />
+      {wrong && <AutoFixEntry detail={detail} pointer={p} />}
       <button
         onClick={copyDiagnosis}
         className="mt-1 text-[11px] text-ink-400 hover:text-info hover:underline"
