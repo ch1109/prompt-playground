@@ -200,11 +200,11 @@ async function manifestFor(request: Record<string, unknown>, snapshot: InputSnap
 }
 
 /** 运行前预览：实际发送的系统提示词、用户消息、参数、输入覆盖与阻断原因 */
-export async function previewModelRun(input: { promptId: string; snapshotId: string; system: string; userTemplate: string; attachImages?: boolean; params?: ModelParams }) {
+export async function previewModelRun(input: { promptId: string; snapshotId: string; system: string; userTemplate: string; attachImages?: boolean; params?: ModelParams; model?: string | null }) {
   const prompt = loadPrompt(input.promptId);
   const snapshot = loadSnapshot(input.snapshotId)!;
   const built = buildInput(prompt.prompt_kind, snapshot);
-  const info = getProvider().info();
+  const info = getProvider(input.model).info();
   if (!built.ok) return { ok: false as const, code: built.code, message: built.message, provider: info };
   const user = renderUserTemplate(input.userTemplate, built.request);
   const attach = effectiveAttachImages(input.attachImages, info.capabilities, built.request, snapshot);
@@ -243,7 +243,7 @@ export function cancelRun(runId: string) {
   ac.abort();
 }
 
-type ModelRunInput = Base & { snapshotId: string; system: string; userTemplate: string; promptVersionId?: string | null; params: ModelParams; attachImages?: boolean; retryOfRunId?: string | null; experimentRef?: Run["experiment_ref"] };
+type ModelRunInput = Base & { snapshotId: string; system: string; userTemplate: string; promptVersionId?: string | null; params: ModelParams; /** 不填 = 默认模型；调用方须先确认它在可用列表里 */ model?: string | null; attachImages?: boolean; retryOfRunId?: string | null; experimentRef?: Run["experiment_ref"] };
 
 /** MODEL_RUN：服务端代理真实模型调用；失败保存失败 Run，绝不回退为 Mock */
 export async function modelRun(input: ModelRunInput): Promise<Run> {
@@ -258,7 +258,7 @@ export async function modelRun(input: ModelRunInput): Promise<Run> {
 export function startModelRun(input: ModelRunInput): { runId: string; done: Promise<Run> } {
   const prompt = loadPrompt(input.promptId);
   const snapshot = loadSnapshot(input.snapshotId)!;
-  const provider = getProvider();
+  const provider = getProvider(input.model);
   const info = provider.info();
   if (!info.configured) throw new RunServiceError("MODEL_NOT_CONFIGURED", "未配置模型（.env.local 中的 MODEL_BASE_URL / MODEL_NAME / MODEL_API_KEY）", 400);
 
@@ -272,7 +272,7 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
   if (blocked.length && !info.supportsFileInput) {
     throw new RunServiceError(
       "FILE_INPUT_UNSUPPORTED",
-      `当前模型（${info.provider}）只接收文本，材料 ${blocked.join(", ")} 没有预处理文本。PDF / 图片可在「模型」页勾选「附带原件图片」后用视觉模型运行；其他格式请先生成预处理文本，或配置支持文件输入的模型。`,
+      `当前模型（${info.provider}）只接收文本，材料 ${blocked.join(", ")} 没有预处理文本。PDF / 图片可在「提示词」页「运行参数」里勾选「附带原件图片」后用视觉模型运行；其他格式请先生成预处理文本，或配置支持文件输入的模型。`,
       400,
     );
   }

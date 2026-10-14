@@ -58,7 +58,7 @@ export function EditorPane(props: {
         ))}
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-3">
-        {tab === "prompt" && <PromptTab versions={props.versions} isDraft={isDraft} onSave={props.onSaveVersion} />}
+        {tab === "prompt" && <PromptTab versions={props.versions} isDraft={isDraft} onSave={props.onSaveVersion} provider={props.provider} />}
         {tab === "input" && (
           <InputTab
             projectId={props.projectId}
@@ -74,10 +74,7 @@ export function EditorPane(props: {
           />
         )}
         {tab === "preview" && (
-          <div className="space-y-3">
-            <ModelTab provider={props.provider} />
-            <PreviewTab fixtures={props.fixtures} isDraft={isDraft} versionLabel={version?.label} />
-          </div>
+          <PreviewTab fixtures={props.fixtures} isDraft={isDraft} versionLabel={version?.label} />
         )}
         {tab === "candidates" && <CandidatesTab promptId={props.promptId} onVersionsChanged={props.onVersionsChanged} />}
       </div>
@@ -89,7 +86,7 @@ export function EditorPane(props: {
   );
 }
 
-function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]; isDraft: boolean; onSave: (label: string, changeNote: string) => Promise<boolean> }) {
+function PromptTab({ versions, isDraft, onSave, provider }: { versions: PromptVersionDTO[]; isDraft: boolean; onSave: (label: string, changeNote: string) => Promise<boolean>; provider: ProviderInfoDTO | null }) {
   const [ws, patch] = useWorkspace();
   const [label, setLabel] = useState("");
   const [note, setNote] = useState("");
@@ -127,6 +124,7 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
           {current.change_note ? ` · 变更说明：${current.change_note}` : ""}
         </p>
       )}
+      <ModelPicker provider={provider} />
       {isDraft && current && (
         <details className="rounded-lg border border-risk/30 bg-risk/5 px-2 py-1 text-[11.5px]" data-testid="draft-diff">
           <summary className="cursor-pointer text-risk">编辑区与已保存版本「{current.label}」的差异（未保存）</summary>
@@ -1012,57 +1010,101 @@ function JiuliImport({ projectId, capability, onCreated }: { projectId: string; 
   );
 }
 
-/** 模型与参数：收在「请求预览」顶部，默认折叠；摘要行写明模型、是否已配置和两个常用参数 */
-function ModelTab({ provider }: { provider: ProviderInfoDTO | null }) {
+type ModelList = { default: string; models: string[]; error: string | null };
+/** 模型列表整页只读一次（服务端另有 10 分钟缓存） */
+let modelListReq: Promise<ModelList> | null = null;
+
+/** 下拉框分组：百炼上第三方托管的模型写作「厂商/模型」，按模型本身归类 */
+const FAMILIES: [RegExp, string][] = [
+  [/qwen/i, "通义千问"],
+  [/deepseek/i, "DeepSeek"],
+  [/kimi/i, "Kimi"],
+  [/glm/i, "智谱 GLM"],
+  [/minimax/i, "MiniMax"],
+];
+const familyOf = (m: string) => FAMILIES.find(([re]) => re.test(m.split("/").pop()!))?.[1] ?? "其他";
+
+/** 模型选择（放在提示词页）：下拉选服务商的任一对话模型；温度等参数默认收起 */
+function ModelPicker({ provider }: { provider: ProviderInfoDTO | null }) {
   const [ws, patch] = useWorkspace();
+  const [list, setList] = useState<ModelList | null>(null);
+  useEffect(() => {
+    (modelListReq ??= api<ModelList>("/api/models/list")).then(setList).catch(() => (modelListReq = null));
+  }, []);
+  const current = ws.model ?? list?.default ?? provider?.model ?? "";
+  const groups = useMemo(() => {
+    const g = new Map<string, string[]>();
+    for (const m of list?.models ?? []) if (m !== list?.default) g.set(familyOf(m), [...(g.get(familyOf(m)) ?? []), m]);
+    // 组按 FAMILIES 的顺序，「其他」垫底；组内倒序，版本号大的（较新的）排前面
+    const rank = (f: string) => (f === "其他" ? FAMILIES.length : FAMILIES.findIndex(([, name]) => name === f));
+    return [...g].map(([f, ms]) => [f, ms.sort().reverse()] as const).sort(([a], [b]) => rank(a) - rank(b));
+  }, [list]);
   return (
-    <details className="rounded-lg border border-ink-700 bg-ink-900 text-[12px]" data-testid="model-settings">
-      <summary className="cursor-pointer px-2.5 py-1.5">
-        <span className="font-semibold text-ink-100">模型与参数</span>
-        <span className={cx("ml-2", provider?.configured ? "text-ink-400" : "text-risk")}>
-          {provider?.configured ? provider.model : "模型未配置"} · temperature {ws.params.temperature} · max_tokens {ws.params.max_tokens}
-        </span>
-      </summary>
-      <div className="space-y-3 border-t border-ink-700/70 p-2.5">
-        <div className={cx("rounded-lg border p-2", provider?.configured ? "border-verify/40" : "border-risk/40 bg-risk/10")}>
-          <div className="flex items-center gap-2">
-            <Badge tone={provider?.configured ? "ok" : "warn"}>{provider?.configured ? "已配置" : "未配置"}</Badge>
-            <span className="font-mono">{provider?.provider}</span>
-            <span className="font-mono text-ink-300">{provider?.model || "—"}</span>
-          </div>
-          <p className="mt-1 text-ink-400">
-            {provider?.configured
-              ? `点击运行后，提示词与构造输入将发送到 ${provider.provider}。API Key 只在服务端使用。`
-              : "在项目根目录 .env.local 填写 MODEL_BASE_URL / MODEL_NAME / MODEL_API_KEY 后重启。未配置时只能「仅渲染」。"}
-          </p>
-          <p className="text-ink-400">文件直传：{provider?.supportsFileInput ? "支持" : "不支持（默认只发送预处理文本；缺文本的材料会被阻断。看图请勾选下方「附带原件图片」）"}</p>
-        </div>
-        {provider?.capabilities && <CapabilityTable caps={provider.capabilities} />}
-        <label className="flex items-start gap-2">
-          <input type="checkbox" checked={ws.attachImages ?? provider?.capabilities?.images === true} onChange={(e) => patch({ attachImages: e.target.checked })} aria-label="附带原件图片" className="mt-0.5" />
-          <span>
-            附带原件图片
-            <span className="block text-ink-400">
-              把输入里的 PDF / 图片原件逐页转成图片，和文字一起发送（默认最多 20 页，可用 MODEL_MAX_IMAGE_PAGES 调整）。Excel 不转图。
-              {ws.attachImages === null ? "当前跟随模型能力：模型支持看图时，有 PDF / 图片就自动附带。" : ""}
+    <div className="space-y-1.5 text-[12px]" data-testid="model-picker">
+      <label className="flex items-center gap-2">
+        <span className="text-ink-400">模型</span>
+        <select
+          value={current}
+          onChange={(e) => patch({ model: e.target.value === list?.default ? null : e.target.value })}
+          disabled={!provider?.configured}
+          aria-label="模型"
+          title="换模型只影响之后的运行；每次运行记录都会写明用的是哪个模型"
+          className="flex-1 rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 font-mono"
+        >
+          {list?.default && <option value={list.default}>{list.default}（默认）</option>}
+          {groups.map(([family, ms]) => (
+            <optgroup key={family} label={family}>
+              {ms.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+          {/* 列表还没读到，或之前选的模型已不在列表里：仍显示当前所选 */}
+          {current && !list?.models.includes(current) && <option value={current}>{current}</option>}
+        </select>
+      </label>
+      {!provider?.configured && <p className="text-risk">模型未配置：在项目根目录 .env.local 填写 MODEL_BASE_URL / MODEL_NAME / MODEL_API_KEY 后重启。未配置时只能「仅渲染」。</p>}
+      {list?.error && <p className="text-risk">读不到服务商的模型列表（{list.error}），目前只能用默认模型。</p>}
+      <details className="rounded-lg border border-ink-700 bg-ink-900" data-testid="model-settings">
+        <summary className="cursor-pointer px-2.5 py-1.5 text-ink-400">
+          运行参数：temperature {ws.params.temperature} · max_tokens {ws.params.max_tokens}
+        </summary>
+        <div className="space-y-3 border-t border-ink-700/70 p-2.5">
+          {provider?.configured && (
+            <p className="text-ink-400">
+              点击运行后，提示词与构造输入将发送到 {provider.provider}，API Key 只在服务端使用。文件直传：{provider.supportsFileInput ? "支持" : "不支持（默认只发送预处理文本；缺文本的材料会被阻断，看图请勾选下方「附带原件图片」）"}
+            </p>
+          )}
+          {ws.model && <p className="text-ink-400">下表的能力声明只针对默认模型；换用的模型一律显示「未声明」，要让它看图请手动勾选「附带原件图片」。</p>}
+          {provider?.capabilities && <CapabilityTable caps={provider.capabilities} />}
+          <label className="flex items-start gap-2">
+            <input type="checkbox" checked={ws.attachImages ?? provider?.capabilities?.images === true} onChange={(e) => patch({ attachImages: e.target.checked })} aria-label="附带原件图片" className="mt-0.5" />
+            <span>
+              附带原件图片
+              <span className="block text-ink-400">
+                把输入里的 PDF / 图片原件逐页转成图片，和文字一起发送（默认最多 20 页，可用 MODEL_MAX_IMAGE_PAGES 调整）。Excel 不转图。
+                {ws.attachImages === null ? "当前跟随模型能力：模型支持看图时，有 PDF / 图片就自动附带。" : ""}
+              </span>
+              {ws.attachImages !== null && (
+                <button type="button" onClick={() => patch({ attachImages: null })} className="text-info hover:underline">
+                  恢复默认（跟随模型能力）
+                </button>
+              )}
             </span>
-            {ws.attachImages !== null && (
-              <button type="button" onClick={() => patch({ attachImages: null })} className="text-info hover:underline">
-                恢复默认（跟随模型能力）
-              </button>
-            )}
-          </span>
-        </label>
-        <label className="flex items-center gap-2">
-          <span className="w-28 text-ink-400">temperature</span>
-          <input type="number" step="0.1" min={0} max={2} value={ws.params.temperature} onChange={(e) => patch({ params: { ...ws.params, temperature: Number(e.target.value) } })} aria-label="temperature" className="w-24 rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5" />
-        </label>
-        <label className="flex items-center gap-2">
-          <span className="w-28 text-ink-400">max_tokens</span>
-          <input type="number" step="1000" min={1} value={ws.params.max_tokens} onChange={(e) => patch({ params: { ...ws.params, max_tokens: Number(e.target.value) } })} aria-label="max_tokens" className="w-24 rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5" />
-        </label>
-      </div>
-    </details>
+          </label>
+          <label className="flex items-center gap-2">
+            <span className="w-28 text-ink-400">temperature</span>
+            <input type="number" step="0.1" min={0} max={2} value={ws.params.temperature} onChange={(e) => patch({ params: { ...ws.params, temperature: Number(e.target.value) } })} aria-label="temperature" className="w-24 rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5" />
+          </label>
+          <label className="flex items-center gap-2">
+            <span className="w-28 text-ink-400">max_tokens</span>
+            <input type="number" step="1000" min={1} value={ws.params.max_tokens} onChange={(e) => patch({ params: { ...ws.params, max_tokens: Number(e.target.value) } })} aria-label="max_tokens" className="w-24 rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5" />
+          </label>
+        </div>
+      </details>
+    </div>
   );
 }
 
@@ -1127,10 +1169,10 @@ function PreviewTab({ fixtures, isDraft, versionLabel }: { fixtures: FixtureSumm
     setP(null);
     setErr(null);
     if (!snapshotId) return;
-    api<PreviewDTO>("/api/runs/preview", { json: { promptId, snapshotId, system: ws.system, userTemplate: ws.userTemplate, attachImages: ws.attachImages ?? undefined, params: ws.params } })
+    api<PreviewDTO>("/api/runs/preview", { json: { promptId, snapshotId, system: ws.system, userTemplate: ws.userTemplate, attachImages: ws.attachImages ?? undefined, params: ws.params, model: ws.model } })
       .then(setP)
       .catch((e) => setErr(e.message));
-  }, [snapshotId, ws.system, ws.userTemplate, ws.attachImages, ws.params, promptId]);
+  }, [snapshotId, ws.system, ws.userTemplate, ws.attachImages, ws.params, ws.model, promptId]);
   if (!snapshotId) {
     const why =
       ws.inputMode === "fixture"

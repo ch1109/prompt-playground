@@ -23,6 +23,8 @@ export function capabilitiesFromEnv(env: Record<string, string | undefined> = pr
   };
 }
 
+const UNDECLARED_CAPABILITIES: ProviderCapabilities = { images: null, nativePdf: false, jsonMode: null, thinking: null, streaming: false, maxOutputTokens: null };
+
 export function redactSecrets(text: string, extraSecrets: (string | undefined)[] = []): string {
   let out = text;
   for (const key of [process.env.MODEL_API_KEY, process.env.JIULI_API_TOKEN, ...extraSecrets]) {
@@ -42,6 +44,20 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
     },
     private fetchImpl: typeof fetch = fetch,
   ) {}
+
+  /** 同一服务商、同一密钥，换一个模型名；能力声明只属于 .env.local 里的默认模型，换模型后一律「未声明」 */
+  withModel(model: string): OpenAICompatibleProvider {
+    return new OpenAICompatibleProvider({ ...this.env, model, capabilities: UNDECLARED_CAPABILITIES }, this.fetchImpl);
+  }
+
+  /** 服务商的 GET /models 模型列表（OpenAI 兼容）；只返回模型名 */
+  async listModels(): Promise<string[]> {
+    if (!this.info().configured) return [];
+    const res = await this.fetchImpl(this.env.baseUrl!.replace(/\/+$/, "") + "/models", { headers: { authorization: `Bearer ${this.env.apiKey}` }, signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error(`读取模型列表失败：HTTP ${res.status}`);
+    const body = (await res.json()) as { data?: { id?: unknown }[] };
+    return (body.data ?? []).map((m) => m.id).filter((id): id is string => typeof id === "string");
+  }
 
   private redact(text: string) {
     return redactSecrets(text, [this.env.apiKey]);
@@ -159,9 +175,10 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
 }
 
 let provider: ProviderAdapter | undefined;
-export function getProvider(): ProviderAdapter {
+/** 不传模型或与默认模型相同 → 默认模型（.env.local 的 MODEL_NAME）；否则同一服务商换成该模型 */
+export function getProvider(model?: string | null): ProviderAdapter {
   provider ??= new OpenAICompatibleProvider();
-  return provider;
+  return model && model !== provider.info().model && provider instanceof OpenAICompatibleProvider ? provider.withModel(model) : provider;
 }
 /** 测试注入 */
 export function setProviderForTests(p: ProviderAdapter | undefined) {

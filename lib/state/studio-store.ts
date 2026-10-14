@@ -29,6 +29,8 @@ export interface Workspace {
   params: { temperature: number; max_tokens: number };
   /** 是否随请求附带原件页面图片；null = 跟随模型能力（支持看图且输入有 PDF / 图片时自动附带） */
   attachImages: boolean | null;
+  /** 选用的模型；null = 默认模型（.env.local 的 MODEL_NAME） */
+  model: string | null;
   runId: string | null;
   /** 产生当前 Run 时的输入签名；与当前编辑签名不同 → DIRTY */
   runInputSig: string | null;
@@ -49,6 +51,7 @@ export const emptyWorkspace = (): Workspace => ({
   // 2026-10-09 批量实测：16000 时 22 次中 4 次截断（含推理输出），默认提高到 32000
   params: { temperature: 0, max_tokens: 32000 },
   attachImages: null,
+  model: null,
   runId: null,
   runInputSig: null,
 });
@@ -70,7 +73,7 @@ export function inputSignature(w: Workspace, mode: "RENDER_ONLY" | "MODEL_RUN"):
     mode === "RENDER_ONLY"
       ? { inputMode: w.inputMode, raw: w.inputMode === "paste" ? w.pasteRaw : null, req: w.inputMode === "paste" ? w.pasteRequest : null, fixture: w.inputMode === "fixture" ? w.fixtureId : null }
       : { snapshot: runSnapshotId(w) };
-  return JSON.stringify({ mode, input, system: w.system, user: w.userTemplate, params: w.params, attachImages: mode === "MODEL_RUN" ? w.attachImages : null });
+  return JSON.stringify({ mode, input, system: w.system, user: w.userTemplate, params: w.params, attachImages: mode === "MODEL_RUN" ? w.attachImages : null, model: mode === "MODEL_RUN" ? w.model : null });
 }
 
 interface StudioState {

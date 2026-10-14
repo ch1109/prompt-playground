@@ -130,7 +130,7 @@ export function ResultPane({
         </Banner>
       )}
       {run?.finish_reason === "length" && (
-        <Banner tone="bad">模型输出达到 max_tokens 上限被截断（finish_reason=length）。请在「模型」页调大 max_tokens 后重跑。</Banner>
+        <Banner tone="bad">模型输出达到 max_tokens 上限被截断（finish_reason=length）。请在「提示词」页「运行参数」里调大 max_tokens 后重跑。</Banner>
       )}
       {dirty && run && <Banner tone="warn">当前结果来自上次运行（与未保存/未运行的编辑不同）。</Banner>}
       {run?.mode === "RENDER_ONLY" && (detail?.snapshot?.source_type === "FIXTURE" || run.label?.startsWith("样本")) && (
