@@ -22,7 +22,7 @@ import { contentHash, createVersion, getPrompt, getVersion, setStableVersion, st
 import { getRun } from "@/lib/repositories/runs";
 import { textHunks } from "@/lib/runs/compare";
 import { loadRunContext } from "@/lib/runs/debug-bundle";
-import { modelRun, RunServiceError } from "@/lib/runs/service";
+import { cancelRun, RunServiceError, startModelRun } from "@/lib/runs/service";
 import { evaluateSample, summarize } from "./evaluate";
 import { businessViolations, RULESET_VERSION } from "./business-rules";
 import { checkRunSources } from "./source-check";
@@ -145,6 +145,24 @@ export function planExperiment(input: ExperimentInput) {
   return { candidate: cand, model: info.model, planned_model_runs: planned, samples, dataset: dataset ? { dataset_id: dataset.dataset_id, version: dataset.version } : null };
 }
 
+/** 进行中实验的取消标记与当前正在调用模型的 Run（放 globalThis，开发模式热更新后仍是同一份） */
+const g = globalThis as unknown as { __studioExpCancel?: Set<string>; __studioExpRun?: Map<string, string> };
+const cancelled = (g.__studioExpCancel ??= new Set());
+const currentRun = (g.__studioExpRun ??= new Map());
+
+/** 取消进行中的实验：不再发起新的调用，正在进行的那次调用也中止；已完成的运行保留，实验记为失败（已取消） */
+export function cancelExperiment(experimentId: string) {
+  cancelled.add(experimentId);
+  const runId = currentRun.get(experimentId);
+  if (runId) {
+    try {
+      cancelRun(runId);
+    } catch {
+      // 这次调用刚好已经结束
+    }
+  }
+}
+
 /**
  * 开始实验：同一个 idempotencyKey 重复提交时直接返回已有实验，不会再调用模型。
  * 样本依次运行（基线缺失时先补跑），全部结束后自动评判。
@@ -182,9 +200,10 @@ export function startExperiment(input: ExperimentInput & { createdBy: string; id
   insertExperiment(exp);
 
   const run = async (s: ExperimentSample, role: "BASELINE" | "CANDIDATE"): Promise<Run> => {
+    if (cancelled.has(exp.experiment_id)) throw new ExperimentCancelled();
     exp.budget.used_model_runs++;
     updateExperiment(exp);
-    return modelRun({
+    const started = startModelRun({
       projectId: prompt.project_id,
       promptId: prompt.prompt_id,
       snapshotId: s.snapshot_id,
@@ -195,6 +214,12 @@ export function startExperiment(input: ExperimentInput & { createdBy: string; id
       label: `实验 ${exp.experiment_id.slice(-6)} · ${role === "BASELINE" ? "基线" : "候选"} · ${s.sample_id}`,
       experimentRef: { experiment_id: exp.experiment_id, candidate_id: cand.candidate_id, role, sample_id: s.sample_id },
     });
+    currentRun.set(exp.experiment_id, started.runId);
+    try {
+      return await started.done;
+    } finally {
+      currentRun.delete(exp.experiment_id);
+    }
   };
 
   const done = (async () => {
@@ -204,10 +229,12 @@ export function startExperiment(input: ExperimentInput & { createdBy: string; id
           if (!s.baseline_run_id) s.baseline_run_id = (await run(s, "BASELINE")).run_id;
           s.candidate_run_id = (await run(s, "CANDIDATE")).run_id;
         } catch (e) {
+          if (e instanceof ExperimentCancelled) throw e;
           // 开始前就被拒绝的运行（配置、输入问题）：记在样本上，评判时算「没跑完」
           s.error = e instanceof Error ? e.message : String(e);
         }
         updateExperiment(exp);
+        if (cancelled.has(exp.experiment_id)) throw new ExperimentCancelled();
       }
       exp.report = await buildReport(exp);
       exp.status = "COMPLETED";
@@ -215,11 +242,18 @@ export function startExperiment(input: ExperimentInput & { createdBy: string; id
       exp.status = "FAILED";
       exp.error = e instanceof Error ? e.message : String(e);
     }
+    cancelled.delete(exp.experiment_id);
     exp.finished_at = new Date().toISOString();
     updateExperiment(exp);
     return exp;
   })();
   return { experiment: exp, reused: false, done };
+}
+
+class ExperimentCancelled extends Error {
+  constructor() {
+    super("实验已取消；已完成的运行保留");
+  }
 }
 
 async function buildReport(exp: Experiment) {
