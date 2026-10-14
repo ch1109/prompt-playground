@@ -13,7 +13,7 @@ import { createGrant, listAudit, READ_SCOPES, type Scope } from "@/lib/repositor
 import { db, resetDbForTests } from "@/lib/repositories/db";
 import { listDiagnoses } from "@/lib/repositories/diagnoses";
 import { addAnnotation, listAnnotations } from "@/lib/repositories/runs";
-import { loadRunContext } from "@/lib/runs/debug-bundle";
+import { loadRunContext, resolveObject } from "@/lib/runs/debug-bundle";
 import { modelRun } from "@/lib/runs/service";
 
 let run: Run;
@@ -99,6 +99,15 @@ describe("诊断报告校验", () => {
     const before = JSON.stringify(listAnnotations(run.run_id));
     submit(report({}, { category: "OCR_VISION_ERROR" }));
     expect(JSON.stringify(listAnnotations(run.run_id))).toBe(before);
+  });
+});
+
+describe("模型漏掉的位置", () => {
+  it("人工标注指向模型输出里不存在的位置（如缺少必填字段）时，可以按它定位；没人标注的不存在位置仍是 NOT_FOUND", () => {
+    addAnnotation({ run_id: run.run_id, target_json_pointer: "/output/missing_field", target: null, issue_type: "ASSESSMENT", expected_value: null, note: "缺必填字段", assessment: "WRONG", error_category: "UNKNOWN", category_confirmed: null, model_value: null, source_ref_ids: [], author: "我" });
+    expect(resolveObject(run, { json_pointer: "/output/missing_field" })).toMatchObject({ json_pointer: "/output/missing_field", cell: null });
+    expect(() => resolveObject(run, { json_pointer: "/output/nobody_marked" })).toThrow(/没有这个位置/);
+    expect(submit(report(), { json_pointer: "/output/missing_field" }).target.json_pointer).toBe("/output/missing_field");
   });
 });
 

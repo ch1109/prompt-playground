@@ -205,6 +205,8 @@ export function resolveObject(run: Run, ref: ObjectRef): { table_id: string | nu
     } catch {
       throw new BundleError("BAD_REQUEST", `不是合法的 JSON Pointer：${ref.json_pointer}`);
     }
+    // 模型漏掉的位置（如缺少必填字段）：人工标注明确指向它时，按这个位置定位（「这里本该有内容」）
+    if (listAnnotations(run.run_id).some((a) => a.target_json_pointer === ref.json_pointer)) return { table_id: null, row_id: null, field: null, cell: null, json_pointer: ref.json_pointer };
     throw new BundleError("NOT_FOUND", `模型输出里没有这个位置：${ref.json_pointer}`);
   }
   throw new BundleError("BAD_REQUEST", "object_ref 需要 row_id + field，或 json_pointer");
