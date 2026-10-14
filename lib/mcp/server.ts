@@ -272,6 +272,14 @@ export function buildMcpServer(grant: AgentGrant) {
     checkProject(getPrompt(c.prompt_id)!.project_id);
     return c;
   };
+  /** 客户受限的令牌：试运行的每个样本都必须属于授权客户 */
+  function checkSampleCustomers(samples: { sample_id: string; snapshot_id: string }[], promptId: string) {
+    if (!grant.customer_ids) return;
+    for (const s of samples) {
+      const cust = snapshotCustomer(getSnapshot(s.snapshot_id)!, getPrompt(promptId)!.prompt_kind);
+      if (!cust || !grant.customer_ids.includes(cust)) forbid(`样本 ${s.sample_id} 不属于授权客户`);
+    }
+  }
   /** 会话授权：令牌要有对应权限、会话所在项目，以及目标 Run 的客户 */
   function authorizedSession(id: string, scope: Scope) {
     if (!has(scope)) forbid(`带 session_id 的操作需要 ${scope} 权限`);
@@ -334,20 +342,17 @@ export function buildMcpServer(grant: AgentGrant) {
       (a) => {
         authorizedCandidate(a.candidate_id);
         if (a.session_id) {
-          authorizedSession(a.session_id, "experiments:execute");
-          const r = startSessionExperiment({ sessionId: a.session_id, candidateId: a.candidate_id, actor: grant.principal, idempotencyKey: a.idempotency_key ?? null, dryRun: a.dry_run });
+          const session = authorizedSession(a.session_id, "experiments:execute");
+          // 回归样本由人选，可能属于别的客户：客户受限的令牌同样要求每个样本都在授权范围内
+          const preview = startSessionExperiment({ sessionId: a.session_id, candidateId: a.candidate_id, actor: grant.principal, dryRun: true });
+          if (preview.plan) checkSampleCustomers(preview.plan.samples, session.prompt_id);
+          const r = a.dry_run ? preview : startSessionExperiment({ sessionId: a.session_id, candidateId: a.candidate_id, actor: grant.principal, idempotencyKey: a.idempotency_key ?? null });
           return { dry_run: !!a.dry_run, experiment_id: r.experiment?.experiment_id ?? null, reused_existing: r.reused, planned_model_runs: r.planned_model_runs, session: sessionSummary(a.session_id), next: a.dry_run ? "确认后去掉 dry_run 再提交" : "试运行完成后系统自动评判并推进会话；用 get_optimization_session 查看" };
         }
         if (!a.samples || !a.max_model_runs) throw new ToolError("BAD_REQUEST", "不带 session_id 时必须给 samples 与 max_model_runs", "INVALID");
         const input = { candidateId: a.candidate_id, samples: a.samples, maxModelRuns: a.max_model_runs, datasetRef: a.dataset ?? null };
         const plan = planExperiment(input);
-        // 客户受限的令牌：每个样本都必须属于授权客户
-        if (grant.customer_ids)
-          for (const s of plan.samples) {
-            const snap = getSnapshot(s.snapshot_id)!;
-            const cust = snapshotCustomer(snap, getPrompt(plan.candidate.prompt_id)!.prompt_kind);
-            if (!cust || !grant.customer_ids.includes(cust)) forbid(`样本 ${s.sample_id} 不属于授权客户`);
-          }
+        checkSampleCustomers(plan.samples, plan.candidate.prompt_id);
         const summary = (samples: typeof plan.samples) => samples.map((s) => ({ sample_id: s.sample_id, role: s.role, baseline_run_id: s.baseline_run_id, baseline_reused: s.baseline_reused, params: s.params }));
         if (a.dry_run) return { dry_run: true, planned_model_runs: plan.planned_model_runs, model: plan.model, dataset: plan.dataset, samples: summary(plan.samples) };
         const { experiment, reused } = startExperiment({ ...input, createdBy: grant.principal, idempotencyKey: a.idempotency_key ?? null });

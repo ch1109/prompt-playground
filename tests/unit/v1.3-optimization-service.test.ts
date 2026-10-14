@@ -18,7 +18,7 @@ import { getExperiment } from "@/lib/repositories/experiments";
 import { getSession, listEvents, saveSession } from "@/lib/repositories/optimizations";
 import { getVersion, stableVersionId } from "@/lib/repositories/prompts";
 import { addAnnotation } from "@/lib/repositories/runs";
-import { loadRunContext } from "@/lib/runs/debug-bundle";
+import { loadRunContext, snapshotCustomer } from "@/lib/runs/debug-bundle";
 import { modelRun } from "@/lib/runs/service";
 
 const TARGET = "v3/SC-08/P1";
@@ -239,6 +239,26 @@ describe("每轮循环", () => {
     expect((await call(agent, "create_prompt_candidate", { base_prompt_version_id: base().version_id, edits: [{ find: firstLine(), replace: "x" }], reason: "r", session_id: s.session_id })).data.error.code).toBe("SESSION_STATE");
     onCandidateDecided(cand.data.candidate_id, "REJECTED", "我");
     expect(loadSession(s.session_id).status).toBe("REJECTED");
+  });
+
+  it("客户受限的令牌：会话的回归样本属于别的客户时，试运行被拒绝（不调用模型）", async () => {
+    setProviderForTests(provider());
+    const s = diagnose(start().session_id, "PROMPT_RULE_ERROR");
+    const c = candidate(s.session_id, "【修好】");
+    const customer = loadRunContext(targetRun.run_id)!.customer_id!;
+    expect(snapshotCustomer(snapshotForFixture("jiuli", getFixture(REGRESSION)!)!, "JIULI_P1")).not.toBe(customer);
+    const t = createGrant({ principal: "agent-cust", projectIds: ["jiuli"], customerIds: [customer], scopes: [...DIAGNOSE_SCOPES, ...EXPERIMENT_SCOPES] }).token;
+    const res = await POST(
+      new Request("http://127.0.0.1:3000/api/mcp", {
+        method: "POST",
+        headers: { host: "127.0.0.1:3000", "content-type": "application/json", accept: "application/json, text/event-stream", authorization: `Bearer ${t}` },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "run_experiment", arguments: { candidate_id: c.candidate.candidate_id, session_id: s.session_id } } }),
+      }),
+    );
+    const j = (await res.json()) as { result: { isError?: boolean; content: { text: string }[] } };
+    expect(JSON.parse(j.result.content[0].text).error).toMatchObject({ code: "FORBIDDEN", message: expect.stringContaining(REGRESSION) });
+    expect(loadSession(s.session_id)).toMatchObject({ status: "CANDIDATE_DRAFT", budget: { used_model_runs: 0 } });
+    cancelSession(s.session_id, "我");
   });
 
   // 放在最后：采纳会移动正式版本（带【修好】标记），之后的轮次都会继承它
