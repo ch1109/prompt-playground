@@ -1,26 +1,11 @@
 // 界面层验收：AT16 / AT18 / AT19 / AT23 / 9.1 性能 / 9.4 XSS / 九立只读导入 / 标注
 import { expect, type Page, test } from "@playwright/test";
 
-// 新手指南第一次打开会自动弹出并挡住页面；其他用例默认视为已看过，指南本身由下面单独的用例验证
 test.beforeEach(async ({ context }) => {
   await context.addInitScript(() => {
-    localStorage.setItem("prompt-studio-guide-seen", "1");
     // 这些用例按「提示词调试」的左右分栏操作；只在首次进入时设定，刷新后仍以页面保存的状态为准
     if (!localStorage.getItem("prompt-studio:workspace")) localStorage.setItem("prompt-studio:workspace", JSON.stringify({ state: { workMode: "debug" }, version: 2 }));
   });
-});
-
-test("新手指南第一次打开自动弹出，关闭后刷新不再弹出", async ({ browser }) => {
-  const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, baseURL: `http://localhost:${process.env.E2E_PORT ?? "3100"}` });
-  const page = await context.newPage();
-  await page.goto("/projects/jiuli/playground");
-  await expect(page.getByRole("dialog", { name: "新手指南" })).toBeVisible();
-  await page.getByTestId("guide-close").click();
-  await page.reload();
-  await expect(page.getByRole("dialog", { name: "新手指南" })).toHaveCount(0);
-  await page.getByTestId("btn-guide").click();
-  await expect(page.getByRole("dialog", { name: "新手指南" })).toBeVisible();
-  await context.close();
 });
 
 async function renderFixture(page: Page, prompt: string, fixtureId: string) {

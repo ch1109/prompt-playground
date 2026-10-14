@@ -1,10 +1,6 @@
 // v1.3 界面验收：以「结果检查」为中心的交互重构。不预设工作模式，按新用户首次进入的默认状态操作。
 import { expect, type Page, test } from "@playwright/test";
 
-test.beforeEach(async ({ context }) => {
-  await context.addInitScript(() => localStorage.setItem("prompt-studio-guide-seen", "1"));
-});
-
 /** 结果检查模式：通过「更换输入」抽屉选一个示例，选完自动显示结果 */
 async function pickInDrawer(page: Page, prompt: string, fixtureId: string) {
   await page.goto("/projects/jiuli/playground");

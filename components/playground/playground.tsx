@@ -9,9 +9,6 @@ import { Badge, Btn, cx, Empty, runStatusView } from "@/components/ui";
 import { EditorPane, InputTab } from "./editor-pane";
 import { ResultPane } from "./result-pane";
 import { RunCompare } from "./run-compare";
-import { GuideDialog } from "./guide-dialog";
-
-const GUIDE_SEEN_KEY = "prompt-studio-guide-seen";
 
 const SHORT: Record<string, string> = { JIULI_P1: "P1", JIULI_P2: "P2", JIULI_P3: "P3", JIULI_P4: "P4", GENERIC_JSON: "通用" };
 
@@ -71,23 +68,6 @@ export function Playground({ projectId }: { projectId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [compare, setCompare] = useState<string[]>([]);
-  const [showGuide, setShowGuide] = useState(false);
-  // 第一次打开自动弹出新手指南；读写失败（隐私模式等）就不弹，不影响使用
-  useEffect(() => {
-    try {
-      if (!localStorage.getItem(GUIDE_SEEN_KEY)) setShowGuide(true);
-    } catch {
-      /* 忽略：无法读取时不自动弹出 */
-    }
-  }, []);
-  const closeGuide = () => {
-    setShowGuide(false);
-    try {
-      localStorage.setItem(GUIDE_SEEN_KEY, "1");
-    } catch {
-      /* 忽略 */
-    }
-  };
   const narrow = useNarrow();
   const [narrowPane, setNarrowPane] = useState<"editor" | "result">("editor");
   /** 结果检查模式下的「更换输入」抽屉 */
@@ -791,9 +771,6 @@ export function Playground({ projectId }: { projectId: string }) {
               <span className={cx("h-1.5 w-1.5 rounded-full", provider?.configured ? "bg-verify" : "bg-risk")} />
               {provider?.configured ? provider.model : "模型未配置"}
             </span>
-            <Btn onClick={() => setShowGuide(true)} title="查看三步上手说明和名词解释" data-testid="btn-guide">
-              新手指南
-            </Btn>
             <Btn onClick={() => s.set("workMode", "compare")} disabled={compare.length !== 2} title="在运行历史中勾选两条记录后对比">
               对比 {compare.length}/2
             </Btn>
@@ -936,7 +913,6 @@ export function Playground({ projectId }: { projectId: string }) {
           </div>
         )}
       </main>
-      {showGuide && <GuideDialog onClose={closeGuide} />}
     </div>
   );
 }

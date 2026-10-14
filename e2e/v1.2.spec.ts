@@ -6,7 +6,6 @@ import { expect, test } from "@playwright/test";
 
 test.beforeEach(async ({ context }) => {
   await context.addInitScript(() => {
-    localStorage.setItem("prompt-studio-guide-seen", "1");
     // 这些用例按「提示词调试」的左右分栏操作；只在首次进入时设定，刷新后仍以页面保存的状态为准
     if (!localStorage.getItem("prompt-studio:workspace")) localStorage.setItem("prompt-studio:workspace", JSON.stringify({ state: { workMode: "debug" }, version: 2 }));
   });
