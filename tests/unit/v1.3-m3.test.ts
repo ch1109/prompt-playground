@@ -208,11 +208,11 @@ describe("M3 MCP 实验工具", () => {
   };
   const firstLine = () => baseVersion().system_prompt.split("\n")[0];
 
-  it("默认只读令牌看不到实验工具；带实验权限的令牌多 4 个工具（含只读的 list_datasets），但没有任何采纳 / 改正式版本的工具", async () => {
+  it("默认只读令牌看不到实验工具；带实验权限的令牌多 5 个工具（含只读的 list_datasets、get_optimization_session），但没有任何采纳 / 改正式版本的工具", async () => {
     expect((await rpc(tok([...READ_SCOPES]), "tools/list")).result.tools).toHaveLength(9);
     const tools = (await rpc(tok(), "tools/list")).result.tools!;
-    expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(["create_prompt_candidate", "run_experiment", "evaluate_experiment", "list_datasets"]));
-    expect(tools).toHaveLength(13);
+    expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(["create_prompt_candidate", "run_experiment", "evaluate_experiment", "list_datasets", "get_optimization_session"]));
+    expect(tools).toHaveLength(14);
     expect(tools.some((t) => /approve|promote|stable|publish/i.test(t.name))).toBe(false);
   });
 

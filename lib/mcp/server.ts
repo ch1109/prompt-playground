@@ -7,6 +7,9 @@ import { getCandidate } from "@/lib/repositories/experiments";
 import { diagnosisReportSchema, EVIDENCE_REF_FORMATS, runDiagnoses, submitDiagnosis } from "@/lib/diagnoses/report";
 import { goldVersion, isHoldoutRun, redactForHoldout } from "@/lib/datasets/service";
 import { listDatasets } from "@/lib/repositories/datasets";
+import { createSessionCandidate, onSessionDiagnosis, sessionView, startSessionExperiment } from "@/lib/optimization/service";
+import { getSession, SessionConflictError } from "@/lib/repositories/optimizations";
+import { TransitionError } from "@/lib/optimization/state-machine";
 import { getPrompt, getVersion } from "@/lib/repositories/prompts";
 import { getSnapshot } from "@/lib/repositories/snapshots";
 import { RunServiceError } from "@/lib/runs/service";
@@ -48,7 +51,8 @@ const INSTRUCTIONS = `Prompt Studio 只读诊断工具。你只能读取，不�
 
 const EXPERIMENT_INSTRUCTIONS = `本令牌还带有实验权限：可以创建隔离候选（create_prompt_candidate）、在固定样本上运行（run_experiment）、查看评判（evaluate_experiment）。
 只在诊断确认是提示词问题（PROMPT_RULE_ERROR 一类）时才改提示词；INPUT_* / PREPROCESSING / CANDIDATE_RECALL / SCHEMA / ADAPTER / INCORRECT_GOLD 类根因应停止并给出技术修复建议（§11.1）。
-修改要最小：只改与根因相关的句子。样本至少一个 TARGET 和一个 REGRESSION；先 dry_run 看调用次数。有数据集时（list_datasets）用 run_experiment 的 dataset 参数，评判用冻结的标准答案；holdout 样本只留给人做最终评估，不能读答案、不能放进试运行。不能采纳候选、不能改正式版本，这些只能由人在网页上做。`;
+修改要最小：只改与根因相关的句子。样本至少一个 TARGET 和一个 REGRESSION；先 dry_run 看调用次数。有数据集时（list_datasets）用 run_experiment 的 dataset 参数，评判用冻结的标准答案；holdout 样本只留给人做最终评估，不能读答案、不能放进试运行。不能采纳候选、不能改正式版本，这些只能由人在网页上做。
+自动优化会话（session_id）：先 get_optimization_session 看目标、预算和下一步；提交诊断、创建候选、试运行都带上 session_id。会话里样本、数据集、调用上限由系统决定，轮数和停止条件也由系统判断；会话结束（停止、阻塞、非提示词问题、等人审批）后不要再做修改。`;
 
 class ToolError extends Error {
   constructor(
@@ -107,7 +111,9 @@ export function buildMcpServer(grant: AgentGrant) {
               ? new ToolError(e.code, e.message, e.code === "NOT_FOUND" || e.code === "SOURCE_REF_NOT_IN_RUN" ? "NOT_FOUND" : "INVALID", e.details)
               : e instanceof RunServiceError
                 ? new ToolError(e.code, e.message, e.httpStatus === 404 ? "NOT_FOUND" : "INVALID")
-                : new ToolError("INTERNAL_ERROR", e instanceof Error ? e.message : String(e), "ERROR");
+                : e instanceof SessionConflictError || e instanceof TransitionError
+                  ? new ToolError("SESSION_CONFLICT", `${e.message}；请用 get_optimization_session 重新读取会话状态`, "INVALID")
+                  : new ToolError("INTERNAL_ERROR", e instanceof Error ? e.message : String(e), "ERROR");
         audit({ grant, tool: name, args, runId, outcome: err.outcome, detail: `${err.code}: ${err.message}` });
         return { isError: true, content: [{ type: "text" as const, text: JSON.stringify({ error: { code: err.code, message: err.message, details: err.details ?? null } }) }] };
       }
@@ -238,10 +244,17 @@ export function buildMcpServer(grant: AgentGrant) {
       "submit_diagnosis_report",
       "diagnoses:write",
       `提交一份结构化诊断报告（v1.3 §8.2），保存为 Agent 推测，不改 Run、人工标注或提示词。每条证据引用都会核对是否真实存在，任何一条对不上整份拒绝。引用格式：${EVIDENCE_REF_FORMATS}。证据不足时 result_status 用 NEEDS_MORE_EVIDENCE / UNKNOWN，不要硬给 CONFIRMED。`,
-      { run_id: z.string(), object_ref: objectRef.optional().describe("诊断的字段；整个 Run 的问题（如结构错误）可不填"), report: diagnosisReportSchema },
+      {
+        run_id: z.string(),
+        object_ref: objectRef.optional().describe("诊断的字段；整个 Run 的问题（如结构错误）可不填"),
+        report: diagnosisReportSchema,
+        session_id: z.string().optional().describe("自动优化会话 ID：带上后诊断会推动会话（需要实验权限）"),
+      },
       (a) => {
+        if (a.session_id) authorizedSession(a.session_id, "experiments:write");
         const d = submitDiagnosis({ ctx: authorizedRun(a.run_id), objectRef: a.object_ref, report: a.report, createdBy: grant.principal, loadRun: authorizedRun });
-        return { diagnosis_id: d.diagnosis_id, target: d.target, root_cause_category: d.root_cause_category, result_status: d.result_status, next: "报告已保存，会显示在网页的字段面板里；人工标注不受影响" };
+        const session = a.session_id ? sessionSummary(onSessionDiagnosis(a.session_id, d, grant.principal).session_id) : null;
+        return { diagnosis_id: d.diagnosis_id, target: d.target, root_cause_category: d.root_cause_category, result_status: d.result_status, session, next: session?.next_action ?? "报告已保存，会显示在网页的字段面板里；人工标注不受影响" };
       },
       false,
     );
@@ -259,6 +272,21 @@ export function buildMcpServer(grant: AgentGrant) {
     checkProject(getPrompt(c.prompt_id)!.project_id);
     return c;
   };
+  /** 会话授权：令牌要有对应权限、会话所在项目，以及目标 Run 的客户 */
+  function authorizedSession(id: string, scope: Scope) {
+    if (!has(scope)) forbid(`带 session_id 的操作需要 ${scope} 权限`);
+    const s = getSession(id) ?? (() => {
+      throw new ToolError("NOT_FOUND", `会话 ${id} 不存在`, "NOT_FOUND");
+    })();
+    checkProject(s.project_id);
+    authorizedRun(s.objective.run_id);
+    return s;
+  }
+  /** 给 Agent 的会话摘要：状态、预算、各轮、下一步（事件只给最近 10 条） */
+  function sessionSummary(id: string) {
+    const v = sessionView(id);
+    return { ...v, events: v.events.slice(-10) };
+  }
 
   if (has("experiments:write"))
     register(
@@ -270,8 +298,14 @@ export function buildMcpServer(grant: AgentGrant) {
         edits: z.array(z.object({ part: z.enum(["system", "user_template"]).optional().describe("默认 system"), find: z.string(), replace: z.string() })).min(1),
         reason: z.string().describe("为什么这样改：对应哪个诊断结论"),
         diagnosis_ref: z.string().optional(),
+        session_id: z.string().optional().describe("自动优化会话 ID：候选成为本轮候选，基础版本必须是会话的 base_version_id"),
       },
       (a) => {
+        if (a.session_id) {
+          authorizedSession(a.session_id, "experiments:write");
+          const r = createSessionCandidate({ sessionId: a.session_id, baseVersionId: a.base_prompt_version_id, edits: a.edits, reason: a.reason, diagnosisRef: a.diagnosis_ref, actor: grant.principal });
+          return { candidate_id: r.candidate.candidate_id, status: r.candidate.status, base_version_id: r.candidate.base_version_id, diff: r.diff, session: sessionSummary(a.session_id), next: sessionSummary(a.session_id).next_action };
+        }
         const base = getVersion(a.base_prompt_version_id) ?? (() => {
           throw new ToolError("NOT_FOUND", `版本 ${a.base_prompt_version_id} 不存在`, "NOT_FOUND");
         })();
@@ -290,14 +324,21 @@ export function buildMcpServer(grant: AgentGrant) {
       `在固定样本上运行候选（会真实调用模型、产生费用）。至少一个 TARGET（要修的错误样本）和一个 REGRESSION（原本正常的样本）。已有可比基线会被复用，缺基线才补跑。必须给 max_model_runs（≤ ${MAX_EXPERIMENT_RUNS}），超出在调用模型前拒绝；dry_run=true 只预演、不花钱。立即返回，之后用 evaluate_experiment 查看结果。`,
       {
         candidate_id: z.string(),
-        samples: z.array(z.object({ sample_id: z.string().describe("样本 ID（list_runs 的 sample_id，如 v3/2026AG001-audit/P1）或输入快照 ID"), role: z.enum(["TARGET", "REGRESSION"]) })).min(1),
-        max_model_runs: z.number().int().min(1).max(MAX_EXPERIMENT_RUNS),
+        samples: z.array(z.object({ sample_id: z.string().describe("样本 ID（list_runs 的 sample_id，如 v3/2026AG001-audit/P1）或输入快照 ID"), role: z.enum(["TARGET", "REGRESSION"]) })).min(1).optional().describe("不带 session_id 时必填"),
+        max_model_runs: z.number().int().min(1).max(MAX_EXPERIMENT_RUNS).optional().describe("不带 session_id 时必填"),
+        session_id: z.string().optional().describe("自动优化会话 ID：样本、数据集与调用上限由会话决定，samples / max_model_runs / dataset 不用填"),
         idempotency_key: z.string().optional().describe("网络重试时用同一个值，不会重复运行和计费"),
         dry_run: z.boolean().optional(),
         dataset: z.string().optional().describe("按数据集做实验：「数据集ID@版本」或数据集 ID（取最新版本）。samples 须属于该数据集，regression 层自动加入，评判用该版本冻结的标准答案。holdout 样本不能放进试运行"),
       },
       (a) => {
         authorizedCandidate(a.candidate_id);
+        if (a.session_id) {
+          authorizedSession(a.session_id, "experiments:execute");
+          const r = startSessionExperiment({ sessionId: a.session_id, candidateId: a.candidate_id, actor: grant.principal, idempotencyKey: a.idempotency_key ?? null, dryRun: a.dry_run });
+          return { dry_run: !!a.dry_run, experiment_id: r.experiment?.experiment_id ?? null, reused_existing: r.reused, planned_model_runs: r.planned_model_runs, session: sessionSummary(a.session_id), next: a.dry_run ? "确认后去掉 dry_run 再提交" : "试运行完成后系统自动评判并推进会话；用 get_optimization_session 查看" };
+        }
+        if (!a.samples || !a.max_model_runs) throw new ToolError("BAD_REQUEST", "不带 session_id 时必须给 samples 与 max_model_runs", "INVALID");
         const input = { candidateId: a.candidate_id, samples: a.samples, maxModelRuns: a.max_model_runs, datasetRef: a.dataset ?? null };
         const plan = planExperiment(input);
         // 客户受限的令牌：每个样本都必须属于授权客户
@@ -313,6 +354,18 @@ export function buildMcpServer(grant: AgentGrant) {
         return { experiment_id: experiment.experiment_id, status: experiment.status, reused_existing: reused, budget: experiment.budget, samples: summary(experiment.samples), next: "用 evaluate_experiment 轮询，status 变为 COMPLETED 后有评判报告" };
       },
       false,
+    );
+
+  if (has("experiments:read"))
+    register(
+      "get_optimization_session",
+      "experiments:read",
+      "读取自动优化会话：目标字段、数据集版本、预算（已用 / 剩余调用次数）、各轮候选与结论、最佳候选、停止原因、下一步该做什么，以及最近的事件。",
+      { session_id: z.string() },
+      (a) => {
+        authorizedSession(a.session_id, "experiments:read");
+        return sessionSummary(a.session_id);
+      },
     );
 
   if (has("experiments:read"))

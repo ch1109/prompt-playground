@@ -3,6 +3,8 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { POST } from "@/app/api/mcp/route";
+import { createGrant, DIAGNOSE_SCOPES, EXPERIMENT_SCOPES, listAudit } from "@/lib/repositories/agent-access";
 import type { Run } from "@/lib/contracts/run";
 import { submitDiagnosis } from "@/lib/diagnoses/report";
 import { approveCandidate } from "@/lib/experiments/service";
@@ -195,6 +197,48 @@ describe("每轮循环", () => {
     s.deadline = new Date(Date.now() - 1000).toISOString();
     saveSession(s);
     expect(loadSession(s.session_id)).toMatchObject({ status: "STOPPED", stop_reason: "TIMEOUT" });
+  });
+
+  it("经 MCP 跑完一个会话：脚本化的 Agent 只用工具完成诊断 → 候选 → 试运行，会话达标后等人审批；只有诊断权限的令牌不能推动会话", async () => {
+    setProviderForTests(provider());
+    const s = start();
+    const tok = (scopes: string[]) => createGrant({ principal: "agent-opt", projectIds: ["jiuli"], scopes: scopes as never }).token;
+    const call = async (t: string, name: string, args: Record<string, unknown>) => {
+      const res = await POST(
+        new Request("http://127.0.0.1:3000/api/mcp", {
+          method: "POST",
+          headers: { host: "127.0.0.1:3000", "content-type": "application/json", accept: "application/json, text/event-stream", authorization: `Bearer ${t}` },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }),
+        }),
+      );
+      const j = (await res.json()) as { result: { isError?: boolean; content: { text: string }[] } };
+      const text = j.result.content[0].text;
+      return { isError: !!j.result.isError, data: text.startsWith("{") ? JSON.parse(text) : text };
+    };
+    const report = { observed_problem: "结构不符", verified_facts: ["column 写成了数字"], root_cause: { category: "PROMPT_RULE_ERROR", summary: "提示词没写 column 格式", supporting_evidence_refs: [`${targetRun.run_id}#trace/raw_response`] }, proposed_change: { target_layer: "PROMPT", action_type: "EDIT_PROMPT_RULE", summary: "补一句" }, impact_scope: "P1", verification_plan: "试运行", result_status: "CONFIRMED" };
+
+    const readOnly = tok([...DIAGNOSE_SCOPES]);
+    expect((await call(readOnly, "submit_diagnosis_report", { run_id: targetRun.run_id, object_ref: { json_pointer: POINTER }, report, session_id: s.session_id })).data.error.code).toBe("FORBIDDEN");
+    expect(listAudit(1)[0]).toMatchObject({ tool: "submit_diagnosis_report", outcome: "DENIED" });
+    expect(loadSession(s.session_id).status).toBe("DIAGNOSING");
+
+    const agent = tok([...DIAGNOSE_SCOPES, ...EXPERIMENT_SCOPES]);
+    const view = await call(agent, "get_optimization_session", { session_id: s.session_id });
+    expect(view.data).toMatchObject({ status: "DIAGNOSING", base_version_id: base().version_id, remaining_model_runs: 20, next_action: expect.stringMatching(/submit_diagnosis_report/) });
+    const diag = await call(agent, "submit_diagnosis_report", { run_id: targetRun.run_id, object_ref: { json_pointer: POINTER }, report, session_id: s.session_id });
+    expect(diag.data.session.status).toBe("CANDIDATE_DRAFT");
+    const cand = await call(agent, "create_prompt_candidate", { base_prompt_version_id: base().version_id, edits: [{ find: firstLine(), replace: `${firstLine()}【修好】` }], reason: "补 column 格式", session_id: s.session_id });
+    expect(cand.data.session.rounds).toHaveLength(1);
+    const dry = await call(agent, "run_experiment", { candidate_id: cand.data.candidate_id, session_id: s.session_id, dry_run: true });
+    expect(dry.data).toMatchObject({ dry_run: true, experiment_id: null, planned_model_runs: expect.any(Number) });
+    const run = await call(agent, "run_experiment", { candidate_id: cand.data.candidate_id, session_id: s.session_id });
+    expect(run.data.experiment_id).toMatch(/^exp_/);
+    await settle(s.session_id);
+    const done = await call(agent, "get_optimization_session", { session_id: s.session_id });
+    expect(done.data).toMatchObject({ status: "READY_FOR_REVIEW", best: { candidate_id: cand.data.candidate_id }, next_action: expect.stringMatching(/等人在网页上审批/) });
+    expect((await call(agent, "create_prompt_candidate", { base_prompt_version_id: base().version_id, edits: [{ find: firstLine(), replace: "x" }], reason: "r", session_id: s.session_id })).data.error.code).toBe("SESSION_STATE");
+    onCandidateDecided(cand.data.candidate_id, "REJECTED", "我");
+    expect(loadSession(s.session_id).status).toBe("REJECTED");
   });
 
   // 放在最后：采纳会移动正式版本（带【修好】标记），之后的轮次都会继承它
