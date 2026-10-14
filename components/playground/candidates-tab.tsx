@@ -4,7 +4,6 @@ import { api } from "@/lib/client/api";
 import type { ExperimentReport, SampleEvaluation } from "@/lib/experiments/evaluate";
 import type { Experiment, PromptCandidate } from "@/lib/repositories/experiments";
 import { Badge, Btn, cx, Empty } from "@/components/ui";
-import { OptimizationSessions } from "./auto-fix";
 import { Hunks } from "./run-compare";
 
 // 修改建议（v1.3 M3）：AI 根据诊断提出的提示词修改（候选），先在样本上试运行，再由人决定采纳或拒绝。
@@ -80,7 +79,6 @@ export function CandidatesTab({ promptId, onVersionsChanged }: { promptId: strin
   return (
     <div className="space-y-2" data-testid="candidates-tab">
       <p className="text-[12px] text-ink-400">AI 根据诊断提出的提示词修改会出现在这里。在你点「采纳」之前，它们不会影响正在用的版本。</p>
-      <OptimizationSessions promptId={promptId} onProgress={load} />
       {err && <p className="text-[12px] text-stamp">{err}</p>}
       {list === null ? (
         <p className="text-[12px] text-ink-400">读取中…</p>

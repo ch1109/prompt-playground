@@ -276,6 +276,8 @@ test("M2 字段抽屉：复制 Agent 诊断指令，内容带 Run ID、字段定
   await page.getByLabel("正确值").fill("美国-诊断");
   await page.getByRole("button", { name: "保存标注" }).click();
   await expect(page.getByTestId("annotation-form")).toContainText("正确值：美国-诊断");
+  // 网页上不再有自动优化入口（改为结果头部的「导出上下文」）
+  await expect(verdict.getByTestId("btn-auto-fix")).toHaveCount(0);
   await verdict.getByTestId("btn-copy-diagnosis").click();
   await expect(verdict.getByTestId("btn-copy-diagnosis")).toHaveText("已复制");
   const text = await page.evaluate(() => navigator.clipboard.readText());
@@ -346,46 +348,6 @@ test("导出上下文：结果头部一键下载 ZIP（上下文.md + 原件）"
   const download = page.waitForEvent("download");
   await link.click();
   expect((await download).suggestedFilename()).toMatch(/^上下文_P1_run_[0-9a-f]+\.zip$/);
-});
-
-test("自动优化：标错的字段可以「让 AI 自动修」，选回归样本开始；修改建议页签显示进度，可以取消，正式版本不变", async ({ page, context }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  // 上次中断留下的会话先取消，保证同一提示词只有这一项
-  const old = (await (await page.request.get("/api/optimizations?promptId=jiuli-p1")).json()).data as { session_id: string; status: string }[];
-  for (const s of old.filter((x) => !["BLOCKED", "NON_PROMPT_ISSUE", "STOPPED", "APPROVED", "REJECTED", "READY_FOR_REVIEW"].includes(x.status))) await page.request.post(`/api/optimizations/${s.session_id}/cancel`, { data: {} });
-  const stableBefore = (await (await page.request.get("/api/prompts/jiuli-p1")).json()).data.versions.find((v: { is_stable: boolean }) => v.is_stable).version_id;
-
-  await pickInDrawer(page, "jiuli-p1", "v3/SC-08/P1");
-  await page.locator('[data-table-id="orderRows"] [data-row-id="row-1"] [data-field="origin"]').first().click();
-  const verdict = page.getByTestId("field-verdict");
-  // 没标「错」之前没有入口
-  await expect(verdict.getByTestId("btn-auto-fix")).toHaveCount(0);
-  await page.getByTestId("btn-mark-wrong").click();
-  await page.getByLabel("错误归因").selectOption("UNKNOWN");
-  await page.getByLabel("正确值").fill("日本-自动优化");
-  await page.getByRole("button", { name: "保存标注" }).click();
-  await verdict.getByTestId("btn-auto-fix").click();
-  const form = verdict.getByTestId("auto-fix-form");
-  await expect(form.getByTestId("btn-start-auto-fix")).toBeDisabled();
-  await form.getByLabel(/^回归样本/).first().check();
-  await form.getByTestId("btn-start-auto-fix").click();
-  await expect(verdict.getByTestId("auto-fix")).toHaveAttribute("data-state", "active");
-  await expect(verdict.getByTestId("auto-fix")).toContainText("等 AI 诊断");
-  await verdict.getByTestId("btn-copy-optimization").click();
-  const text = await page.evaluate(() => navigator.clipboard.readText());
-  expect(text).toMatch(/会话：opt_[0-9a-f]+/);
-  expect(text).toContain("期望值是「日本-自动优化」");
-
-  await page.getByTestId("work-modes").getByRole("tab", { name: "提示词调试" }).click();
-  await page.getByRole("button", { name: "修改建议" }).click();
-  const card = page.getByTestId("optimization-session").first();
-  await expect(card.getByTestId("optimization-status")).toHaveText("等 AI 诊断");
-  await expect(card).toContainText("0/3 轮");
-  await card.getByTestId("btn-cancel-optimization").click();
-  await expect(card.getByTestId("optimization-status")).toHaveText("已停：已取消");
-  await expect(card.getByTestId("btn-copy-optimization")).toHaveCount(0);
-  const stableAfter = (await (await page.request.get("/api/prompts/jiuli-p1")).json()).data.versions.find((v: { is_stable: boolean }) => v.is_stable).version_id;
-  expect(stableAfter).toBe(stableBefore);
 });
 
 test("M3 修改建议：先看一句结论和计数，详情里有修改内容与逐样本说明；证据不足时须勾选确认才能采纳；采纳后成为正式版本，拒绝不影响正式版本", async ({ page }) => {
