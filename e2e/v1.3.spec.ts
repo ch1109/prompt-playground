@@ -333,7 +333,7 @@ test("诊断落库：Agent 经 MCP 提交的诊断显示在字段面板，一行
   await expect(page.getByTestId("field-diagnoses")).toHaveCount(0);
 });
 
-test("导出上下文：结果头部一键下载 ZIP（上下文.md + 原件）", async ({ page }) => {
+test("导出上下文：结果头部一键下载 ZIP（context.md + 原件）", async ({ page }) => {
   await pickInDrawer(page, "jiuli-p1", "v3/SC-08/P1");
   const link = page.getByTestId("btn-export-context");
   await expect(link).toBeVisible();

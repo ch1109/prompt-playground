@@ -1,4 +1,4 @@
-// 一键导出运行上下文：保存模型思考全文；ZIP 里的 Markdown（输入、提示词、思考、输出、标注、检查）与原件
+// 一键导出运行上下文：保存模型思考全文；ZIP 里的 context.md（输入、提示词、思考、输出、标注、检查）与原件
 import { mkdtempSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -64,7 +64,7 @@ describe("上下文 Markdown", () => {
     expect(text).not.toContain("sk-test-export-abc");
   });
 
-  it("没有思考内容时如实说明：旧运行没保存 / 模型没返回 / 没调用模型", async () => {
+  it("没有思考内容时如实说明：旧运行没保存 / 模型没返回 / 没调用模型 / 调用失败", async () => {
     const run = await runP1();
     expect(md(getRun(run.run_id)!)).toContain("模型这次没有返回思考内容");
     const c = loadRunContext(run.run_id)!;
@@ -72,6 +72,8 @@ describe("上下文 Markdown", () => {
     expect(legacy).toContain("模型这次思考了 500 个字符，但这次运行早于保存思考全文的功能");
     const rendered = renderOnly({ projectId: "jiuli", promptId: "jiuli-p1", raw: getFixture("v3/SC-08/P1")!.raw, snapshotId: snapshotForFixture("jiuli", getFixture("v3/SC-08/P1")!)!.snapshot_id });
     expect(md(rendered)).toContain("这次没有调用模型，没有思考内容");
+    const failed = contextMarkdown({ ...c, run: { ...c.run, status: "MODEL_ERROR", reasoning_content: undefined, response_meta: null, error: { code: "MODEL_NETWORK_ERROR", message: "fetch failed" } } }, []);
+    expect(failed).toContain("模型调用没有成功：MODEL_NETWORK_ERROR fetch failed，没有思考内容");
   });
 
   it("内容里自带 ``` 时，代码块围栏更长，不会被截断", async () => {
@@ -92,24 +94,26 @@ describe("导出 ZIP", () => {
     return { run, fileId, pdf };
   }
 
-  it("包含 上下文.md 与 原件/（字节与原件一致），清单写明已打包", async () => {
-    const { run, pdf } = await uploadedRun();
+  it("包含 context.md 与 originals/（路径全英文，字节与原件一致），清单写明原件名与路径的对应", async () => {
+    const { run, pdf, fileId } = await uploadedRun();
     const r = (await exportZip(run.run_id))!;
     expect(r.fileName).toBe(`上下文_P2_${run.run_id}.zip`);
     const files = unzipSync(r.zip);
-    expect(Object.keys(files).sort()).toEqual(["上下文.md", "原件/扫描查货.pdf"]);
-    expect(Buffer.from(files["原件/扫描查货.pdf"]).equals(pdf)).toBe(true);
-    const text = strFromU8(files["上下文.md"]);
+    expect(Object.keys(files).sort()).toEqual(["context.md", `originals/${fileId}.pdf`]);
+    expect(Object.keys(files).every((k) => /^[\x20-\x7e]+$/.test(k))).toBe(true);
+    expect(Buffer.from(files[`originals/${fileId}.pdf`]).equals(pdf)).toBe(true);
+    const text = strFromU8(files["context.md"]);
     expect(text).toContain(THINKING);
-    expect(text).toMatch(/扫描查货\.pdf（U-[^）]+application\/pdf[^）]*）：已打包为 `原件\/扫描查货\.pdf`/);
+    expect(text).toContain(`扫描查货.pdf（${fileId}，application/pdf`);
+    expect(text).toContain(`已打包为 \`originals/${fileId}.pdf\``);
   });
 
   it("原件读不到时导出照样成功，清单写明没打包的原因", async () => {
     const { run, fileId } = await uploadedRun();
     unlinkSync((await resolveMaterialFile(fileId)).absolutePath);
     const files = unzipSync((await exportZip(run.run_id))!.zip);
-    expect(Object.keys(files)).toEqual(["上下文.md"]);
-    expect(strFromU8(files["上下文.md"])).toMatch(/没有打包——/);
+    expect(Object.keys(files)).toEqual(["context.md"]);
+    expect(strFromU8(files["context.md"])).toMatch(/没有打包——/);
   });
 
   it("Run 不存在返回 undefined", async () => {
