@@ -112,6 +112,17 @@ export function ResultPane({
               {runStatusView(run.status, run.schema_id, run.prompt_kind, run.mode).label}
             </Badge>
           )}
+          {run && run.status !== "RUNNING" && (
+            <a
+              href={`/api/runs/${run.run_id}/export`}
+              download
+              data-testid="btn-export-context"
+              className="rounded-lg px-3 py-1.5 text-[12.5px] font-medium text-ink-300 hover:bg-ink-800 hover:text-ink-100"
+              title="下载这次运行的完整上下文（ZIP）：实际提示词、用户输入、模型思考与输出、你的标注、检查结果，以及用到的原件。可以交给 Claude Code / Codex 改提示词——原件会一起发给对方"
+            >
+              导出上下文
+            </a>
+          )}
           <Btn onClick={() => setStore("evidenceOpen", !evidenceOpen)} aria-pressed={evidenceOpen}>
             来源
           </Btn>

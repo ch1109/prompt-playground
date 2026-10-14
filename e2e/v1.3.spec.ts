@@ -331,6 +331,23 @@ test("诊断落库：Agent 经 MCP 提交的诊断显示在字段面板，一行
   await expect(page.getByTestId("field-diagnoses")).toHaveCount(0);
 });
 
+test("导出上下文：结果头部一键下载 ZIP（上下文.md + 原件）", async ({ page }) => {
+  await pickInDrawer(page, "jiuli-p1", "v3/SC-08/P1");
+  const link = page.getByTestId("btn-export-context");
+  await expect(link).toBeVisible();
+  const href = await link.getAttribute("href");
+  expect(href).toMatch(/^\/api\/runs\/run_[0-9a-f]+\/export$/);
+  const res = await page.request.get(href!);
+  expect(res.status()).toBe(200);
+  expect(res.headers()["content-type"]).toBe("application/zip");
+  expect(res.headers()["content-disposition"]).toContain(encodeURIComponent("上下文_P1_"));
+  const body = await res.body();
+  expect(body.subarray(0, 2).toString()).toBe("PK");
+  const download = page.waitForEvent("download");
+  await link.click();
+  expect((await download).suggestedFilename()).toMatch(/^上下文_P1_run_[0-9a-f]+\.zip$/);
+});
+
 test("自动优化：标错的字段可以「让 AI 自动修」，选回归样本开始；修改建议页签显示进度，可以取消，正式版本不变", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   // 上次中断留下的会话先取消，保证同一提示词只有这一项
