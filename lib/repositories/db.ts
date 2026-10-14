@@ -113,6 +113,19 @@ CREATE TRIGGER IF NOT EXISTS datasets_no_update BEFORE UPDATE ON datasets
 BEGIN SELECT RAISE(ABORT, '数据集版本只新增不修改'); END;
 CREATE TRIGGER IF NOT EXISTS datasets_no_delete BEFORE DELETE ON datasets
 BEGIN SELECT RAISE(ABORT, '数据集版本只新增不删除'); END;
+-- 自动优化会话（v1.3 §11）：status 与 version（乐观锁）单独成列，其余在 body；事件只追加
+CREATE TABLE IF NOT EXISTS optimization_sessions (
+  session_id TEXT PRIMARY KEY, prompt_id TEXT NOT NULL, project_id TEXT NOT NULL, status TEXT NOT NULL,
+  version INTEGER NOT NULL, body TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS optimization_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, at TEXT NOT NULL, type TEXT NOT NULL,
+  from_status TEXT, to_status TEXT, actor TEXT, detail TEXT
+);
+CREATE TRIGGER IF NOT EXISTS optimization_events_no_update BEFORE UPDATE ON optimization_events
+BEGIN SELECT RAISE(ABORT, '优化事件只追加不修改'); END;
+CREATE TRIGGER IF NOT EXISTS optimization_events_no_delete BEFORE DELETE ON optimization_events
+BEGIN SELECT RAISE(ABORT, '优化事件只追加不删除'); END;
 CREATE TRIGGER IF NOT EXISTS raw_responses_immutable BEFORE UPDATE ON raw_responses
 BEGIN SELECT RAISE(ABORT, 'raw_responses 不可修改'); END;
 -- 只有运行中（RUNNING）的 Run 可以更新为终态；结束后不可修改

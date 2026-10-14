@@ -1,6 +1,39 @@
 // v1.3 §11：自动优化会话（状态机、每轮评判、服务端强制的预算与停止条件）
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { db, resetDbForTests } from "@/lib/repositories/db";
+import { addEvent, getSession, insertSession, listEvents, saveSession, SessionConflictError, type OptimizationSession } from "@/lib/repositories/optimizations";
 import { afterDiagnosis, afterRound, assertTransition, canTransition, isTerminal, SESSION_STATES, type RoundInput } from "@/lib/optimization/state-machine";
+
+beforeAll(() => resetDbForTests(":memory:"));
+
+describe("会话存储", () => {
+  const sample = (id: string): OptimizationSession => ({
+    session_id: id, prompt_id: "jiuli-p1", project_id: "jiuli", status: "DIAGNOSING", version: 1, created_by: "我", created_at: "2026-10-14T00:00:00Z", updated_at: "2026-10-14T00:00:00Z",
+    objective: { run_id: "run_x", sample_id: "v3/SC-08/P1", snapshot_id: "snap_x", table_id: null, row_id: null, field: null, json_pointer: "/output", annotation_id: "ann_x", expected_value: null },
+    dataset: { dataset_id: "ds_x", version: 1 }, base_version_id: "pv_x",
+    budget: { max_iterations: 3, max_model_runs: 10, max_no_progress: 2, timeout_minutes: 60, used_model_runs: 0 },
+    deadline: "2026-10-14T01:00:00Z", rounds: [], diagnosis_ids: [], best: null, no_progress: 0, stop_reason: null, outcome_note: null,
+  });
+
+  it("乐观锁：两个人读到同一版本，先写的成功，后写的冲突", () => {
+    insertSession(sample("opt_lock"));
+    const a = getSession("opt_lock")!;
+    const b = getSession("opt_lock")!;
+    a.status = "CANDIDATE_DRAFT";
+    saveSession(a);
+    expect(a.version).toBe(2);
+    b.status = "BLOCKED";
+    expect(() => saveSession(b)).toThrow(SessionConflictError);
+    expect(getSession("opt_lock")!.status).toBe("CANDIDATE_DRAFT");
+  });
+
+  it("事件只追加", () => {
+    addEvent({ session_id: "opt_lock", type: "TEST", from_status: null, to_status: null, actor: "我", detail: { a: 1 } });
+    expect(listEvents("opt_lock")).toEqual([expect.objectContaining({ type: "TEST", detail: { a: 1 } })]);
+    expect(() => db().prepare("UPDATE optimization_events SET type = 'x'").run()).toThrow(/只追加/);
+    expect(() => db().prepare("DELETE FROM optimization_events").run()).toThrow(/只追加/);
+  });
+});
 
 describe("状态机", () => {
   it("只允许计划里的转移；终态不能再转", () => {
