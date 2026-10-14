@@ -100,7 +100,7 @@ Codex 发请求时会自动带上 `Authorization: Bearer <令牌>`，配置文�
 
 ## 7. 实验权限与工具（v1.3 M3）
 
-发令牌时加 `--scope`，Agent 才会看到下面 4 个工具；不加就看不到，默认令牌仍然只读：
+发令牌时加 `--scope`，Agent 才会看到下面 5 个工具；不加就看不到，默认令牌仍然只读：
 
 ```bash
 pnpm mcp:grant create --principal claude-code --days 1 \
@@ -113,6 +113,15 @@ pnpm mcp:grant create --principal claude-code --days 1 \
 | `run_experiment` | 在固定样本上运行候选。**会真实调用模型、产生费用**，必须给 `max_model_runs`（服务端硬上限 20），超出就在调用模型前拒绝；`dry_run=true` 只预演、不花钱；同一个 `idempotency_key` 重复提交不会重复运行。已有可比的基线（同一输入、同一模型）会直接复用 | `experiments:execute` |
 | `evaluate_experiment` | 查看实验状态与评判报告，只读 | `experiments:read` |
 | `list_datasets` | 列出某提示词的数据集（最新版本）：样本、分层、标准答案条数。holdout 样本不给答案条数 | `experiments:read` |
+| `get_optimization_session` | 读取自动优化会话：目标字段、数据集版本、预算（已用 / 剩余调用次数）、各轮候选与结论、最佳候选、停止原因、下一步该做什么 | `experiments:read` |
+
+**自动优化会话**（网页上点「让 AI 自动修」后，复制的指令里带有 `session_id`）
+- `submit_diagnosis_report`、`create_prompt_candidate`、`run_experiment` 都带上 `session_id`，令牌必须有对应的实验权限。只读令牌带 `session_id` 会被拒绝。
+- 会话里的样本、数据集、调用上限、轮数和停止条件全由服务端决定，Agent 只按 `get_optimization_session` 返回的 `next_action` 行动：
+  - 诊断确认是非提示词问题，或证据不足，会话就停下；
+  - 每轮只能有一个候选，且要基于会话开始时的正式版本；
+  - 试运行完成后，系统会自动评判，决定进入下一轮、停止还是等人审批。
+- Agent 仍然不能采纳候选。
 
 **数据集与标准答案**
 - 数据集里的样本分三层：
