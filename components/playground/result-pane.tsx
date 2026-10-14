@@ -586,10 +586,15 @@ function FieldDiagnoses({ diagnoses }: { diagnoses: NonNullable<RunDetail["diagn
                 AI 诊断
               </span>
               ：{categoryText(d.root_cause_category)}
-              {diagSuffix(d.result_status, d.root_cause_category)} · {rc.summary}
+              {diagSuffix(d.result_status, d.root_cause_category)}
+              <span className="line-clamp-2"> {rc.summary}</span>
             </summary>
             <div className="mt-1 rounded border border-ink-800 bg-ink-950 p-1.5">
               <div>
+                <span className="text-ink-400">结论：</span>
+                {rc.summary}
+              </div>
+              <div className="mt-1">
                 <span className="text-ink-400">建议：</span>
                 {d.report.proposed_change.summary}
               </div>
