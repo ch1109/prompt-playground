@@ -48,7 +48,7 @@ export function EditorPane(props: {
             ["prompt", "提示词"],
             ["model", "模型"],
             ["preview", "请求预览"],
-            ["candidates", "候选与实验"],
+            ["candidates", "修改建议"],
           ] as [EditorTab, string][]
         ).map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)} className={cx("rounded-lg px-3 py-1 text-[13px] transition-colors", tab === id ? "bg-ink-800 font-medium text-ink-100" : "text-ink-400 hover:bg-ink-850 hover:text-ink-100")}>

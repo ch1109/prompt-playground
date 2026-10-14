@@ -288,7 +288,7 @@ test("M2 字段抽屉：复制 Agent 诊断指令，内容带 Run ID、字段定
   expect(text).toMatch(/只读诊断/);
 });
 
-test("M3 候选与实验：看到修改差异与逐样本判定；证据不足时须确认风险才能采纳；采纳后成为正式版本，拒绝不影响正式版本", async ({ page }) => {
+test("M3 修改建议：先看一句结论和计数，详情里有修改内容与逐样本说明；证据不足时须勾选确认才能采纳；采纳后成为正式版本，拒绝不影响正式版本", async ({ page }) => {
   const { DatabaseSync } = await import("node:sqlite");
   const prompt = (await (await page.request.get("/api/prompts/jiuli-p1")).json()).data as { versions: { version_id: string; label: string; system_prompt: string; user_prompt_template: string; content_hash: string; is_stable: boolean }[] };
   const base = prompt.versions.find((v) => !v.is_stable) ?? prompt.versions[0];
@@ -315,27 +315,32 @@ test("M3 候选与实验：看到修改差异与逐样本判定；证据不足�
   await page.goto("/projects/jiuli/playground");
   await page.click('[data-prompt="jiuli-p1"]');
   await page.getByTestId("work-modes").getByRole("tab", { name: "提示词调试" }).click();
-  await page.getByRole("button", { name: "候选与实验" }).click();
+  await page.getByRole("button", { name: "修改建议" }).click();
   const card = page.locator(`[data-candidate-id="cand_a_${tag}"]`);
-  await expect(card).toContainText("待审批");
+  await expect(card).toContainText("等你决定");
+  // 第一眼：一句结论 + 三个计数；修改内容与逐样本情况在「查看详情」里
+  await expect(card.getByTestId("experiment-conclusion")).toContainText("先别急着采纳");
+  await expect(card.getByTestId("experiment-counts")).toContainText("修好 1");
+  await card.getByText("查看详情").click();
   await expect(card).toContainText(`Source.column 必须是字符串-${tag}`);
-  await expect(card.locator('[data-testid="experiment-sample"][data-verdict="FIXED"]')).toContainText("v3/SC-08/P1");
+  await expect(card.locator('[data-testid="experiment-sample"][data-verdict="FIXED"]')).toContainText("格式错误从");
   await expect(card.locator('[data-testid="experiment-sample"][data-verdict="NO_CHANGE"]')).toContainText("v3/2026AG001-audit/P1");
-  // 仅渲染没有构造输入记录 → 不可比 → 证据不足：不勾选风险确认就不能采纳
-  await expect(card.getByTestId("experiment-conclusion")).toContainText("证据不足");
-  await card.getByLabel("新版本名称").fill(`采纳-${tag}`);
-  await expect(card.getByTestId("btn-approve-candidate")).toBeDisabled();
-  await card.getByText("我已看过报告并了解风险").click();
-  page.once("dialog", (dlg) => dlg.accept());
+  // 采纳：在原地确认；结论不是「可以采纳」时须勾选确认
   await card.getByTestId("btn-approve-candidate").click();
+  await expect(card.getByLabel("新版本名称")).not.toHaveValue("");
+  await card.getByLabel("新版本名称").fill(`采纳-${tag}`);
+  await expect(card.getByTestId("btn-confirm-decision")).toBeDisabled();
+  await card.getByText("我看过详情，仍然要采纳").click();
+  await card.getByTestId("btn-confirm-decision").click();
   await expect(card).toContainText("已采纳");
   // 新版本成为正式版本
   await page.getByRole("button", { name: "提示词", exact: true }).click();
   await expect(page.getByLabel("Prompt 版本").locator("option", { hasText: `采纳-${tag}` })).toContainText("【正式】");
-  // 拒绝另一个候选：正式版本不变
-  await page.getByRole("button", { name: "候选与实验" }).click();
+  // 拒绝另一个：正式版本不变
+  await page.getByRole("button", { name: "修改建议" }).click();
   const other = page.locator(`[data-candidate-id="cand_b_${tag}"]`);
   await other.getByTestId("btn-reject-candidate").click();
+  await other.getByTestId("btn-confirm-decision").click();
   await expect(other).toContainText("已拒绝");
   const after = (await (await page.request.get("/api/prompts/jiuli-p1")).json()).data as { versions: { label: string; is_stable: boolean }[] };
   expect(after.versions.find((v) => v.is_stable)?.label).toBe(`采纳-${tag}`);
