@@ -100,7 +100,7 @@ Codex 发请求时会自动带上 `Authorization: Bearer <令牌>`，配置文�
 
 ## 7. 实验权限与工具（v1.3 M3）
 
-发令牌时加 `--scope`，Agent 才会看到下面 3 个工具；不加就看不到，默认令牌仍然只读：
+发令牌时加 `--scope`，Agent 才会看到下面 4 个工具；不加就看不到，默认令牌仍然只读：
 
 ```bash
 pnpm mcp:grant create --principal claude-code --days 1 \
@@ -112,8 +112,22 @@ pnpm mcp:grant create --principal claude-code --days 1 \
 | `create_prompt_candidate` | 基于某个已保存版本创建**隔离候选**。修改用「查找 → 替换」描述，每段 find 必须在原文里恰好出现一次。候选不进版本列表，也不影响正式版本 | `experiments:write` |
 | `run_experiment` | 在固定样本上运行候选。**会真实调用模型、产生费用**，必须给 `max_model_runs`（服务端硬上限 20），超出就在调用模型前拒绝；`dry_run=true` 只预演、不花钱；同一个 `idempotency_key` 重复提交不会重复运行。已有可比的基线（同一输入、同一模型）会直接复用 | `experiments:execute` |
 | `evaluate_experiment` | 查看实验状态与评判报告，只读 | `experiments:read` |
+| `list_datasets` | 列出某提示词的数据集（最新版本）：样本、分层、标准答案条数。holdout 样本不给答案条数 | `experiments:read` |
 
-系统怎么判断「修好了 / 变差了」：没有标准答案，所以只看这几样能确定的东西。
+**数据集与标准答案**
+- 数据集里的样本分三层：
+  - **dev**：Agent 可以反复迭代；
+  - **regression**：每次试运行都要带上，检查有没有改坏；
+  - **holdout**：留给人做最终评估。
+- 每个数据集版本会冻结当时样本上的人工标注，作为这个版本的**标准答案**（`数据集ID@版本`）。之后再改标注不影响旧版本；要用新答案，就新建一个版本。
+- `run_experiment` 带 `dataset` 时：
+  - 样本必须属于该数据集；
+  - regression 层自动加入；
+  - 评判用冻结的标准答案；
+  - 报告写明 `gold_version` 和规则集版本 `ruleset_version`。
+- holdout 样本不能放进试运行。Agent 读 holdout 样本的标注时，正确值和备注会被隐藏。
+
+系统怎么判断「修好了 / 变差了」：只看下面这几样能确定的东西（带数据集时，「你的标注」指冻结的标准答案）。
 - **格式**：能不能解析，有几处 Schema 错误。
 - **来源有没有指错**：打开原件，看模型引用的原文是不是真写在它说的那一格或那一页。指错的地方比原来多，就算变差。原件打不开或是图片的，记为「没法检查」。
 - **你的标注**：标「错」并填了正确值的字段，看有没有改对；标「对」的字段，看有没有被改坏。

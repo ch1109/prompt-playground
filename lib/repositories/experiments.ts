@@ -67,6 +67,8 @@ export interface ExperimentBody {
   model: string;
   budget: { max_model_runs: number; planned_model_runs: number; used_model_runs: number };
   samples: ExperimentSample[];
+  /** 按数据集做的实验：所用数据集版本（标准答案即该版本冻结的标注）；旧实验没有这一项 */
+  dataset?: { dataset_id: string; version: number } | null;
   report: ExperimentReport | null;
   error: string | null;
 }

@@ -102,6 +102,17 @@ CREATE TRIGGER IF NOT EXISTS diagnoses_no_update BEFORE UPDATE ON diagnoses
 BEGIN SELECT RAISE(ABORT, '诊断报告只追加不修改'); END;
 CREATE TRIGGER IF NOT EXISTS diagnoses_no_delete BEFORE DELETE ON diagnoses
 BEGIN SELECT RAISE(ABORT, '诊断报告只追加不删除'); END;
+-- 数据集（v1.3 §6.3）：样本分 dev / regression / holdout；每个版本冻结当时的人工标注作为标准答案（gold_version = 数据集@版本）。
+-- 只新增版本，不修改、不删除
+CREATE TABLE IF NOT EXISTS datasets (
+  dataset_id TEXT NOT NULL, version INTEGER NOT NULL, prompt_id TEXT NOT NULL, project_id TEXT NOT NULL,
+  name TEXT NOT NULL, body TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL,
+  PRIMARY KEY (dataset_id, version)
+);
+CREATE TRIGGER IF NOT EXISTS datasets_no_update BEFORE UPDATE ON datasets
+BEGIN SELECT RAISE(ABORT, '数据集版本只新增不修改'); END;
+CREATE TRIGGER IF NOT EXISTS datasets_no_delete BEFORE DELETE ON datasets
+BEGIN SELECT RAISE(ABORT, '数据集版本只新增不删除'); END;
 CREATE TRIGGER IF NOT EXISTS raw_responses_immutable BEFORE UPDATE ON raw_responses
 BEGIN SELECT RAISE(ABORT, 'raw_responses 不可修改'); END;
 -- 只有运行中（RUNNING）的 Run 可以更新为终态；结束后不可修改

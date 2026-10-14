@@ -5,6 +5,8 @@ import { audit, type AgentGrant, type AuditOutcome, type Scope } from "@/lib/rep
 import { applyEdits, candidateDiff, createCandidate, evaluateExperiment, MAX_EXPERIMENT_RUNS, planExperiment, startExperiment } from "@/lib/experiments/service";
 import { getCandidate } from "@/lib/repositories/experiments";
 import { diagnosisReportSchema, EVIDENCE_REF_FORMATS, runDiagnoses, submitDiagnosis } from "@/lib/diagnoses/report";
+import { goldVersion, isHoldoutRun, redactForHoldout } from "@/lib/datasets/service";
+import { listDatasets } from "@/lib/repositories/datasets";
 import { getPrompt, getVersion } from "@/lib/repositories/prompts";
 import { getSnapshot } from "@/lib/repositories/snapshots";
 import { RunServiceError } from "@/lib/runs/service";
@@ -46,7 +48,7 @@ const INSTRUCTIONS = `Prompt Studio 只读诊断工具。你只能读取，不�
 
 const EXPERIMENT_INSTRUCTIONS = `本令牌还带有实验权限：可以创建隔离候选（create_prompt_candidate）、在固定样本上运行（run_experiment）、查看评判（evaluate_experiment）。
 只在诊断确认是提示词问题（PROMPT_RULE_ERROR 一类）时才改提示词；INPUT_* / PREPROCESSING / CANDIDATE_RECALL / SCHEMA / ADAPTER / INCORRECT_GOLD 类根因应停止并给出技术修复建议（§11.1）。
-修改要最小：只改与根因相关的句子。样本至少一个 TARGET 和一个 REGRESSION；先 dry_run 看调用次数。不能采纳候选、不能改正式版本，这些只能由人在网页上做。`;
+修改要最小：只改与根因相关的句子。样本至少一个 TARGET 和一个 REGRESSION；先 dry_run 看调用次数。有数据集时（list_datasets）用 run_experiment 的 dataset 参数，评判用冻结的标准答案；holdout 样本只留给人做最终评估，不能读答案、不能放进试运行。不能采纳候选、不能改正式版本，这些只能由人在网页上做。`;
 
 class ToolError extends Error {
   constructor(
@@ -189,8 +191,17 @@ export function buildMcpServer(grant: AgentGrant) {
   );
 
 
-  register("get_annotations", "annotations:read", "读取该 Run 的人工标注（含修订历史），可按对象过滤。标注是人工判断，不是 Gold。", { run_id: z.string(), object_ref: objectRef.optional() }, (a) =>
-    runAnnotations(authorizedRun(a.run_id), a.object_ref),
+  register(
+    "get_annotations",
+    "annotations:read",
+    "读取该 Run 的人工标注（含修订历史），可按对象过滤。标注是人工判断，冻结进数据集版本后才是标准答案。holdout（保留评估）样本的正确值与备注会被隐藏。",
+    { run_id: z.string(), object_ref: objectRef.optional() },
+    (a) => {
+      const c = authorizedRun(a.run_id);
+      const r = runAnnotations(c, a.object_ref);
+      if (!isHoldoutRun(c.run)) return r;
+      return { ...r, holdout: true, annotations: r.annotations.map(redactForHoldout), note: "这是 holdout（保留评估）样本：只给出标了哪里、对还是错，正确值与备注已隐藏，不能据此定向修改提示词（v1.3 §6.3）" };
+    },
   );
 
   register(
@@ -198,7 +209,12 @@ export function buildMcpServer(grant: AgentGrant) {
     "eval:read",
     "读取评测：没有 Gold 时如实返回 EVAL_NOT_AVAILABLE，不给准确率。",
     { run_id: z.string(), eval_version: z.string().optional() },
-    (a) => ({ ...runEvaluation(authorizedRun(a.run_id)), requested_eval_version: a.eval_version ?? null }),
+    (a) => {
+      const c = authorizedRun(a.run_id);
+      // 这次运行的输入属于哪些数据集版本（标准答案 = 该版本冻结的标注）
+      const datasets = listDatasets(c.run.prompt_id).flatMap((d) => d.samples.filter((s) => s.snapshot_id === c.run.input_snapshot_id).map((s) => ({ gold_version: goldVersion(d), name: d.name, split: s.split, gold_annotations: s.split === "holdout" ? null : s.gold.length })));
+      return { ...runEvaluation(c), datasets, requested_eval_version: a.eval_version ?? null };
+    },
   );
 
   register(
@@ -278,10 +294,11 @@ export function buildMcpServer(grant: AgentGrant) {
         max_model_runs: z.number().int().min(1).max(MAX_EXPERIMENT_RUNS),
         idempotency_key: z.string().optional().describe("网络重试时用同一个值，不会重复运行和计费"),
         dry_run: z.boolean().optional(),
+        dataset: z.string().optional().describe("按数据集做实验：「数据集ID@版本」或数据集 ID（取最新版本）。samples 须属于该数据集，regression 层自动加入，评判用该版本冻结的标准答案。holdout 样本不能放进试运行"),
       },
       (a) => {
         authorizedCandidate(a.candidate_id);
-        const input = { candidateId: a.candidate_id, samples: a.samples, maxModelRuns: a.max_model_runs };
+        const input = { candidateId: a.candidate_id, samples: a.samples, maxModelRuns: a.max_model_runs, datasetRef: a.dataset ?? null };
         const plan = planExperiment(input);
         // 客户受限的令牌：每个样本都必须属于授权客户
         if (grant.customer_ids)
@@ -291,11 +308,35 @@ export function buildMcpServer(grant: AgentGrant) {
             if (!cust || !grant.customer_ids.includes(cust)) forbid(`样本 ${s.sample_id} 不属于授权客户`);
           }
         const summary = (samples: typeof plan.samples) => samples.map((s) => ({ sample_id: s.sample_id, role: s.role, baseline_run_id: s.baseline_run_id, baseline_reused: s.baseline_reused, params: s.params }));
-        if (a.dry_run) return { dry_run: true, planned_model_runs: plan.planned_model_runs, model: plan.model, samples: summary(plan.samples) };
+        if (a.dry_run) return { dry_run: true, planned_model_runs: plan.planned_model_runs, model: plan.model, dataset: plan.dataset, samples: summary(plan.samples) };
         const { experiment, reused } = startExperiment({ ...input, createdBy: grant.principal, idempotencyKey: a.idempotency_key ?? null });
         return { experiment_id: experiment.experiment_id, status: experiment.status, reused_existing: reused, budget: experiment.budget, samples: summary(experiment.samples), next: "用 evaluate_experiment 轮询，status 变为 COMPLETED 后有评判报告" };
       },
       false,
+    );
+
+  if (has("experiments:read"))
+    register(
+      "list_datasets",
+      "experiments:read",
+      "列出某提示词的数据集（每个只给最新版本）：样本、分层（dev 可迭代 / regression 回归 / holdout 保留评估）与标准答案条数。标准答案内容请在 dev / regression 样本的 Run 上用 get_annotations 读；holdout 不给答案。",
+      { prompt_id: z.string().describe("提示词 ID，如 jiuli-p1") },
+      (a) => {
+        const p = getPrompt(a.prompt_id) ?? (() => {
+          throw new ToolError("NOT_FOUND", `提示词 ${a.prompt_id} 不存在`, "NOT_FOUND");
+        })();
+        checkProject(p.project_id);
+        return {
+          prompt_id: a.prompt_id,
+          datasets: listDatasets(a.prompt_id).map((d) => ({
+            gold_version: goldVersion(d),
+            name: d.name,
+            note: d.note,
+            created_at: d.created_at,
+            samples: d.samples.map((s) => ({ sample_id: s.sample_id, split: s.split, gold_annotations: s.split === "holdout" ? null : s.gold.length })),
+          })),
+        };
+      },
     );
 
   if (has("experiments:read"))

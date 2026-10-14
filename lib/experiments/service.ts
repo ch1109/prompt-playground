@@ -1,6 +1,5 @@
 import type { ModelParams, Run } from "@/lib/contracts/run";
-import { getFixture } from "@/lib/fixtures/catalog";
-import { snapshotForFixture } from "@/lib/fixtures/snapshot";
+import { datasetByRef, goldVersion, holdoutSnapshotIds, resolveSample } from "@/lib/datasets/service";
 import { newId, sha256, stableStringify } from "@/lib/hash";
 import { buildInput, unresolvedVariables } from "@/lib/input-builders";
 import { getProvider } from "@/lib/models/openai-compatible";
@@ -21,12 +20,11 @@ import {
 } from "@/lib/repositories/experiments";
 import { contentHash, createVersion, getPrompt, getVersion, setStableVersion, stableVersionId } from "@/lib/repositories/prompts";
 import { getRun } from "@/lib/repositories/runs";
-import { getSnapshot } from "@/lib/repositories/snapshots";
 import { textHunks } from "@/lib/runs/compare";
 import { loadRunContext } from "@/lib/runs/debug-bundle";
 import { modelRun, RunServiceError } from "@/lib/runs/service";
 import { evaluateSample, summarize } from "./evaluate";
-import { businessViolations } from "./business-rules";
+import { businessViolations, RULESET_VERSION } from "./business-rules";
 import { checkRunSources } from "./source-check";
 
 // 候选与实验（v1.3 §10）：候选是基础版本的隔离副本；实验在固定样本上跑候选（缺基线时也跑基线），
@@ -108,6 +106,8 @@ export interface ExperimentInput {
   /** 没有可复用基线时用的参数；复用基线时候选沿用基线的参数，保证可比 */
   params?: ModelParams;
   reuseBaseline?: boolean;
+  /** 按数据集做实验（「数据集@版本」或数据集 ID）：样本须属于该数据集，regression 层自动加入；评判用该版本冻结的标准答案 */
+  datasetRef?: string | null;
 }
 
 /** 预演：解析样本、找可复用基线、算出要调用几次模型；超预算直接拒绝，不产生费用 */
@@ -123,14 +123,17 @@ export function planExperiment(input: ExperimentInput) {
   // 实验固定用默认模型（.env.local 的 MODEL_NAME），不跟提示词页的模型下拉框走：基线与候选、前后几次实验都可比（2026-10-14 用户决定）
   const info = getProvider().info();
   if (!info.configured) fail("MODEL_NOT_CONFIGURED", "未配置模型，无法做实验");
-  const samples: ExperimentSample[] = input.samples.map((s) => {
-    let snapshot;
-    if (s.sample_id.startsWith("snap_")) snapshot = getSnapshot(s.sample_id) ?? fail("SNAPSHOT_NOT_FOUND", `输入快照 ${s.sample_id} 不存在或已删除`, 404);
-    else {
-      const f = getFixture(s.sample_id) ?? fail("SAMPLE_NOT_FOUND", `样本 ${s.sample_id} 不存在`, 404);
-      if (f.promptKind !== prompt.prompt_kind) fail("SAMPLE_KIND_MISMATCH", `样本 ${s.sample_id} 是 ${f.promptKind}，与提示词 ${prompt.prompt_kind} 不符`);
-      snapshot = snapshotForFixture(prompt.project_id, f) ?? fail("SAMPLE_NOT_RUNNABLE", `样本 ${s.sample_id} 没有请求，只能仅渲染，不能真实运行`);
-    }
+  const dataset = input.datasetRef ? datasetByRef(input.datasetRef) : null;
+  if (dataset && dataset.prompt_id !== prompt.prompt_id) fail("DATASET_PROMPT_MISMATCH", "数据集属于另一个提示词");
+  const requested = [...input.samples];
+  if (dataset) {
+    for (const s of requested) if (!dataset.samples.some((d) => d.sample_id === s.sample_id)) fail("SAMPLE_NOT_IN_DATASET", `样本 ${s.sample_id} 不在数据集 ${goldVersion(dataset)} 里`);
+    for (const d of dataset.samples) if (d.split === "regression" && !requested.some((s) => s.sample_id === d.sample_id)) requested.push({ sample_id: d.sample_id, role: "REGRESSION" });
+  }
+  const holdout = holdoutSnapshotIds(prompt.prompt_id);
+  const samples: ExperimentSample[] = requested.map((s) => {
+    const snapshot = resolveSample(prompt, s.sample_id);
+    if (holdout.has(snapshot.snapshot_id)) fail("HOLDOUT_SAMPLE", `样本 ${s.sample_id} 是 holdout（保留评估）样本，不能放进试运行`);
     const built = buildInput(prompt.prompt_kind, snapshot);
     if (!built.ok) return fail(built.code, `样本 ${s.sample_id}：${built.message}`);
     const baselineId = input.reuseBaseline === false ? null : findBaselineRun({ promptId: prompt.prompt_id, versionId: cand.base_version_id, builtInputHash: sha256(stableStringify(built.request)), model: info.model });
@@ -139,7 +142,7 @@ export function planExperiment(input: ExperimentInput) {
   });
   const planned = samples.length + samples.filter((s) => !s.baseline_run_id).length;
   if (planned > input.maxModelRuns) fail("BUDGET_EXCEEDED", `需要调用模型 ${planned} 次（候选 ${samples.length} 次 + 补跑基线 ${planned - samples.length} 次），超过本次上限 ${input.maxModelRuns} 次`);
-  return { candidate: cand, model: info.model, planned_model_runs: planned, samples };
+  return { candidate: cand, model: info.model, planned_model_runs: planned, samples, dataset: dataset ? { dataset_id: dataset.dataset_id, version: dataset.version } : null };
 }
 
 /**
@@ -172,6 +175,7 @@ export function startExperiment(input: ExperimentInput & { createdBy: string; id
     model: plan.model,
     budget: { max_model_runs: input.maxModelRuns, planned_model_runs: plan.planned_model_runs, used_model_runs: 0 },
     samples: plan.samples,
+    dataset: plan.dataset,
     report: null,
     error: null,
   };
@@ -221,6 +225,9 @@ export function startExperiment(input: ExperimentInput & { createdBy: string; id
 async function buildReport(exp: Experiment) {
   const cand = getCandidate(exp.candidate_id)!;
   const base = getVersion(exp.base_version_id)!;
+  // 按数据集的实验用该版本冻结的标注（标准答案）；否则用样本上当前的人工标注（没有版本，会随标注变化）
+  const dataset = exp.dataset ? datasetByRef(goldVersion(exp.dataset)) : null;
+  const goldOf = (snapshotId: string) => dataset?.samples.find((d) => d.snapshot_id === snapshotId)?.gold ?? annotationsForSample(exp.prompt_id, snapshotId);
   const samples = [];
   for (const s of exp.samples)
     samples.push(
@@ -229,7 +236,7 @@ async function buildReport(exp: Experiment) {
         role: s.role,
         baseline: s.baseline_run_id ? getRun(s.baseline_run_id) : undefined,
         candidate: s.candidate_run_id ? getRun(s.candidate_run_id) : undefined,
-        annotations: annotationsForSample(exp.prompt_id, s.snapshot_id),
+        annotations: goldOf(s.snapshot_id),
         sources: {
           baseline: s.baseline_run_id ? await checkRunSources(s.baseline_run_id) : null,
           candidate: s.candidate_run_id ? await checkRunSources(s.candidate_run_id) : null,
@@ -237,7 +244,10 @@ async function buildReport(exp: Experiment) {
         rules: { baseline: rulesOf(s.baseline_run_id), candidate: rulesOf(s.candidate_run_id) },
       }),
     );
-  return summarize(samples, { system: base.system_prompt, user_template: base.user_prompt_template }, { system: cand.system_prompt, user_template: cand.user_prompt_template });
+  return summarize(samples, { system: base.system_prompt, user_template: base.user_prompt_template }, { system: cand.system_prompt, user_template: cand.user_prompt_template }, {
+    gold_version: dataset ? goldVersion(dataset) : null,
+    ruleset_version: RULESET_VERSION,
+  });
 }
 
 /** 一次运行违反了哪些 P3 / P4 业务规则：用这次运行实际的构造输入对照它的输出 */

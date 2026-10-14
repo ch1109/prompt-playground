@@ -142,7 +142,12 @@ export function evaluateSample(s: SampleInput) {
 export type SampleEvaluation = ReturnType<typeof evaluateSample>;
 
 /** 汇总：只有目标样本全部修好、没有任何退化、样本都可比且完成时，才是「可供人审」 */
-export function summarize(samples: SampleEvaluation[], base: { system: string; user_template: string }, cand: { system: string; user_template: string }) {
+export function summarize(
+  samples: SampleEvaluation[],
+  base: { system: string; user_template: string },
+  cand: { system: string; user_template: string },
+  basis: { gold_version: string | null; ruleset_version: string | null } = { gold_version: null, ruleset_version: null },
+) {
   const reasons: string[] = [];
   const targets = samples.filter((s) => s.role === "TARGET");
   const regressionSet = samples.filter((s) => s.role === "REGRESSION");
@@ -163,12 +168,17 @@ export function summarize(samples: SampleEvaluation[], base: { system: string; u
   return {
     conclusion,
     reasons,
+    /** 评判依据：标准答案版本（数据集@版本；null = 用样本上当前的人工标注，没有版本）与规则集版本 */
+    gold_version: basis.gold_version,
+    ruleset_version: basis.ruleset_version,
     counts: { fixed: samples.filter((s) => s.verdict === "FIXED").length, regressed: samples.filter((s) => s.verdict === "REGRESSED").length, no_change: samples.filter((s) => s.verdict === "NO_CHANGE").length, undetermined: samples.filter((s) => s.verdict === "UNDETERMINED").length, incomplete: samples.filter((s) => s.verdict === "INCOMPLETE").length },
     unjudged_diff_count: unjudged,
     tokens: { baseline: sumTokens("baseline"), candidate: sumTokens("candidate") },
     prompt_diff: { system: textHunks(base.system, cand.system), user_template: textHunks(base.user_template, cand.user_template) },
     limitations: [
-      "没有 Gold：只依据结构检查和人工标注判定，其余差异记为「未判定」，不代表准确率",
+      basis.gold_version
+        ? `标准答案是数据集 ${basis.gold_version} 冻结的人工标注，只覆盖标过的字段；其余差异记为「未判定」，不代表准确率`
+        : "没有版本化的标准答案：只依据结构检查和样本上当前的人工标注判定，其余差异记为「未判定」，不代表准确率",
       "每个样本只跑了一次：模型有随机性，单次结果可能有波动",
       "标注按同一 JSON 位置对齐；行顺序变化时可能对错位置",
       ...(unjudged ? [`另有 ${unjudged} 处输出差异未判定，需要人工查看`] : []),

@@ -1,7 +1,7 @@
 "use client";
 import { useMemo } from "react";
 import type { RunDetail } from "@/lib/client/types";
-import { businessViolations, rulesFor, type RuleViolation } from "@/lib/experiments/business-rules";
+import { businessViolations, RULESET_VERSION, rulesFor, type RuleViolation } from "@/lib/experiments/business-rules";
 import { isWithin } from "@/lib/pipeline/json-pointer";
 import { useStudio } from "@/lib/state/studio-store";
 
@@ -33,13 +33,15 @@ export function RuleCheck({ detail }: { detail: RunDetail }) {
 
   if (!violations.length)
     return (
-      <p className="px-1 text-[12px] text-verify" data-testid="rule-check" data-state="pass" title={rules.join("\n")}>
+      <p className="px-1 text-[12px] text-verify" data-testid="rule-check" data-state="pass" title={`${rules.join("\n")}\n规则集版本：${RULESET_VERSION}`}>
         ✓ 已对照 {rules.length} 条九立硬规则（{rules.slice(0, 2).join("、")}等），都没有违反
       </p>
     );
   return (
     <div className="rounded-lg border border-stamp/30 bg-stamp/[0.05] p-2.5 text-[12px]" data-testid="rule-check" data-state="fail">
-      <div className="font-semibold text-stamp">有 {violations.length} 处违反九立硬规则</div>
+      <div className="font-semibold text-stamp" title={`规则集版本：${RULESET_VERSION}`}>
+        有 {violations.length} 处违反九立硬规则
+      </div>
       <p className="mt-0.5 text-ink-400">这些规则写在九立提示词里，由系统拿这次的输入和输出直接对照得出，不是推测。点一条可定位到对应的格子。</p>
       <ul className="mt-1.5 space-y-1">
         {violations.map((v, i) => (
