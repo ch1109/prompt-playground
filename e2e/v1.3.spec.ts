@@ -402,3 +402,30 @@ test("示例可以用当前提示词重新运行：卡片上的按钮发起真�
   await expect(drawer).toContainText("只能看录下的结果");
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
+
+test("提示词可切到「阅读」按 Markdown 显示（章节标题、编号列表），目录可跳转；可一键复制全文", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/projects/jiuli/playground");
+  await page.click('[data-prompt="jiuli-p1"]');
+  await page.getByTestId("work-modes").getByRole("tab", { name: "提示词调试" }).click();
+  await page.getByRole("button", { name: /^提示词/ }).click();
+  await expect(page.getByLabel("System 提示词")).not.toHaveValue("");
+  const system = await page.getByLabel("System 提示词").inputValue();
+  await page.getByTestId("btn-prompt-read").click();
+  const read = page.getByTestId("prompt-read");
+  // 「一、任务」这类章节显示为标题，「1. …」显示为编号列表；阅读时不能编辑
+  await expect(read.locator("h2").first()).toContainText("一、");
+  await expect(read.locator("ol li").first()).toBeVisible();
+  await expect(page.getByLabel("System 提示词")).toHaveCount(0);
+  const last = page.getByRole("navigation", { name: "规则目录" }).locator("button").last();
+  const title = (await last.textContent())!;
+  await last.click();
+  await expect(read.locator("h2, h3", { hasText: title }).first()).toBeInViewport();
+  // 复制全文：剪贴板里是提示词原文（不是渲染后的文字）
+  await page.getByTestId("btn-copy-prompt").click();
+  await expect(page.getByTestId("btn-copy-prompt")).toHaveText("已复制");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(system);
+  // 切回编辑，原文不变
+  await page.getByTestId("btn-prompt-edit").click();
+  await expect(page.getByLabel("System 提示词")).toHaveValue(system);
+});

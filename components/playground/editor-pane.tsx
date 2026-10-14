@@ -108,6 +108,7 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
             if (v) patch({ versionId: v.version_id, versionHash: v.content_hash, system: v.system_prompt, userTemplate: v.user_prompt_template });
           }}
           aria-label="Prompt 版本"
+          title="带【正式】的是正式版本：只有在「修改建议」里人工采纳才会改变，保存新版本不会改变它"
           className="flex-1 rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-[12px]"
         >
           {versions.map((v) => (
@@ -118,11 +119,6 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
           ))}
         </select>
         {isDraft ? <Badge tone="warn">未保存草稿</Badge> : <Badge tone="ok">与版本一致</Badge>}
-        {current?.is_stable && (
-          <span title="正式版本只有在「候选与实验」里人工采纳候选时才会改变；保存新版本不会改变它" data-testid="stable-badge">
-            <Badge tone="ok">正式版本</Badge>
-          </span>
-        )}
       </div>
       {current && (
         <p className="text-[11px] text-ink-400" data-testid="version-meta">
@@ -157,24 +153,27 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
           )}
         </div>
       )}
-      <label className="block text-[11px] text-ink-400">System（提示词正文）</label>
       <PromptEditor system={ws.system} userTemplate={ws.userTemplate} onSystem={(v) => patch({ system: v })} />
-      <label className="block text-[11px] text-ink-400">
-        User 模板（<code className="text-info">{"{{input_json}}"}</code> 会被替换成输入内容的 JSON）
-      </label>
-      <textarea
-        value={ws.userTemplate}
-        onChange={(e) => patch({ userTemplate: e.target.value })}
-        aria-label="User 模板"
-        spellCheck={false}
-        className="h-24 w-full resize-y rounded-lg border border-ink-700 bg-ink-900 p-2 font-mono text-[12px] outline-none focus:border-ink-400"
-      />
+      {/* User 模板通常只有 {{input_json}}，默认收起；改过的才默认展开 */}
+      <details open={ws.userTemplate.trim() !== "{{input_json}}"} className="text-[11.5px]" data-testid="user-template">
+        <summary className="cursor-pointer text-ink-400">
+          User 模板（一般不用改；<code className="text-info">{"{{input_json}}"}</code> 会被替换成输入内容的 JSON）
+        </summary>
+        <textarea
+          value={ws.userTemplate}
+          onChange={(e) => patch({ userTemplate: e.target.value })}
+          aria-label="User 模板"
+          spellCheck={false}
+          className="mt-1 h-24 w-full resize-y rounded-lg border border-ink-700 bg-ink-900 p-2 font-mono text-[12px] outline-none focus:border-ink-400"
+        />
+      </details>
       <div className="flex items-center gap-2">
         <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="新版本名称" aria-label="新版本名称" className="w-40 rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-[12px]" />
         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="变更说明：改了哪条规则、影响哪些字段" aria-label="变更说明" className="flex-1 rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-[12px]" />
         <Btn
           tone="outline"
           disabled={!isDraft}
+          title="版本只新增不覆盖；没保存也能运行，运行记录会注明用的是未保存的草稿"
           onClick={async () => {
             // 保存失败时保留名称，错误显示在顶栏
             if (await onSave(label || `版本 ${new Date().toLocaleString("zh-CN")}`, note)) {
@@ -186,7 +185,6 @@ function PromptTab({ versions, isDraft, onSave }: { versions: PromptVersionDTO[]
           保存为新版本
         </Btn>
       </div>
-      <p className="text-[11px] text-ink-400">版本只新增不覆盖；没保存也能运行，运行记录会注明用的是未保存的草稿。</p>
     </div>
   );
 }
