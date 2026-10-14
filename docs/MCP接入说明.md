@@ -6,7 +6,8 @@ Prompt Studio 提供一个**只读**的 MCP 服务。MCP（Model Context Protoco
 
 ## 1. 前提
 
-- Prompt Studio 正在运行：在项目目录执行 `pnpm dev`，浏览器能打开 http://localhost:3000 。MCP 服务地址是 `http://localhost:3000/api/mcp`，**只接受本机访问**。
+- Prompt Studio 正在运行：在项目目录执行 `pnpm dev`，浏览器能打开 http://127.0.0.1:3000 。MCP 服务地址是 `http://127.0.0.1:3000/api/mcp`，**只接受本机访问**。
+- 服务只监听本机地址 127.0.0.1，同一网络里的其他电脑打不开；所有地址都写 `127.0.0.1`，不要写 `localhost`（有的程序会先试 IPv6 地址而连不上）。
 - 已安装 Claude Code 或 Codex（任选其一或都装）。
 
 ## 2. 发一个访问令牌
@@ -37,7 +38,7 @@ pnpm mcp:grant audit 30           # 看最近 30 次调用记录（谁、何时�
 把上一步的令牌填进下面命令（替换 `psk_…`），在终端执行一次：
 
 ```bash
-claude mcp add --transport http prompt-studio http://localhost:3000/api/mcp --header "Authorization: Bearer psk_…"
+claude mcp add --transport http prompt-studio http://127.0.0.1:3000/api/mcp --header "Authorization: Bearer psk_…"
 ```
 
 令牌会保存在 Claude Code 的本机配置里。之后在 Claude Code 里输入 `/mcp` 能看到 `prompt-studio` 已连接。不再使用时：`claude mcp remove prompt-studio`，并用 `pnpm mcp:grant revoke` 撤销令牌。
@@ -58,7 +59,7 @@ claude mcp add --transport http prompt-studio http://localhost:3000/api/mcp --he
    bearer_token_env_var = "PROMPT_STUDIO_MCP_TOKEN"
    ```
 
-   Codex 这里要写 `127.0.0.1`，不要写 `localhost`。本机实测（Codex 0.162.1）写 `localhost` 时连不上，报 `error sending request`，原因还没查清。
+   Codex 这里要写 `127.0.0.1`，不要写 `localhost`。本机实测（Codex 0.162.1）写 `localhost` 时连不上，报 `error sending request`。
 
 Codex 发请求时会自动带上 `Authorization: Bearer <令牌>`，配置文件里不出现令牌本身。
 
@@ -129,7 +130,7 @@ pnpm mcp:grant create --principal claude-code --days 1 \
 
 ## 8. 常见问题
 
-- **Agent 报连接失败**：先确认 `pnpm dev` 在运行、http://localhost:3000 能打开；Codex 的地址要用 `127.0.0.1`。
+- **Agent 报连接失败**：先确认 `pnpm dev` 在运行、http://127.0.0.1:3000 能打开；地址要用 `127.0.0.1`。
 - **返回 401**：令牌填错、已过期或已撤销。用 `pnpm mcp:grant list` 查看状态，必要时重新发一个。
 - **返回 FORBIDDEN**：令牌没有这个项目或客户的授权，或缺少对应权限范围。
 - **改了服务端代码后表不存在**：重启一次 `pnpm dev`（开发服务会缓存数据库连接）。
