@@ -2,6 +2,7 @@ import type { Run } from "@/lib/contracts/run";
 import { getByPointer } from "@/lib/pipeline/json-pointer";
 import type { Annotation } from "@/lib/repositories/runs";
 import { diffSummary, textHunks } from "@/lib/runs/compare";
+import type { RuleViolation } from "./business-rules";
 import type { SourceCheck } from "./source-check";
 
 // 实验评判（v1.3 §10.3–10.5）：没有 Gold，只用两类依据——
@@ -60,6 +61,8 @@ export interface SampleInput {
   annotations: Annotation[];
   /** 来源坐标检查（打开原件核对）；没做为 undefined */
   sources?: { baseline: SourceCheck | null; candidate: SourceCheck | null };
+  /** P3 / P4 业务硬规则的违反情况（null = 该阶段没有规则或没有输出） */
+  rules?: { baseline: RuleViolation[] | null; candidate: RuleViolation[] | null };
 }
 
 export function evaluateSample(s: SampleInput) {
@@ -93,6 +96,19 @@ export function evaluateSample(s: SampleInput) {
   const judged = new Set(fields.map((f) => f.json_pointer));
   const unjudged = diff ? diff.rows.filter((r) => !judged.has(r.pointer)) : [];
 
+  // P3 / P4 业务硬规则：某条规则在修改后违反得比原来多 → 硬闸门
+  const rb = s.rules?.baseline;
+  const rc = s.rules?.candidate;
+  if (rb && rc)
+    for (const rule of new Set(rc.map((x) => x.rule))) {
+      const before = rb.filter((x) => x.rule === rule);
+      const after = rc.filter((x) => x.rule === rule);
+      if (after.length > before.length) {
+        const fresh = after.filter((x) => !before.some((y) => y.message === x.message));
+        hardGates.push(`${after[0].label}：比原来多 ${after.length - before.length} 处（例：${(fresh[0] ?? after[0]).message}）`);
+      }
+    }
+
   // 来源指错的地方比基线多 → 退化（引用的原文不在它说的位置）
   const sb = s.sources?.baseline;
   const sc = s.sources?.candidate;
@@ -115,6 +131,7 @@ export function evaluateSample(s: SampleInput) {
     rows,
     hard_gates: hardGates,
     annotated_fields: fields,
+    business_rules: rb && rc ? { baseline: rb.length, candidate: rc.length, candidate_violations: rc.slice(0, 10) } : null,
     source_check: sb || sc ? { baseline: sb ? { checked: sb.checked, wrong: sb.wrong, unchecked: sb.unchecked } : null, candidate: sc ? { checked: sc.checked, wrong: sc.wrong, unchecked: sc.unchecked } : null, worse: sourcesWorse, candidate_problems: sc?.problems.slice(0, 5) ?? [] } : null,
     unjudged_diffs: { count: unjudged.length, examples: unjudged.slice(0, 10) },
     usage: { baseline: b?.token_usage ?? null, candidate: c?.token_usage ?? null, latency_ms: [b?.latency_ms ?? null, c?.latency_ms ?? null] },
@@ -155,7 +172,7 @@ export function summarize(samples: SampleEvaluation[], base: { system: string; u
       "每个样本只跑了一次：模型有随机性，单次结果可能有波动",
       "标注按同一 JSON 位置对齐；行顺序变化时可能对错位置",
       ...(unjudged ? [`另有 ${unjudged} 处输出差异未判定，需要人工查看`] : []),
-      "P3 跨客户、P4 错误覆盖等业务硬闸门尚未实现，只检查了 P1 / P2 漏行",
+      "业务硬规则只覆盖 P1 / P2 漏行与 P3 / P4 提示词里能用输入输出直接核对的约束；更细的业务判断（如字段值本身对不对）仍需人工标注",
       ...(samples.some((s) => s.source_check?.candidate && !s.source_check.candidate.checked && s.source_check.candidate.unchecked)
         ? ["有样本的来源没法对照原件检查（原件缺失、是图片，或只给了整行位置）"]
         : []),

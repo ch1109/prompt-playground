@@ -296,3 +296,80 @@ describe("来源坐标检查（打开原件核对）", () => {
     expect(exp.report!.conclusion).toBe("NOT_RECOMMENDED");
   });
 });
+
+describe("P3 / P4 业务硬规则", () => {
+  const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
+  const load = (id: string) => {
+    const f = getFixture(id)!;
+    return { request: clone(f.request) as any, out: JSON.parse(f.raw) as any };
+  };
+  const rules = (vs: { rule: string }[]) => vs.map((x) => x.rule);
+
+  it("真实录制的 P3 / P4 输出没有违反；逐条改坏后各自被抓到", async () => {
+    const { p3Violations, p4Violations } = await import("@/lib/experiments/business-rules");
+    const p3 = load("v3/SC-08/P3");
+    expect(p3Violations(p3.request, p3.out)).toEqual([]);
+    const raw0 = p3.out.output.row_relations[0].selected_raw_row_ids[0];
+    // 跨客户
+    const cross = clone(p3);
+    cross.request.input.inspection_candidates.find((c: any) => c.raw_row_id === raw0).customer_id = "C-other";
+    expect(rules(p3Violations(cross.request, cross.out))).toContain("P3_CROSS_CUSTOMER");
+    // 已被别的委托行占用
+    const occ = clone(p3);
+    occ.request.input.inspection_candidates.find((c: any) => c.raw_row_id === raw0).occupied_by_order_row_id = "D-someone-else";
+    expect(rules(p3Violations(occ.request, occ.out))).toContain("P3_OCCUPIED_REUSED");
+    // 同一查货行分给两个委托行
+    const twice = clone(p3);
+    twice.out.output.row_relations[1].match_status = "MATCHED";
+    twice.out.output.row_relations[1].selected_raw_row_ids = [raw0];
+    expect(rules(p3Violations(twice.request, twice.out))).toContain("P3_RAW_ROW_REUSED");
+    // 没有身份证据（只剩数量 / 范围）
+    const qty = clone(p3);
+    qty.out.output.row_relations[0].evidence_keys = qty.out.output.row_relations[0].evidence_keys.filter((k: string) => !/MODEL|MARKER/.test(k));
+    expect(rules(p3Violations(qty.request, qty.out))).toContain("P3_NO_IDENTITY_EVIDENCE");
+
+    const p4 = load("v3/SC-08/P4");
+    expect(p4Violations(p4.request, p4.out)).toEqual([]);
+    const fields = p4.request.input.target_rows[0].fields;
+    const decision = (o: any, f: string) => o.out.output.row_patches[0].field_decisions.find((d: any) => d.field === f);
+    // 锁定字段被改
+    const locked = clone(p4);
+    locked.request.input.target_rows[0].fields.brand.write_policy = "LOCKED";
+    Object.assign(decision(locked, "brand"), { decision: "UPDATE", result_value: "SKH" });
+    expect(rules(p4Violations(locked.request, locked.out))).toEqual(expect.arrayContaining(["P4_LOCKED_CHANGED", "P4_UPDATE_NOT_ALLOWED"]));
+    // 交易字段被改
+    const qtyChanged = clone(p4);
+    Object.assign(decision(qtyChanged, "quantity"), { decision: "UPDATE", result_value: "999" });
+    expect(rules(p4Violations(qtyChanged.request, qtyChanged.out))).toContain("P4_TRANSACTION_CHANGED");
+    // 依据的范围不完整却写值
+    const partial = clone(p4);
+    partial.request.input.target_rows[0].fields.origin.evidence[0].scope.coverage = "PARTIAL";
+    Object.assign(decision(partial, "origin"), { decision: "UPDATE", result_value: "中国", evidence_keys: [fields.origin.evidence[0].evidence_key] });
+    expect(rules(p4Violations(partial.request, partial.out))).toContain("P4_INCOMPLETE_SCOPE_WRITE");
+  });
+
+  it("试运行：P4 修改后把数量这个交易字段改了 → 判为变差，结论建议拒绝", async () => {
+    const f = getFixture("v3/SC-08/P4")!;
+    const out = JSON.parse(f.raw);
+    Object.assign(out.output.row_patches[0].field_decisions.find((d: any) => d.field === "quantity"), { decision: "UPDATE", result_value: "999" });
+    const candRaw = JSON.stringify(out);
+    setProviderForTests(
+      new OpenAICompatibleProvider(
+        { baseUrl: "https://model.invalid/v1", model: "fake-model", apiKey: "sk-test-m3", timeoutMs: 2000 },
+        (async (_u: string, init?: RequestInit) => {
+          const system = (JSON.parse(String(init?.body)).messages as { content: string }[])[0].content;
+          return Response.json({ id: "x", model: "fake-model", choices: [{ message: { content: system.includes(FIX_LINE) ? candRaw : f.raw }, finish_reason: "stop" }], usage: { total_tokens: 3 } });
+        }) as unknown as typeof fetch,
+      ),
+    );
+    const base = listVersions("jiuli-p4")[0];
+    const c = createCandidate({ promptId: "jiuli-p4", baseVersionId: base.version_id, system: base.system_prompt + FIX_LINE, userTemplate: base.user_prompt_template, reason: "r", createdBy: "t" }).candidate;
+    const exp = await startExperiment({ candidateId: c.candidate_id, samples: [{ sample_id: "v3/SC-08/P4", role: "TARGET" }, { sample_id: "v3/SC-08-audit/P4", role: "REGRESSION" }], maxModelRuns: 4, createdBy: "t" }).done;
+    const s0 = exp.report!.samples[0];
+    // 一次改动同时违反三条：交易字段不能改、数量不允许 UPDATE、写值却没引用任何输入证据
+    expect(s0.business_rules).toMatchObject({ baseline: 0, candidate: 3 });
+    expect(s0.hard_gates).toEqual(expect.arrayContaining([expect.stringMatching(/交易字段.*quantity/), expect.stringMatching(/UPDATE/), expect.stringMatching(/没有引用任何输入证据/)]));
+    expect(s0.verdict).toBe("REGRESSED");
+    expect(exp.report!.conclusion).toBe("NOT_RECOMMENDED");
+  });
+});

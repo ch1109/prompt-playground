@@ -23,8 +23,10 @@ import { contentHash, createVersion, getPrompt, getVersion, setStableVersion, st
 import { getRun } from "@/lib/repositories/runs";
 import { getSnapshot } from "@/lib/repositories/snapshots";
 import { textHunks } from "@/lib/runs/compare";
+import { loadRunContext } from "@/lib/runs/debug-bundle";
 import { modelRun, RunServiceError } from "@/lib/runs/service";
 import { evaluateSample, summarize } from "./evaluate";
+import { businessViolations } from "./business-rules";
 import { checkRunSources } from "./source-check";
 
 // 候选与实验（v1.3 §10）：候选是基础版本的隔离副本；实验在固定样本上跑候选（缺基线时也跑基线），
@@ -231,9 +233,16 @@ async function buildReport(exp: Experiment) {
           baseline: s.baseline_run_id ? await checkRunSources(s.baseline_run_id) : null,
           candidate: s.candidate_run_id ? await checkRunSources(s.candidate_run_id) : null,
         },
+        rules: { baseline: rulesOf(s.baseline_run_id), candidate: rulesOf(s.candidate_run_id) },
       }),
     );
   return summarize(samples, { system: base.system_prompt, user_template: base.user_prompt_template }, { system: cand.system_prompt, user_template: cand.user_prompt_template });
+}
+
+/** 一次运行违反了哪些 P3 / P4 业务规则：用这次运行实际的构造输入对照它的输出 */
+function rulesOf(runId: string | null) {
+  const c = runId ? loadRunContext(runId) : undefined;
+  return c ? businessViolations(c.run.prompt_kind, c.request, c.run.parsed_json) : null;
 }
 
 /** 重新评判（标注可能在实验后新增）；只读，不调用模型 */
