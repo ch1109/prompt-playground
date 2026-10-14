@@ -63,12 +63,12 @@ test("商品表：不再有密集的来源绿点；行可展开看全部 25 字�
   await expect(fields.locator("button")).toHaveCount(26);
   await fields.locator('[data-field="origin"]').click();
   await expect(page.getByTestId("evidence-drawer")).toBeVisible();
-  await expect(page.getByTestId("selection-pointer")).toHaveText("/output/rows/0/values/origin");
+  await expect(page.getByTestId("selection-pointer")).toHaveAttribute("title", "/output/rows/0/values/origin");
   // 有冲突的字段排在展开区最前
   await expect(fields.locator("button").first()).toContainText("冲突");
 });
 
-test("检查动作：选中字段可一键标「这个值对」，模型原始输出不变；可只看有问题的行", async ({ page }) => {
+test("检查动作：选中字段可一键标「对」，模型原始输出不变；可只看有问题的行", async ({ page }) => {
   await pickInDrawer(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
   const currentRun = () => page.evaluate(() => JSON.parse(localStorage.getItem("prompt-studio:workspace") ?? "{}").state?.workspaces?.["jiuli-p1"]?.runId ?? null);
   await expect.poll(currentRun).not.toBeNull();
@@ -78,14 +78,14 @@ test("检查动作：选中字段可一键标「这个值对」，模型原始�
   await table.locator("tbody tr").first().locator('[data-field="model"]').click();
   const verdict = page.getByTestId("field-verdict");
   await expect(verdict).toContainText("型号");
-  await verdict.getByTestId("btn-mark-correct").click();
-  await expect(verdict.getByTestId("btn-mark-correct")).toHaveText("✓ 已标为正确");
+  await page.getByTestId("btn-mark-correct").click();
+  await expect(page.getByTestId("btn-mark-correct")).toHaveText("✓ 已标为正确");
   await expect(page.getByTestId("evidence-drawer")).toContainText("标注正确");
   const after = await page.request.get(`/api/runs/${runId}`).then((r) => r.json());
   expect(after.data.run.raw_response_hash).toBe(before.data.run.raw_response_hash);
   expect(after.data.annotations.some((a: { assessment: string }) => a.assessment === "CORRECT")).toBe(true);
-  // 「这个值错」跳到完整标注表单（必须选错误归因）
-  await verdict.getByTestId("btn-mark-wrong").click();
+  // 「错」在原地展开，光标直接到「错在哪」（必选）
+  await page.getByTestId("btn-mark-wrong").click();
   await expect(page.getByLabel("错误归因")).toBeFocused();
   // 精简状态里的「只看有问题的行」
   const rows = await table.locator("tbody tr").count();
@@ -162,7 +162,7 @@ test("M1 验收：P1~P4 各选一个字段，不离开结果页即可看字段�
     // 仅渲染没有模型输入记录：如实说明，不假装已发送
     await expect(verdict.getByTestId("field-input-coverage")).toContainText(/没有调用模型|不可追溯|请求数据/);
     await expect(page.getByTestId("result-pane").getByRole("tab", { name: "结果" })).toHaveAttribute("aria-selected", "true");
-    await verdict.getByTestId("btn-mark-wrong").click();
+    await page.getByTestId("btn-mark-wrong").click();
     await page.getByLabel("错误归因").selectOption("UNKNOWN");
     await page.getByLabel("正确值").fill(`期望-${c.prompt}`);
     await page.getByRole("button", { name: "保存标注" }).click();
@@ -269,7 +269,7 @@ test("M2 字段抽屉：复制 Agent 诊断指令，内容带 Run ID、字段定
   await pickInDrawer(page, "jiuli-p1", "v3/SC-08/P1");
   await page.locator('[data-table-id="orderRows"] [data-row-id="row-2"] [data-field="origin"]').first().click();
   const verdict = page.getByTestId("field-verdict");
-  await verdict.getByTestId("btn-mark-wrong").click();
+  await page.getByTestId("btn-mark-wrong").click();
   await page.getByLabel("错误归因").selectOption("UNKNOWN");
   await page.getByLabel("正确值").fill("美国-诊断");
   await page.getByRole("button", { name: "保存标注" }).click();

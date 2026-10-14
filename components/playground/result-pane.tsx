@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/client/api";
 import type { AnnotationDTO, FixtureSummary, RunDetail, RunListItem } from "@/lib/client/types";
 import type { CellState, ViewModel } from "@/lib/contracts/view-model";
@@ -227,8 +227,9 @@ export function ResultPane({
           <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
             <SelectionInfo />
             <FieldVerdict detail={detail!} />
-            {vm ? <EvidenceViewer vm={vm} canPreview={canPreview} snapshotSource={detail?.snapshot?.source_type} request={detail?.request} /> : <p className="text-[12px] text-ink-400">无业务视图，无法定位来源。</p>}
-            <AnnotationForm detail={detail!} />
+            <AnnotationForm detail={detail!}>
+              {vm ? <EvidenceViewer vm={vm} canPreview={canPreview} snapshotSource={detail?.snapshot?.source_type} request={detail?.request} /> : <p className="text-[12px] text-ink-400">无业务视图，无法定位来源。</p>}
+            </AnnotationForm>
           </div>
         </aside>
       )}
@@ -262,19 +263,14 @@ function SelectionInfo() {
   const setStore = useStudio((s) => s.set);
   if (!sel.jsonPointer && !sel.rowId) return null;
   return (
-    <div className="rounded-lg border border-ink-700 p-2 text-[11px] text-ink-300">
-      <div>
-        选中：<span className="font-mono">{[sel.tableId, sel.rowId, sel.fieldKey].filter(Boolean).join(" / ") || "—"}</span>
-      </div>
+    <div className="flex flex-wrap items-center gap-2 text-[11px] text-ink-400">
+      <span>
+        选中：<span className="text-ink-100">{sel.rowId || sel.relationId || "—"}</span>
+      </span>
       {sel.jsonPointer !== undefined && (
-        <div className="mt-0.5 flex flex-wrap items-center gap-2">
-          <button onClick={() => setStore("resultTab", "json")} className="font-mono break-all text-info hover:underline" data-testid="selection-pointer">
-            {sel.jsonPointer || "(根)"}
-          </button>
-          <Btn onClick={() => setStore("resultTab", "json")} data-testid="btn-view-json">
-            查看 JSON 位置
-          </Btn>
-        </div>
+        <button onClick={() => setStore("resultTab", "json")} title={sel.jsonPointer || "(根)"} className="ml-auto text-info hover:underline" data-testid="selection-pointer">
+          查看 JSON 位置
+        </button>
       )}
     </div>
   );
@@ -478,15 +474,9 @@ function MetaTab({ detail }: { detail: RunDetail }) {
   );
 }
 
-/**
- * 选中字段后的快速评判：「✓ 这个值对」直接保存一条「标注正确」；
- * 「✗ 这个值错」跳到下方完整标注表单（默认就是「标注错误」，必须选错误归因）。只写标注，不改模型输出。
- */
+/** 选中字段的值、状态、实际输入；对 / 错的标注在下方 AnnotationForm */
 function FieldVerdict({ detail }: { detail: RunDetail }) {
   const sel = useStudio((s) => s.selection);
-  const putRun = useStudio((s) => s.putRun);
-  const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const p = sel.jsonPointer;
   if (!p || p.startsWith("req:") || !sel.fieldKey || detail.run.parsed_json === undefined) return null;
@@ -495,14 +485,12 @@ function FieldVerdict({ detail }: { detail: RunDetail }) {
   const col = table?.columns.find((c) => c.key === sel.fieldKey);
   const cell = table?.rows.find((r) => r.id === sel.rowId)?.cells[sel.fieldKey];
   const hit = getByPointer(detail.run.parsed_json, p);
-  // 业务表显示的值与模型原始输出不同 → 是 Adapter 整理时转换的
-  const converted = cell && hit.found && JSON.stringify(cell.value) !== JSON.stringify(hit.value);
+  // 业务表显示的值与模型原始输出不同 → 是 Adapter 整理时转换的（只是补了中文说明的不算，例如「FILL（补空）」）
+  const converted = cell && hit.found && JSON.stringify(cell.value) !== JSON.stringify(hit.value) && !(typeof cell.value === "string" && typeof hit.value === "string" && cell.value.startsWith(`${hit.value}（`));
   const parentPointer = p.slice(0, p.lastIndexOf("/"));
   const parent = parentPointer ? getByPointer(detail.run.parsed_json, parentPointer) : undefined;
   const refs = vm ? (selectedRefIds(vm, sel) ?? []) : [];
   const coverage = vm ? fieldInputCoverage(refs.map((id) => vm.evidence.find((e) => e.id === id)).filter((e) => !!e), detail.run.input_manifest, detail.run.mode) : [];
-  const target = [sel.tableId, sel.rowId, sel.fieldKey].filter(Boolean).join(" / ");
-  const done = detail.annotations.find((a) => a.target_json_pointer === p && a.assessment === "CORRECT");
   const wrong = detail.annotations.find((a) => a.target_json_pointer === p && a.assessment === "WRONG");
   function copyDiagnosis() {
     const text = diagnosisPrompt({
@@ -515,20 +503,6 @@ function FieldVerdict({ detail }: { detail: RunDetail }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });
-  }
-  async function markCorrect() {
-    setErr(null);
-    setBusy(true);
-    try {
-      const a = await api<AnnotationDTO>(`/api/runs/${detail.run.run_id}/annotations`, {
-        json: { issue_type: "ASSESSMENT", assessment: "CORRECT", error_category: null, category_confirmed: null, target_json_pointer: p, target, source_ref_ids: sel.sourceRefId ? [sel.sourceRefId] : [] },
-      });
-      putRun({ ...detail, annotations: [...detail.annotations, a] });
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
   }
   return (
     <div className="rounded-lg border border-ink-700 bg-ink-900 p-2.5 text-[12px]" data-testid="field-verdict">
@@ -571,27 +545,14 @@ function FieldVerdict({ detail }: { detail: RunDetail }) {
           </pre>
         </details>
       )}
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        <Btn tone="outline" onClick={markCorrect} disabled={busy || !!done} data-testid="btn-mark-correct">
-          {done ? "✓ 已标为正确" : "✓ 这个值对"}
-        </Btn>
-        <Btn
-          onClick={() => {
-            const form = document.querySelector<HTMLElement>('[data-testid="annotation-form"]');
-            form?.scrollIntoView({ block: "start", behavior: "smooth" });
-            form?.querySelector<HTMLElement>('[aria-label="错误归因"]')?.focus();
-          }}
-          data-testid="btn-mark-wrong"
-        >
-          ✗ 这个值错
-        </Btn>
-        <Btn onClick={copyDiagnosis} data-testid="btn-copy-diagnosis" title="在已接入 Prompt Studio MCP 的 Codex / Claude Code 里粘贴，Agent 会按 Run 读取证据并给出带引用的诊断">
-          {copied ? "已复制" : "复制 Agent 诊断指令"}
-        </Btn>
-      </div>
-      <p className="mt-1.5 text-[11px] text-ink-400">「这个值错」要在下方选错误原因、可填正确值。标注单独保存，不改模型原始输出。</p>
-      <p className="mt-0.5 text-[11px] text-ink-400">网页内还不能直接启动 Agent：复制指令后粘贴到已接入 MCP 的 Codex / Claude Code（见 docs/MCP接入说明.md）。</p>
-      {err && <p className="mt-1 text-stamp">{err}</p>}
+      <button
+        onClick={copyDiagnosis}
+        className="mt-1 text-[11px] text-ink-400 hover:text-info hover:underline"
+        data-testid="btn-copy-diagnosis"
+        title="复制后粘贴到已接入 MCP 的 Codex / Claude Code（见 docs/MCP接入说明.md），Agent 会按 Run 读取证据并给出带引用的诊断"
+      >
+        {copied ? "已复制" : "复制 Agent 诊断指令"}
+      </button>
     </div>
   );
 }
@@ -646,8 +607,8 @@ const LEGACY_CATEGORY_LABEL: Record<string, string> = {
 };
 const categoryText = (c: string) => CATEGORY_LABEL[c] ?? (LEGACY_CATEGORY_LABEL[c] ? `${LEGACY_CATEGORY_LABEL[c]}（旧分类）` : c);
 const REVISION_ACTION = { CREATE: "新增", UPDATE: "修改", DELETE: "删除" } as const;
-/** P3 才有候选 / 关系类型；其余只用「评判」与「备注」 */
-const annTypeChoices = (kind: string) => ["ASSESSMENT", ...(kind === "JIULI_P3" ? ["CORRECT_CANDIDATE", "WRONG_RELATION"] : []), "NOTE"];
+/** P3 才有候选 / 关系类型；其余只用「评判」（对 / 错 / 不确定） */
+const annTypeChoices = (kind: string) => ["ASSESSMENT", ...(kind === "JIULI_P3" ? ["CORRECT_CANDIDATE", "WRONG_RELATION"] : [])];
 
 /** 标注的修订历史：展开时才渲染旧版本内容，默认只显示修订次数 */
 function RevisionHistory({ a }: { a: AnnotationDTO }) {
@@ -673,48 +634,69 @@ function RevisionHistory({ a }: { a: AnnotationDTO }) {
   );
 }
 
-/** 纠错标注独立保存，不修改模型输出、九立池或原始附件 */
-function AnnotationForm({ detail }: { detail: RunDetail }) {
+/**
+ * 标注只有三个按钮：「✓ 对」直接保存；「✗ 错」「? 不确定」在原地展开正确值、错在哪、备注三个框。
+ * 标注独立保存，不修改模型输出、九立池或原始附件。children（来源证据）显示在按钮与已有标注之间。
+ */
+function AnnotationForm({ detail, children }: { detail: RunDetail; children?: React.ReactNode }) {
   const sel = useStudio((s) => s.selection);
   const putRun = useStudio((s) => s.putRun);
   const [type, setType] = useState("ASSESSMENT");
-  const [assess, setAssess] = useState<Assess>("WRONG");
+  /** 展开区对应的评判；null = 收起 */
+  const [assess, setAssess] = useState<Assess | null>(null);
   const [category, setCategory] = useState("");
-  const [confirmed, setConfirmed] = useState(false);
   const [expected, setExpected] = useState("");
   const [note, setNote] = useState("");
   const [err, setErr] = useState<string | null>(null);
-  /** 正在修改的标注；为空时表单用于新增 */
+  const [busy, setBusy] = useState(false);
+  /** 正在修改的标注；为空时用于新增 */
   const [editing, setEditing] = useState<AnnotationDTO | null>(null);
   const [saved, setSaved] = useState(false);
+  const categoryRef = useRef<HTMLSelectElement>(null);
   const choices = annTypeChoices(detail.run.prompt_kind);
   // 修改旧标注时保留它原来的类型
   if (editing && !choices.includes(editing.issue_type)) choices.push(editing.issue_type);
   const target = [sel.tableId, sel.rowId, sel.fieldKey].filter(Boolean).join(" / ") || sel.relationId || null;
-  const pointer = editing ? editing.target_json_pointer : sel.jsonPointer;
-  const modelValue = editing
-    ? editing.model_value != null
-      ? JSON.parse(editing.model_value)
-      : undefined
-    : pointer && !pointer.startsWith("req:") && detail.run.parsed_json !== undefined
-      ? getByPointer(detail.run.parsed_json, pointer)
-      : undefined;
-  const shownModelValue = editing ? modelValue : (modelValue as { found?: boolean; value?: unknown } | undefined)?.found ? (modelValue as { value: unknown }).value : undefined;
   const assessing = type === "ASSESSMENT";
+  const done = detail.annotations.find((a) => a.target_json_pointer === sel.jsonPointer && a.assessment === "CORRECT");
+  const needCategory = assessing && assess === "WRONG" && !category;
+
+  // 换了选中位置就收起新增表单（修改中的不动）
+  useEffect(() => {
+    if (!editing) setAssess(null);
+  }, [sel.jsonPointer]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 点「错」后直接把光标放到「错在哪」
+  useEffect(() => {
+    if (assess === "WRONG") categoryRef.current?.focus();
+  }, [assess]);
 
   function reset() {
     setEditing(null);
     setType("ASSESSMENT");
-    setAssess("WRONG");
+    setAssess(null);
     setCategory("");
-    setConfirmed(false);
     setExpected("");
     setNote("");
   }
 
+  async function markCorrect() {
+    setErr(null);
+    setBusy(true);
+    try {
+      const a = await api<AnnotationDTO>(`/api/runs/${detail.run.run_id}/annotations`, {
+        json: { issue_type: "ASSESSMENT", assessment: "CORRECT", error_category: null, category_confirmed: null, target_json_pointer: sel.jsonPointer, target, source_ref_ids: sel.sourceRefId ? [sel.sourceRefId] : [] },
+      });
+      putRun({ ...detail, annotations: [...detail.annotations, a] });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function save() {
     setErr(null);
-    const judgement = assessing ? { assessment: assess, error_category: assess === "CORRECT" ? null : category || null, category_confirmed: assess === "CORRECT" ? null : confirmed } : {};
+    const judgement = assessing ? { assessment: assess, error_category: assess === "CORRECT" ? null : category || null, category_confirmed: null } : {};
     try {
       if (editing) {
         const a = await api<AnnotationDTO>(`/api/annotations/${editing.annotation_id}`, { method: "PATCH", json: { issue_type: type, expected_value: expected, note, ...judgement } });
@@ -739,7 +721,6 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
     setType(a.issue_type);
     setAssess(a.assessment ?? "WRONG");
     setCategory(a.error_category ?? "");
-    setConfirmed(a.category_confirmed ?? false);
     setExpected(a.expected_value ?? "");
     setNote(a.note ?? "");
   }
@@ -756,68 +737,41 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
     }
   }
 
+  const open = assess !== null;
   return (
-    <div className="border-t border-ink-700 pt-2" data-testid="annotation-form">
-      <h4 className="mb-1 flex items-center gap-2 text-[11.5px] font-semibold text-ink-300">
-        人工纠错标注（独立保存，不改模型输出）
-        <span className="ml-auto font-normal">
-          导出全部：
-          <a href={`/api/annotations/export?project=${detail.run.project_id}&format=csv`} className="text-info hover:underline" data-testid="export-annotations-csv">
-            CSV
-          </a>
-          {" / "}
-          <a href={`/api/annotations/export?project=${detail.run.project_id}&format=json`} target="_blank" rel="noopener noreferrer" className="text-info hover:underline">
-            JSON
-          </a>
-        </span>
-      </h4>
-      <div className="space-y-1.5">
-        <div className="text-[11px] text-ink-400">{editing ? `正在修改：${editing.target ?? editing.target_json_pointer ?? "整个 Run"}` : `目标：${target ?? "（未选择，标注整个 Run）"}`}</div>
-        {pointer && (
-          <div className="text-[11px] text-ink-400" data-testid="annotation-model-value">
-            模型原值：
-            <span className="font-mono text-ink-100">{pointer.startsWith("req:") ? "（所选位置是请求输入，不是模型输出）" : shownModelValue === undefined ? "（该位置在模型输出中不存在）" : JSON.stringify(shownModelValue)}</span>
-          </div>
-        )}
-        {choices.length > 2 || editing ? (
-          <select value={type} onChange={(e) => setType(e.target.value)} aria-label="标注类型" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-1 py-0.5 text-[12px]">
-            {choices.map((v) => (
-              <option key={v} value={v}>
-                {ANN_LABEL[v] ?? v}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <div className="flex gap-0.5 rounded-lg bg-ink-800 p-0.5 text-[11.5px]">
-            {choices.map((v) => (
-              <button key={v} onClick={() => setType(v)} className={cx("flex-1 px-2 py-0.5", type === v ? "rounded-md bg-ink-900 text-ink-100 shadow-sm" : "text-ink-400")}>
-                {ANN_LABEL[v]}
-              </button>
-            ))}
-          </div>
-        )}
-        {assessing && (
-          <>
-            <div className="flex gap-1" role="radiogroup" aria-label="评判">
-              {(Object.keys(ASSESS_LABEL) as Assess[]).map((k) => (
-                <button
-                  key={k}
-                  role="radio"
-                  aria-checked={assess === k}
-                  onClick={() => setAssess(k)}
-                  className={cx(
-                    "flex-1 rounded-lg border px-1.5 py-1 text-[11.5px]",
-                    assess === k ? (k === "WRONG" ? "border-stamp bg-stamp/10 text-stamp" : k === "CORRECT" ? "border-verify bg-verify/10 text-verify" : "border-risk bg-risk/10 text-risk") : "border-ink-700 text-ink-400",
-                  )}
-                >
-                  {ASSESS_LABEL[k]}
-                </button>
-              ))}
+    <div className="space-y-3" data-testid="annotation-form">
+      {(sel.jsonPointer || editing) && (
+        <div className="space-y-1.5">
+          {editing && <div className="text-[11px] text-info">正在修改：{editing.target ?? editing.target_json_pointer ?? "整个 Run"}</div>}
+          {(!editing || assessing) && (
+            <div className="flex gap-1.5">
+              {/* 新增时「对」直接保存；修改时三个按钮用来改评判 */}
+              <Btn tone="outline" onClick={editing ? () => setAssess("CORRECT") : markCorrect} disabled={busy || (!editing && !!done)} aria-pressed={!!editing && assess === "CORRECT"} data-testid="btn-mark-correct" className={cx(editing && assess === "CORRECT" && "border-verify text-verify")}>
+                {!editing && done ? "✓ 已标为正确" : "✓ 对"}
+              </Btn>
+              <Btn tone="outline" onClick={() => setAssess("WRONG")} aria-pressed={assess === "WRONG"} data-testid="btn-mark-wrong" className={cx(assess === "WRONG" && "border-stamp text-stamp")}>
+                ✗ 错
+              </Btn>
+              <Btn tone="outline" onClick={() => setAssess("UNSURE")} aria-pressed={assess === "UNSURE"} data-testid="btn-mark-unsure" className={cx(assess === "UNSURE" && "border-risk text-risk")}>
+                ? 不确定
+              </Btn>
             </div>
-            {assess !== "CORRECT" && (
-              <>
-                <select value={category} onChange={(e) => setCategory(e.target.value)} aria-label="错误归因" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-1 py-0.5 text-[12px]">
-                  <option value="">{assess === "WRONG" ? "选择错误归因（必选）" : "错误归因（可选）"}</option>
+          )}
+          {(open || (editing && !assessing)) && (
+            <div className="space-y-1.5 rounded-lg border border-ink-700 bg-ink-900 p-2">
+              {choices.length > 1 && (
+                <select value={type} onChange={(e) => setType(e.target.value)} aria-label="标注类型" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-1 py-0.5 text-[12px]">
+                  {choices.map((v) => (
+                    <option key={v} value={v}>
+                      {ANN_LABEL[v] ?? v}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <input value={expected} onChange={(e) => setExpected(e.target.value)} placeholder="正确值（可选）" aria-label="正确值" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5 text-[12px]" />
+              {assessing && assess !== "CORRECT" && (
+                <select ref={categoryRef} value={category} onChange={(e) => setCategory(e.target.value)} aria-label="错误归因" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-1 py-0.5 text-[12px]">
+                  <option value="">{assess === "WRONG" ? "错在哪？（必选）" : "错在哪？（可选）"}</option>
                   {Object.entries(CATEGORY_LABEL).map(([k, v]) => (
                     <option key={k} value={k}>
                       {v}
@@ -825,58 +779,64 @@ function AnnotationForm({ detail }: { detail: RunDetail }) {
                   ))}
                   {category && !CATEGORY_LABEL[category] && <option value={category}>{categoryText(category)}</option>}
                 </select>
-                <label className="flex items-center gap-1 text-[11px] text-ink-300">
-                  <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} aria-label="归因已核实" />
-                  归因已核实（不勾选 = 疑似 / 待核实，证据不足时不要强行归为模型错误）
-                </label>
-              </>
-            )}
-          </>
-        )}
-        <input value={expected} onChange={(e) => setExpected(e.target.value)} placeholder="人工期望值（可选）" aria-label="正确值" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5 text-[12px]" />
-        <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="依据 / 备注（可选）" aria-label="标注备注" rows={2} className="w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5 text-[12px]" />
-        <div className="flex gap-1">
-          <Btn tone="outline" onClick={save} disabled={assessing && assess === "WRONG" && !category} title={assessing && assess === "WRONG" && !category ? "标注错误时请先选择错误归因" : undefined}>
-            {editing ? "保存修改" : "保存标注"}
-          </Btn>
-          {editing && <Btn onClick={reset}>取消修改</Btn>}
+              )}
+              <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="备注（可选）" aria-label="标注备注" rows={2} className="w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5 text-[12px]" />
+              <div className="flex gap-1">
+                <Btn tone="outline" onClick={save} disabled={needCategory} title={needCategory ? "请先选「错在哪」" : undefined}>
+                  {editing ? "保存修改" : "保存标注"}
+                </Btn>
+                <Btn onClick={reset}>取消</Btn>
+              </div>
+            </div>
+          )}
           {saved && (
-            <span className="self-center text-[11px] text-verify" role="status">
+            <span className="text-[11px] text-verify" role="status">
               已保存
             </span>
           )}
+          {err && <p className="text-[11px] text-stamp">{err}</p>}
         </div>
-        {err && <p className="text-[11px] text-stamp">{err}</p>}
-      </div>
-      {detail.annotations.length > 0 && (
-        <ul className="mt-2 space-y-1">
-          {detail.annotations.map((a) => (
-            <li key={a.annotation_id} className={cx("rounded-lg bg-ink-800 px-2 py-1 text-[11px]", editing?.annotation_id === a.annotation_id && "ring-1 ring-info")}>
-              <div className="flex items-center gap-1">
-                <Badge tone={a.assessment === "WRONG" ? "bad" : a.assessment === "CORRECT" ? "ok" : a.assessment === "UNSURE" ? "warn" : "info"}>{a.assessment ? ASSESS_LABEL[a.assessment] : (ANN_LABEL[a.issue_type] ?? a.issue_type)}</Badge>{" "}
-                <span className="min-w-0 flex-1 truncate text-ink-400">{a.target ?? a.target_json_pointer}</span>
-                <button onClick={() => startEdit(a)} className="text-info hover:underline" aria-label={`修改标注 ${a.annotation_id}`}>
-                  修改
-                </button>
-                <button onClick={() => remove(a)} className="text-stamp hover:underline" aria-label={`删除标注 ${a.annotation_id}`}>
-                  删除
-                </button>
-              </div>
-              {a.error_category && (
-                <div>
-                  归因：{categoryText(a.error_category)}
-                  {a.category_confirmed === false && <span className="ml-1 text-risk">（疑似 / 待核实）</span>}
-                </div>
-              )}
-              {a.model_value != null && <div className="text-ink-400">模型原值：{a.model_value}</div>}
-              {a.expected_value && <div>正确值：{a.expected_value}</div>}
-              {a.note && <div className="text-ink-300">{a.note}</div>}
-              {a.author && <div className="text-[10px] text-ink-600">{a.author} · {a.created_at.slice(0, 19).replace("T", " ")}</div>}
-              {(a.revisions?.length ?? 0) > 1 && <RevisionHistory a={a} />}
-            </li>
-          ))}
-        </ul>
       )}
+      {children}
+      <div>
+        <h4 className="mb-1 flex items-center gap-2 text-[11.5px] font-semibold text-ink-300">
+          已有标注（{detail.annotations.length}）
+          <span className="ml-auto font-normal">
+            导出：
+            <a href={`/api/annotations/export?project=${detail.run.project_id}&format=csv`} className="text-info hover:underline" data-testid="export-annotations-csv">
+              CSV
+            </a>
+            {" / "}
+            <a href={`/api/annotations/export?project=${detail.run.project_id}&format=json`} target="_blank" rel="noopener noreferrer" className="text-info hover:underline">
+              JSON
+            </a>
+          </span>
+        </h4>
+        {detail.annotations.length > 0 && (
+          <ul className="space-y-1">
+            {detail.annotations.map((a) => (
+              <li key={a.annotation_id} className={cx("rounded-lg bg-ink-800 px-2 py-1 text-[11px]", editing?.annotation_id === a.annotation_id && "ring-1 ring-info")}>
+                <div className="flex items-center gap-1">
+                  <Badge tone={a.assessment === "WRONG" ? "bad" : a.assessment === "CORRECT" ? "ok" : a.assessment === "UNSURE" ? "warn" : "info"}>{a.assessment ? ASSESS_LABEL[a.assessment] : (ANN_LABEL[a.issue_type] ?? a.issue_type)}</Badge>{" "}
+                  <span className="min-w-0 flex-1 truncate text-ink-400">{a.target ?? a.target_json_pointer}</span>
+                  <button onClick={() => startEdit(a)} className="text-info hover:underline" aria-label={`修改标注 ${a.annotation_id}`}>
+                    修改
+                  </button>
+                  <button onClick={() => remove(a)} className="text-stamp hover:underline" aria-label={`删除标注 ${a.annotation_id}`}>
+                    删除
+                  </button>
+                </div>
+                {a.error_category && <div>错在：{categoryText(a.error_category)}</div>}
+                {a.model_value != null && <div className="text-ink-400">模型原值：{a.model_value}</div>}
+                {a.expected_value && <div>正确值：{a.expected_value}</div>}
+                {a.note && <div className="text-ink-300">{a.note}</div>}
+                {a.author && <div className="text-[10px] text-ink-600">{a.author} · {a.created_at.slice(0, 19).replace("T", " ")}</div>}
+                {(a.revisions?.length ?? 0) > 1 && <RevisionHistory a={a} />}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

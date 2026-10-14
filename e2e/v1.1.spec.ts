@@ -29,8 +29,8 @@ test("AT-21 表格排序后点击单元格，仍定位到原始 JSON 行", async
   await table.locator('[data-sort-key="row_no"]').click();
   await table.locator('[data-sort-key="row_no"]').click();
   await table.locator("tbody tr").first().locator('[data-field="model"]').click();
-  await expect(page.getByTestId("selection-pointer")).toHaveText("/output/rows/2/values/model");
-  await page.getByTestId("btn-view-json").click();
+  await expect(page.getByTestId("selection-pointer")).toHaveAttribute("title", "/output/rows/2/values/model");
+  await page.getByTestId("selection-pointer").click();
   await expect(page.getByTestId("tab-json")).toBeVisible();
 });
 

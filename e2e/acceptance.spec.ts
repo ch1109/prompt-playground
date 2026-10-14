@@ -33,7 +33,7 @@ test("AT16 JSON 解析失败：显示原文与错误位置，没有虚构表格"
 
 test("AT17 Schema 不合法：标明并可从诊断跳到 JSON 路径", async ({ page }) => {
   await renderFixture(page, "jiuli-p1", "constructed/p1-v3-schema-type-error.json");
-  await expect(page.getByText("结构不符").first()).toBeVisible();
+  await expect(page.getByText("模型回答的结构不完全符合约定")).toBeVisible();
   await expect(page.locator('[data-table-id="orderRows"]')).toBeVisible();
   await page.getByRole("tab", { name: "详情" }).click();
   await page.locator('[data-testid="diag-pointer"]', { hasText: "/output/rows/0/values/quantity" }).click();
@@ -57,7 +57,7 @@ test("AT18 单元格 / 问题 / 关系边 共享同一选择状态并跨标签�
   await page.locator("[data-issue-id]", { hasText: "报关单价" }).click();
   await expect(page.locator('[data-table-id="orderRows"] [data-row-id="row-1"] [data-field="customs_unit_price"]')).toHaveClass(/outline-accent/);
   await expect(page.locator('[data-testid="evidence-drawer"]')).toContainText("USD 11.00");
-  await expect(page.locator('[data-testid="selection-pointer"]')).toHaveText("/output/rows/0/conflicts/0");
+  await expect(page.locator('[data-testid="selection-pointer"]')).toHaveAttribute("title", "/output/rows/0/conflicts/0");
 
   // 关系边
   await renderFixture(page, "jiuli-p3", "constructed/p3-v3-multi-candidate.json");
@@ -132,21 +132,30 @@ test("样本运行的证据只有元数据时说明原因", async ({ page }) => 
   await expect(drawer.getByTestId("evidence-note").first()).toContainText("样本只带模型输出与请求");
 });
 
-test("标注类型精简（P3 才有候选/关系类型），标注错误必须选归因，保存后提示已保存", async ({ page }) => {
+test("标注只有「对 / 错 / 不确定」三个按钮（P3 才有候选/关系类型），标「错」必须选错在哪，保存后提示已保存", async ({ page }) => {
   await renderFixture(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
   await page.locator('[data-table-id="orderRows"] [data-row-id="row-1"] [data-field="brand"]').click();
   const form = page.getByTestId("annotation-form");
+  await expect(form.getByTestId("btn-mark-correct")).toHaveText("✓ 对");
+  await expect(form.getByTestId("btn-mark-wrong")).toHaveText("✗ 错");
+  await expect(form.getByTestId("btn-mark-unsure")).toHaveText("? 不确定");
+  // 没点「错」之前不显示输入框
+  await expect(page.getByLabel("正确值")).toHaveCount(0);
+  await form.getByTestId("btn-mark-wrong").click();
   await expect(form.getByLabel("标注类型")).toHaveCount(0);
-  await expect(form.getByRole("radio")).toHaveText(["标注错误", "标注正确", "暂不确定"]);
   await page.getByLabel("正确值").fill("无牌");
   await expect(page.getByRole("button", { name: "保存标注" })).toBeDisabled();
   await page.getByLabel("错误归因").selectOption("OCR_VISION_ERROR");
   await page.getByRole("button", { name: "保存标注" }).click();
   await expect(form.getByRole("status")).toHaveText("已保存");
-  await expect(form).toContainText("（疑似 / 待核实）");
+  await expect(form).toContainText("正确值：无牌");
+  // 「不确定」的错在哪是可选的
+  await form.getByTestId("btn-mark-unsure").click();
+  await expect(page.getByRole("button", { name: "保存标注" })).toBeEnabled();
   await renderFixture(page, "jiuli-p3", "constructed/p3-v3-multi-candidate.json");
   await page.locator('[data-table-id="orderRows"] [data-row-id="OR_001"] [data-field="match_status"]').click();
-  await expect(page.getByLabel("标注类型").locator("option")).toHaveText(["评判", "正确候选（P3）", "错误关系（P3）", "备注"]);
+  await page.getByTestId("btn-mark-wrong").click();
+  await expect(page.getByLabel("标注类型").locator("option")).toHaveText(["评判", "正确候选（P3）", "错误关系（P3）"]);
 });
 
 test("运行信息与运行对比显示版本名称，而不只是版本 ID", async ({ page }) => {
@@ -788,6 +797,7 @@ test("标注独立保存，不改原始输出", async ({ page }) => {
   await renderFixture(page, "jiuli-p4", "constructed/p4-v3-conflict.json");
   const cell = page.locator('[data-table-id="fieldDecisions"] [data-row-id="OR_001:gross_weight"] [data-field="result_value"]');
   await cell.click();
+  await page.getByTestId("btn-mark-wrong").click();
   await page.getByLabel("正确值").fill("2.4");
   await page.getByLabel("标注备注").fill("模型应选箱单 GW");
   await page.getByLabel("错误归因").selectOption("PROMPT_RULE_ERROR");
@@ -810,6 +820,7 @@ test("标注可修改、可删除：删除后角标消失、导出中不再出�
   const row = page.locator('[data-table-id="fieldDecisions"] [data-row-id="OR_001:net_weight"] [data-field="result_value"]');
   await row.click();
   const marker = `标注-${Date.now()}`;
+  await page.getByTestId("btn-mark-wrong").click();
   await page.getByLabel("正确值").fill("错写的值");
   await page.getByLabel("标注备注").fill(marker);
   await page.getByLabel("错误归因").selectOption("UNKNOWN");
@@ -866,7 +877,7 @@ test("P4 只看变化 / 仅风险 过滤", async ({ page }) => {
   // 只做模拟、不写回：表头写明；「模拟新值」列在「全部列」里
   await expect(page.getByText("只做模拟预览，不写回九立")).toBeVisible();
   await page.locator('[data-table-id="fieldDecisions"]').getByRole("button", { name: "全部列" }).click();
-  await expect(page.locator('[data-table-id="fieldDecisions"]').getByText("模拟新值（SIMULATION_ONLY）").first()).toBeVisible();
+  await expect(page.locator('[data-table-id="fieldDecisions"]').getByRole("button", { name: "模拟新值（SIMULATION_ONLY）" })).toBeVisible();
 });
 
 test("9.1 性能：100 行 × 25 字段（记录实测，不预设达标）", async ({ page }) => {
