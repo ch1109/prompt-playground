@@ -6,11 +6,24 @@ import type { Layout, LayoutCard, LayoutResult, LayoutSection } from "./types";
 const MAX_ITEMS = 2000;
 const DEFAULT_PASS_VALUES = ["通过", "pass", "PASS", "OK", "ok", "true", "是"];
 
-/** 转成纯文本：对象/数组用 JSON，缺失或 null 为空串 */
+/** 转成业务人员能读的文字：文字列表用「、」连接；对象写成「键：值；键：值」；对象列表每个对象一行（深度有限，超出才退回 JSON） */
+function plain(value: unknown, depth = 0): string {
+  if (value === undefined || value === null) return "";
+  if (typeof value !== "object") return String(value);
+  if (depth >= 3) return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    const parts = value.map((x) => plain(x, depth + 1));
+    return value.every((x) => x === null || typeof x !== "object") ? parts.filter(Boolean).join("、") : parts.join("\n");
+  }
+  return Object.entries(value as Record<string, unknown>)
+    .map(([k, x]) => `${k}：${plain(x, depth + 1)}`)
+    .join("；");
+}
+
+/** 转成纯文本：缺失或 null 为空串，对象/数组见 plain */
 function str(found: boolean, value: unknown): string {
-  if (!found || value === undefined || value === null) return "";
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value);
+  if (!found) return "";
+  return plain(value);
 }
 
 /** 取某一项上的相对路径值 */
@@ -40,10 +53,10 @@ export function applyLayout(layout: Layout, doc: unknown): LayoutResult {
       const v = r.value;
       let text: string;
       if (Array.isArray(v)) {
-        text = v.map((x) => "- " + (typeof x === "object" && x !== null ? JSON.stringify(x) : str(true, x))).join("\n");
+        text = v.map((x) => "- " + plain(x).replace(/\n/g, "；")).join("\n");
       } else if (v !== null && typeof v === "object") {
         text = Object.entries(v as Record<string, unknown>)
-          .map(([k, x]) => `${k}：${str(true, x)}`)
+          .map(([k, x]) => `${k}：${plain(x).replace(/\n/g, "；")}`)
           .join("\n");
       } else {
         text = str(true, v);
@@ -79,7 +92,7 @@ export function applyLayout(layout: Layout, doc: unknown): LayoutResult {
           cells[key] = {
             rowId,
             fieldKey: key,
-            value: r.found && r.value !== undefined ? r.value : "",
+            value: !r.found || r.value === undefined ? "" : r.value !== null && typeof r.value === "object" ? plain(r.value) : r.value,
             jsonPointer: join(layout.itemsPath, i) + c.path,
             sourceRefIds: [],
           };

@@ -19,7 +19,7 @@ describe("layoutResultToMarkdown", () => {
     const lines = t.split("\n");
     expect(lines[0]).toBe("| 名称 | 备注 | 标签 |");
     expect(lines[1]).toBe("| --- | --- | --- |");
-    expect(lines[2]).toBe('| 苹果\\|红 | 第一行 第二行 | ["a","b"] |');
+    expect(lines[2]).toBe('| 苹果\\|红 | 第一行 第二行 | a、b |');
     expect(lines).toHaveLength(4);
   });
   it("cards：每条一个小标题 + 字段列表", () => {

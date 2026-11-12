@@ -65,7 +65,7 @@ describe("applyLayout", () => {
     );
     if (r.kind !== "cards") throw new Error("应为 cards");
     expect(r.cards[0]).toMatchObject({ id: "r0", title: "苹果", badge: "通过", pointer: "/items/0" });
-    expect(r.cards[1].fields[0].value).toBe('{"a":1}');
+    expect(r.cards[1].fields[0].value).toBe("a：1");
     expect(r.cards[2].fields[0]).toEqual({ label: "备注", value: "", pointer: "/items/2/note" });
     const noTitle = applyLayout({ version: 1, kind: "cards", itemsPath: "", titlePath: "/x", fields: [] }, [{}]);
     if (noTitle.kind !== "cards") throw new Error("应为 cards");
@@ -112,10 +112,10 @@ describe("applyLayout", () => {
       d,
     );
     if (r.kind !== "report") throw new Error("应为 report");
-    expect(r.sections[1].text).toBe('- 甲\n- {"x":1}');
+    expect(r.sections[1].text).toBe("- 甲\n- x：1");
     expect(r.sections[2].text).toBe("k：v\nn：2");
     expect(r.sections[3]).toMatchObject({ found: false, text: "" });
-    expect(r.markdown).toBe("## 概述\n\n概述\n\n## 列表\n\n- 甲\n- {\"x\":1}\n\n## 对象\n\nk：v\nn：2");
+    expect(r.markdown).toBe("## 概述\n\n概述\n\n## 列表\n\n- 甲\n- x：1\n\n## 对象\n\nk：v\nn：2");
   });
 
   it("report：所有节都缺失 → mismatch", () => {
@@ -165,5 +165,25 @@ describe("applyLayout", () => {
     const big = Array.from({ length: 2500 }, (_, i) => ({ n: i }));
     const r = applyLayout({ version: 1, kind: "table", itemsPath: "", columns: [{ label: "N", path: "/n" }] }, big);
     expect(r.kind === "table" && r.table.rows.length).toBe(2000);
+  });
+});
+
+describe("业务可读的文字（不显示原始 JSON）", () => {
+  const doc = { rows: [{ name: "林一", tags: ["亮点甲", "亮点乙"], plan: [{ task: "开账号", owner: "陈工" }] }] };
+  it("卡片字段：文字列表用「、」连接，对象列表写成「键：值」", () => {
+    const r = applyLayout({ version: 1, kind: "cards", itemsPath: "/rows", titlePath: "/name", fields: [{ label: "亮点", path: "/tags" }, { label: "计划", path: "/plan" }] }, doc);
+    if (r.kind !== "cards") throw new Error("kind");
+    expect(r.cards[0].fields[0].value).toBe("亮点甲、亮点乙");
+    expect(r.cards[0].fields[1].value).toBe("task：开账号；owner：陈工");
+  });
+  it("表格单元格里的数组也是文字", () => {
+    const r = applyLayout({ version: 1, kind: "table", itemsPath: "/rows", columns: [{ label: "亮点", path: "/tags" }] }, doc);
+    if (r.kind !== "table") throw new Error("kind");
+    expect(r.table.rows[0].cells.c0.value).toBe("亮点甲、亮点乙");
+  });
+  it("报告：对象列表每项一行", () => {
+    const r = applyLayout({ version: 1, kind: "report", sections: [{ title: "计划", path: "/rows/0/plan" }] }, doc);
+    if (r.kind !== "report") throw new Error("kind");
+    expect(r.sections[0].text).toBe("- task：开账号；owner：陈工");
   });
 });
