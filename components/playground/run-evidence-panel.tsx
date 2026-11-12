@@ -18,7 +18,7 @@ function thinkingText(run: Run): string {
   return `${asked}；${typeof chars === "number" ? `响应带有思考内容 ${chars.toLocaleString()} 字（未保存）` : "响应中没有思考内容"}`;
 }
 
-/** 运行证据（v1.3 §5）：这条 Run 真实保存了哪些证据、缺了什么、处在哪种诊断状态 */
+/** 运行证据（v1.3 §5）：这条运行真实保存了哪些证据、缺了什么、处在哪种诊断状态 */
 export function RunEvidencePanel({ run, evidence }: { run: Run; evidence: RunEvidence }) {
   const q = QUALITY[evidence.capture.quality];
   return (
@@ -43,7 +43,7 @@ export function RunEvidencePanel({ run, evidence }: { run: Run; evidence: RunEvi
         ))}
       {evidence.capture.not_captured.length > 0 && (
         <div className="mt-1" data-testid="not-captured">
-          <p className="text-risk">这条 Run 当时没有保存以下证据（不会事后补造）：</p>
+          <p className="text-risk">这条运行当时没有保存以下证据（不会事后补造）：</p>
           <ul className="ml-3">
             {evidence.capture.not_captured.map((n) => (
               <li key={n.key} className="text-ink-300">

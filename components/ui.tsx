@@ -1,6 +1,7 @@
 "use client";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import type { CellState } from "@/lib/contracts/view-model";
+import { stateLabel } from "@/lib/adapters/helpers";
 
 export function cx(...c: (string | false | null | undefined)[]) {
   return c.filter(Boolean).join(" ");
@@ -90,7 +91,10 @@ export function CellValue({ value, state, kind }: { value: unknown; state?: Cell
   if (typeof value === "boolean") return <Badge tone={value ? "warn" : "mute"}>{String(value)}</Badge>;
   if (typeof value === "object") return <span className="font-mono text-[11px] text-ink-300">{JSON.stringify(value)}</span>;
   const s = String(value);
-  if (kind === "state") return <Badge tone={stateTone(s)}>{s}</Badge>;
+  if (kind === "state") {
+    const { label, code } = stateLabel(s);
+    return <Badge tone={stateTone(s)} title={code || undefined}>{label}</Badge>;
+  }
   return (
     <span className={cx(state === "EXPLICIT_NONE" && "text-risk")}>
       {s}

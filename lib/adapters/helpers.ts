@@ -227,3 +227,41 @@ export function resolveEvidenceKeys(
     });
   });
 }
+
+/** 状态类单元格的英文枚举 → 中文（唯一一份；界面只显示中文，英文放悬停提示） */
+export const STATE_LABEL: Record<string, string> = {
+  // P4 核验状态
+  VERIFIED_CONSISTENT: "已核验一致",
+  VERIFIED_UPDATED: "已按规则更新",
+  CONFLICT: "冲突",
+  MISSING_REQUIRED: "必填缺失",
+  NO_EVIDENCE: "未取得证据",
+  NOT_CHECKED: "本轮未核验",
+  // P4 决策
+  KEEP: "保持",
+  FILL: "补空",
+  UPDATE: "更新",
+  MISSING: "缺失",
+  NO_ACTION: "不处理",
+  // P3 关系 / 覆盖
+  MATCHED: "已匹配",
+  UNMATCHED: "未匹配",
+  MULTIPLE_CANDIDATES: "多个候选",
+  COMPLETE: "完整",
+  PARTIAL: "部分覆盖",
+  UNCERTAIN: "不确定",
+  // 其他状态词
+  NEEDS_REVIEW: "需人工看",
+  SUCCESS: "成功",
+  INVALID_INPUT: "输入无效",
+  DISJOINT: "不重叠",
+  OVERLAPPING: "有重叠",
+  UNKNOWN: "未知",
+};
+
+/** 拆出状态格子的显示：兼容「KEEP（保持）」旧形式；未知值 label 原样返回、code 为空 */
+export function stateLabel(raw: string): { label: string; code: string } {
+  const m = /^([A-Z][A-Z_]*)（(.+)）$/.exec(raw);
+  if (m) return { code: m[1], label: m[2] };
+  return STATE_LABEL[raw] ? { code: raw, label: STATE_LABEL[raw] } : { code: "", label: raw };
+}

@@ -475,7 +475,7 @@ function PasteInput({ projectId, kind, onSnapshotsChanged }: { projectId: string
   const [busy, setBusy] = useState(false);
   const readFile = (f: File, key: "pasteRaw" | "pasteRequest") => f.text().then((t) => patch({ [key]: t }));
 
-  /** 把粘贴的请求上下文存为快照并选中，之后可直接真实运行 */
+  /** 把粘贴的请求上下文存为输入并选中，之后可直接真实运行 */
   async function saveRequest() {
     setErr(null);
     setBusy(true);
@@ -484,7 +484,7 @@ function PasteInput({ projectId, kind, onSnapshotsChanged }: { projectId: string
       patch({ inputMode: "snapshot", snapshotId: snap.snapshot_id });
       onSnapshotsChanged();
     } catch (e) {
-      setErr(e instanceof ApiError ? `${e.code}: ${e.message}` : String(e));
+      setErr(e instanceof ApiError ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -494,7 +494,7 @@ function PasteInput({ projectId, kind, onSnapshotsChanged }: { projectId: string
       <label className="block text-[11px] text-ink-400">模型原始输出（原样保存，不做任何修改）</label>
       <textarea value={ws.pasteRaw} onChange={(e) => patch({ pasteRaw: e.target.value })} aria-label="原始输出" spellCheck={false} placeholder='{"schema_version":"jiuli-ai-v3", ...}' className="h-56 w-full rounded-lg border border-ink-700 bg-ink-900 p-2 font-mono text-[12px] outline-none focus:border-ink-400" />
       <input type="file" accept=".json,.txt" aria-label="上传原始输出文件" onChange={(e) => e.target.files?.[0] && readFile(e.target.files[0], "pasteRaw")} className="text-[11px] text-ink-400" />
-      <label className="block text-[11px] text-ink-400">请求上下文 JSON（可选，v3 P3/P4 用于解析 evidence_key、当前值）</label>
+      <label className="block text-[11px] text-ink-400" title="P3/P4 用它解析 evidence_key 和当前值">请求上下文 JSON（可选，P3/P4 需要）</label>
       <textarea value={ws.pasteRequest} onChange={(e) => patch({ pasteRequest: e.target.value })} aria-label="请求上下文" spellCheck={false} className="h-28 w-full rounded-lg border border-ink-700 bg-ink-900 p-2 font-mono text-[12px] outline-none focus:border-ink-400" />
       <input type="file" accept=".json" aria-label="上传请求上下文文件" onChange={(e) => e.target.files?.[0] && readFile(e.target.files[0], "pasteRequest")} className="text-[11px] text-ink-400" />
       <div className="flex items-center gap-2">
@@ -507,6 +507,9 @@ function PasteInput({ projectId, kind, onSnapshotsChanged }: { projectId: string
     </div>
   );
 }
+
+const SOURCE_LABEL: Record<string, string> = { FILE_IMPORT: "上传文件", JSON_IMPORT: "粘贴", JIULI_READONLY: "九立导入", FIXTURE: "示例" };
+const CONNECTOR_LABEL: Record<string, string> = { CONNECTED_DEMO_FILES: "已连接（演示数据）", NOT_CONFIGURED: "未配置", CONNECTOR_UNAVAILABLE: "连接不可用" };
 
 const KIND_SHORT: Record<string, string> = { JIULI_P1: "P1", JIULI_P2: "P2", JIULI_P3: "P3", JIULI_P4: "P4", GENERIC_JSON: "通用" };
 
@@ -531,7 +534,7 @@ function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged, onMore, 
       patch({ snapshotId: n.snapshot_id });
       onSnapshotsChanged();
     } catch (e) {
-      setErr(e instanceof ApiError ? `${e.code}: ${e.message}` : String(e));
+      setErr(e instanceof ApiError ? e.message : String(e));
     } finally {
       setBusy(null);
     }
@@ -543,7 +546,7 @@ function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged, onMore, 
       await api(`/api/snapshots/${id}/retention`, { json: { days } });
       onSnapshotsChanged();
     } catch (e) {
-      setErr(e instanceof ApiError ? `${e.code}: ${e.message}` : String(e));
+      setErr(e instanceof ApiError ? e.message : String(e));
     }
   }
 
@@ -561,7 +564,7 @@ function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged, onMore, 
       }
       onSnapshotsChanged();
     } catch (e) {
-      setErr(e instanceof ApiError ? `${e.code}: ${e.message}` : String(e));
+      setErr(e instanceof ApiError ? e.message : String(e));
     }
   }
 
@@ -595,13 +598,13 @@ function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged, onMore, 
                 className={cx("min-w-0 flex-1 rounded-lg px-2 py-1 text-left text-[12px] hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-50", ws.snapshotId === s.snapshot_id && "bg-accent/[0.07] ring-1 ring-accent/40")}
               >
                 <div className="flex items-center gap-2">
-                  <Badge tone={s.source_type === "JIULI_READONLY" ? "info" : "mute"}>{s.source_type}</Badge>
+                  <Badge tone={s.source_type === "JIULI_READONLY" ? "info" : "mute"} title={s.source_type}>{SOURCE_LABEL[s.source_type] ?? s.source_type}</Badge>
                   <span className="truncate">{s.label}</span>
                   {!ok && <Badge tone="warn">不适用于 {KIND_SHORT[kind]}</Badge>}
                 </div>
-                <div className="font-mono text-[10.5px] text-ink-400">
-                  {s.snapshot_id} · {s.imported_at.slice(0, 19).replace("T", " ")} · hash {s.content_hash.slice(0, 10)}
-                  {s.parent_snapshot_id && ` · 刷新自 ${s.parent_snapshot_id}`}
+                <div className="text-[10.5px] text-ink-400" title={`编号 ${s.snapshot_id} · hash ${s.content_hash.slice(0, 10)}${s.parent_snapshot_id ? ` · 刷新自 ${s.parent_snapshot_id}` : ""}`}>
+                  {s.imported_at.slice(0, 16).replace("T", " ")}
+                  {s.parent_snapshot_id && " · 刷新得到"}
                   {" · 可用于 "}
                   {s.usable_kinds.filter((k) => k !== "GENERIC_JSON").map((k) => KIND_SHORT[k]).join("/") || "—"}
                 </div>
@@ -725,7 +728,7 @@ function UploadInput({ projectId, kind, onCreated }: { projectId: string; kind: 
       setSkipped([]);
       onCreated();
     } catch (e) {
-      setErr(e instanceof ApiError ? `${e.code}: ${e.message}` : String(e));
+      setErr(e instanceof ApiError ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -890,7 +893,7 @@ function JiuliImport({ projectId, capability, onCreated }: { projectId: string; 
         setTasks(t.items);
         setBatches(b.items);
       })
-      .catch((e) => setErr(e instanceof ApiError ? `${e.code}: ${e.message}` : String(e)));
+      .catch((e) => setErr(e instanceof ApiError ? e.message : String(e)));
   }, [customer]);
 
   // 选择变化时重新列出将带上的文件，默认全部纳入
@@ -901,7 +904,7 @@ function JiuliImport({ projectId, capability, onCreated }: { projectId: string; 
     if (!customer || (!task && !batchKey)) return;
     api<SelectionFile[]>(`/api/connectors/jiuli/files?customerId=${encodeURIComponent(customer)}&taskId=${encodeURIComponent(task)}&batchIds=${encodeURIComponent(batchKey)}`)
       .then(setFiles)
-      .catch((e) => setErr(e instanceof ApiError ? `${e.code}: ${e.message}` : String(e)));
+      .catch((e) => setErr(e instanceof ApiError ? e.message : String(e)));
   }, [customer, task, batchKey]);
 
   async function create() {
@@ -914,7 +917,7 @@ function JiuliImport({ projectId, capability, onCreated }: { projectId: string; 
       patch({ inputMode: "snapshot", snapshotId: s.snapshot_id });
       onCreated();
     } catch (e) {
-      setErr(e instanceof ApiError ? `${e.code}: ${e.message}` : String(e));
+      setErr(e instanceof ApiError ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -924,12 +927,11 @@ function JiuliImport({ projectId, capability, onCreated }: { projectId: string; 
     <div className="space-y-2" data-testid="jiuli-import">
       <div className={cx("rounded-lg border p-2 text-[12px]", connected ? "border-verify/40 bg-verify/5" : "border-risk/40 bg-risk/10")}>
         <div className="flex items-center gap-2">
-          <Badge tone={connected ? "ok" : "warn"}>{capability?.status ?? "检测中"}</Badge>
+          <Badge tone={connected ? "ok" : "warn"} title={capability?.status}>{capability ? (CONNECTOR_LABEL[capability.status] ?? capability.status) : "检测中"}</Badge>
           <Badge tone="mute">只读</Badge>
           {capability && !capability.realApi && <Badge tone="warn">真实九立 API 未接通</Badge>}
         </div>
-        <p className="mt-1 text-ink-300">{capability?.message}</p>
-        {capability?.source && <p className="font-mono text-[10.5px] text-ink-400">{capability.source}</p>}
+        <p className="mt-1 text-ink-300" title={capability?.source}>{capability?.message}</p>
       </div>
       {connected && (
         <>
@@ -1179,7 +1181,7 @@ function PreviewTab({ fixtures, isDraft, versionLabel }: { fixtures: FixtureSumm
         ? !ws.fixtureId
           ? "请先在「输入 → 示例」选择一个示例。"
           : !fixtures.find((f) => f.id === ws.fixtureId)?.hasRequest
-            ? "这个示例没有附带输入（无 ctx 标记），不能真实运行，只能「仅渲染」。"
+            ? "这个示例没有附带输入，不能真实运行，只能「仅渲染」。"
             : "正在准备示例输入…"
         : ws.inputMode === "paste"
           ? "粘贴的模型输出只用于「仅渲染」。要真实运行，请上传文件，或把粘贴的请求「存为输入」。"
@@ -1192,24 +1194,29 @@ function PreviewTab({ fixtures, isDraft, versionLabel }: { fixtures: FixtureSumm
   }
   if (err) return <p className="text-stamp">{err}</p>;
   if (!p) return <p className="text-ink-400">构造中…</p>;
-  if (!p.ok) return <p className="rounded-lg border border-stamp/40 bg-stamp/10 p-2 text-[12px] text-stamp">无法构造输入：[{p.code}] {p.message}</p>;
+  if (!p.ok) return <p className="rounded-lg border border-stamp/40 bg-stamp/10 p-2 text-[12px] text-stamp" title={p.code}>无法构造输入：{p.message}</p>;
   return (
     <div className="space-y-2 text-[12px]" data-testid="request-preview">
       <div className="flex flex-wrap gap-2">
-        <Badge>构造器 {p.builderId}</Badge>
-        <Badge>prompt hash {p.actualPromptHash?.slice(0, 10)}</Badge>
-        <Badge>input hash {p.builtInputHash?.slice(0, 10)}</Badge>
         <Badge tone={p.provider.configured ? "info" : "warn"}>将发送至 {p.provider.provider}</Badge>
         <Badge tone={isDraft ? "warn" : "ok"}>{isDraft ? `含未保存草稿（基于 ${versionLabel ?? "无版本"}）` : `版本 ${versionLabel}`}</Badge>
-        <Badge>参数 {JSON.stringify(p.params ?? {})}</Badge>
-        {p.tokenEstimate !== undefined && <Badge title="按字符数粗估，不含图片，误差可能较大">≈ {p.tokenEstimate.toLocaleString()} 输入 token（粗估）</Badge>}
+        {p.tokenEstimate !== undefined && <Badge title="按字符数粗估，不含图片，误差可能较大">约 {p.tokenEstimate.toLocaleString()} token（粗估，决定费用和速度）</Badge>}
       </div>
+      <details className="text-ink-400">
+        <summary className="cursor-pointer">更多信息</summary>
+        <div className="mt-1 flex flex-wrap gap-2">
+          <Badge>构造器 {p.builderId}</Badge>
+          <Badge>prompt hash {p.actualPromptHash?.slice(0, 10)}</Badge>
+          <Badge>input hash {p.builtInputHash?.slice(0, 10)}</Badge>
+          <Badge>参数 {JSON.stringify(p.params ?? {})}</Badge>
+        </div>
+      </details>
       {p.blockers?.length ? (
         <div className="rounded-lg border border-stamp/50 bg-stamp/10 p-2 text-stamp" data-testid="preview-blockers">
           <div className="font-semibold">以下问题会阻止运行：</div>
           {p.blockers.map((b) => (
-            <div key={b.code + b.message}>
-              [{b.code}] {b.message}
+            <div key={b.code + b.message} title={b.code}>
+              {b.message}
             </div>
           ))}
         </div>

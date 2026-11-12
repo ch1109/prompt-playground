@@ -10,6 +10,8 @@ const KIND_STYLE = {
   CANDIDATE: { stroke: "#b8740a", strokeWidth: 1.5, strokeDasharray: "6 4" },
   WEAK: { stroke: "#85847e", strokeWidth: 1, strokeDasharray: "2 4" },
 } as const;
+/** 关系状态（match_status，见 schemas 的 enum）；未知值原样显示 */
+const STATUS_LABEL: Record<string, string> = { MATCHED: "已匹配", MULTIPLE_CANDIDATES: "多个候选", UNMATCHED: "未匹配" };
 
 /** 关系图：nodes/edges 完全由 row_relations 构建；边连接到原始查货行。只用于观察/标注，不改九立占用与核销。 */
 export function RelationCanvas({ relations, onlyFrom }: { relations: RelationView[]; onlyFrom?: string }) {
@@ -46,7 +48,7 @@ export function RelationCanvas({ relations, onlyFrom }: { relations: RelationVie
         target: `r:${t}`,
         data: { relationId: r.id },
         style: { ...KIND_STYLE[r.kind ?? "SELECTED"], ...(sel.relationId === r.id ? { stroke: "#2563eb", strokeWidth: 3 } : {}) },
-        label: r.kind === "SELECTED" ? r.status : r.kind === "CANDIDATE" ? "候选" : "弱候选",
+        label: r.kind === "SELECTED" ? (STATUS_LABEL[r.status] ?? r.status) : r.kind === "CANDIDATE" ? "候选" : "弱候选",
         labelStyle: { fill: "#57564f", fontSize: 10 },
         labelBgStyle: { fill: "#fafaf8" },
       })),
@@ -54,7 +56,7 @@ export function RelationCanvas({ relations, onlyFrom }: { relations: RelationVie
     return { nodes, edges };
   }, [rels, sel.relationId]);
 
-  if (!rels.length) return <p className="px-3 py-4 text-[12px] text-ink-400">没有可画的关系（UNMATCHED 或缺少可定位的原始行）。</p>;
+  if (!rels.length) return <p className="px-3 py-4 text-[12px] text-ink-400">没有可画的关系（未匹配或缺少可定位的原始行）。</p>;
 
   return (
     <div className="h-[420px] w-full bg-ink-850" data-region="relation-canvas">

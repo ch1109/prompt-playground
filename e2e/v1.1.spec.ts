@@ -73,7 +73,7 @@ test("AT-26 请求预览：显示输入覆盖；模板有未登记变量时明�
   await page.getByTestId("user-template").evaluate((d) => ((d as HTMLDetailsElement).open = true));
   await page.getByLabel("User 模板").fill("客户 {{customer_name}}\n{{input_json}}");
   await page.getByRole("button", { name: "请求预览" }).click();
-  await expect(page.getByTestId("preview-blockers")).toContainText("UNRESOLVED_TEMPLATE_VARIABLE");
+  await expect(page.getByTestId("preview-blockers")).toContainText("未登记的变量");
 });
 
 test("提示词页的「运行参数」列出能力声明，未声明的如实显示", async ({ page }) => {

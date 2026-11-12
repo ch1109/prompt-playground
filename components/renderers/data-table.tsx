@@ -3,6 +3,7 @@ import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useSta
 import type { IssueView, TableRow, TableView } from "@/lib/contracts/view-model";
 import { useAnnotatedPointers, useStudio } from "@/lib/state/studio-store";
 import { Badge, CellValue, cx, Empty } from "@/components/ui";
+import { stateLabel } from "@/lib/adapters/helpers";
 
 export interface DataTableOptions {
   frozenColumns?: string[];
@@ -86,8 +87,10 @@ export function DataTable({ table, options = {} }: { table: TableView; options?:
       if (options.rowFilter && !options.rowFilter(r)) return false;
       if (onlyIssues && !issueRows.has(r.id)) return false;
       if (!needle) return true;
-      if (qField) return String(r.cells[qField]?.value ?? "").toLowerCase().includes(needle);
-      return Object.values(r.cells).some((c) => String(c.value ?? "").toLowerCase().includes(needle)) || r.id.toLowerCase().includes(needle);
+      // 状态格子界面显示中文（英文在悬停提示），所以两种都能筛
+      const text = (v: unknown) => `${String(v ?? "")} ${stateLabel(String(v ?? "")).label}`.toLowerCase();
+      if (qField) return text(r.cells[qField]?.value).includes(needle);
+      return Object.values(r.cells).some((c) => text(c.value).includes(needle)) || r.id.toLowerCase().includes(needle);
     });
     if (sort) out.sort((a, b) => sort.dir * compareCells(a.cells[sort.key]?.value, b.cells[sort.key]?.value));
     return out;

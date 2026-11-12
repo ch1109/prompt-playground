@@ -9,6 +9,8 @@ const VISUAL_LABEL: Record<InputManifest["visual_evidence"], string> = {
   NOT_APPLICABLE: "不涉及图片（没有 PDF / 图片原件）",
 };
 
+const SOURCE_LABEL: Record<string, string> = { FILE_IMPORT: "上传文件", JSON_IMPORT: "粘贴", JIULI_READONLY: "九立导入", FIXTURE: "示例" };
+
 const pages = (ps: (number | null)[]) => (ps.length ? ps.map((p) => (p === null ? "整图" : p)).join(",") : "无");
 
 /** 输入覆盖清单（R-02）：哪些文件、页、Sheet、文本和图片实际发出；不完整时醒目提示 */
@@ -92,7 +94,7 @@ export function InputCoverage({ manifest, planned }: { manifest: InputManifest; 
           </tbody>
         </table>
       ) : (
-        <p className="text-ink-400">请求不含原件材料（上游 JSON 输入，来自输入记录 {m.snapshot_id}，{m.snapshot_source_type}）。</p>
+        <p className="text-ink-400">请求不含原件材料（上游 JSON 输入，来自输入记录 {m.snapshot_id}，<span title={m.snapshot_source_type}>{SOURCE_LABEL[m.snapshot_source_type] ?? m.snapshot_source_type}</span>）。</p>
       )}
       <p className="mt-1 text-[10.5px] text-ink-400">
         {m.input_builder} · 输入记录 {m.snapshot_id}（hash {m.snapshot_hash.slice(0, 10)}…）· {m.version}

@@ -128,7 +128,7 @@ test("样本运行的证据只有元数据时说明原因", async ({ page }) => 
   await renderFixture(page, "jiuli-p1", "v3/SC-08-audit/P1");
   await page.locator('[data-table-id="orderRows"] [data-row-id="row-1"] [data-field="model"]').click();
   const drawer = page.getByTestId("evidence-drawer");
-  await expect(drawer.getByText("METADATA_ONLY").first()).toBeVisible();
+  await expect(drawer.getByText("仅元数据（原文未导入/不可访问）").first()).toBeVisible();
   await expect(drawer.getByTestId("evidence-note").first()).toContainText("样本只带模型输出与请求");
 });
 
@@ -177,7 +177,7 @@ test("运行信息与运行对比显示版本名称，而不只是版本 ID", as
   await page.getByTestId("work-modes").getByRole("tab", { name: "版本对比" }).click();
   await page.getByLabel(`对比 ${id1}`).check();
   await page.getByLabel(`对比 ${id2}`).check();
-  const row = page.getByTestId("compare-metrics").locator("tr", { hasText: "Prompt 版本" });
+  const row = page.getByTestId("compare-metrics").locator("tr", { hasText: "提示词版本" });
   await expect(row).toContainText("版本甲");
   await expect(row).toContainText("版本乙");
   await page.unrouteAll({ behavior: "ignoreErrors" });
@@ -186,7 +186,7 @@ test("运行信息与运行对比显示版本名称，而不只是版本 ID", as
 test("AT19 来源无原文：显示 METADATA_ONLY / MISSING，不提供越权下载", async ({ page }) => {
   await renderFixture(page, "jiuli-p3", "constructed/p3-v3-multi-candidate.json");
   await page.locator('[data-table-id="orderRows"] [data-row-id="OR_001"] [data-field="match_status"]').click();
-  await expect(page.locator('[data-testid="evidence-drawer"]').getByText("METADATA_ONLY").first()).toBeVisible();
+  await expect(page.locator('[data-testid="evidence-drawer"]').getByText("仅元数据（原文未导入/不可访问）").first()).toBeVisible();
   await expect(page.locator('[data-testid="evidence-drawer"]').getByText("打开原文件")).toHaveCount(0);
   const res = await page.request.get("/api/materials/F-000000000000/preview");
   expect(res.status()).toBe(403);
@@ -233,14 +233,14 @@ test("九立只读导入：选客户/任务/批次 → 隔离快照 → 请求�
   await page.goto("/projects/jiuli/playground");
   await page.click('[data-prompt="jiuli-p3"]');
   await page.getByRole("button", { name: "从九立导入" }).click();
-  await expect(page.getByTestId("jiuli-import")).toContainText("CONNECTED_DEMO_FILES");
+  await expect(page.getByTestId("jiuli-import")).toContainText("已连接（演示数据）");
   await expect(page.getByTestId("jiuli-import")).toContainText("真实九立 API 未接通");
   await page.getByLabel("搜索客户").fill("英堡");
   await page.getByRole("button", { name: /英堡科技/ }).click();
   await page.getByLabel("委托任务").selectOption({ index: 1 });
   await page.getByLabel(/选择批次/).first().check();
   await page.getByRole("button", { name: "只读读取并保存为输入" }).click();
-  await expect(page.getByTestId("snapshot-list")).toContainText("JIULI_READONLY");
+  await expect(page.getByTestId("snapshot-list")).toContainText("九立导入");
   await page.getByRole("button", { name: "请求预览" }).click();
   await expect(page.getByTestId("request-preview")).toContainText("jiuli-demo-p3");
   await expect(page.getByTestId("request-preview")).toContainText("retrieval_complete=false");
@@ -269,7 +269,7 @@ test("九立导入前列出将带上的文件；取消勾选的辅助材料不�
   await page.getByLabel("纳入文件 F-80d89610605b").uncheck();
   await page.getByRole("button", { name: "只读读取并保存为输入" }).click();
   const selected = page.getByTestId("snapshot-list").locator("[data-snapshot-id].ring-1");
-  await expect(selected).toContainText("JIULI_READONLY");
+  await expect(selected).toContainText("九立导入");
   const id = await selected.getAttribute("data-snapshot-id");
   const snap = await page.request.get(`/api/snapshots/${id}`).then((r) => r.json());
   expect(snap.data.source_ids.excluded_file_ids).toEqual(["F-80d89610605b"]);
@@ -279,7 +279,7 @@ test("九立导入前列出将带上的文件；取消勾选的辅助材料不�
   // 刷新快照沿用同样的排除
   await page.getByRole("button", { name: "输入", exact: true }).click();
   await page.getByRole("button", { name: `刷新输入 ${id}` }).click();
-  await expect(page.getByTestId("snapshot-list")).toContainText(`刷新自 ${id}`);
+  await expect(page.getByTestId("snapshot-list")).toContainText("刷新得到");
   const newId = await page.getByTestId("snapshot-list").locator("[data-snapshot-id].ring-1").getAttribute("data-snapshot-id");
   const refreshed = await page.request.get(`/api/snapshots/${newId}`).then((r) => r.json());
   expect(refreshed.data.source_ids.excluded_file_ids).toEqual(["F-80d89610605b"]);
@@ -293,7 +293,7 @@ test("请求预览与真实运行使用同一份输入：切换输入来源后�
   await page.getByRole("button", { name: /上海浦壹/ }).click();
   await page.getByLabel("委托任务").selectOption({ index: 1 });
   await page.getByRole("button", { name: "只读读取并保存为输入" }).click();
-  await expect(page.getByTestId("snapshot-list")).toContainText("JIULI_READONLY");
+  await expect(page.getByTestId("snapshot-list")).toContainText("九立导入");
   // 再切到样本库选录制样本：预览必须是样本自带的请求，而不是刚才的九立快照
   await page.getByRole("button", { name: "示例", exact: true }).click();
   await page.click('[data-fixture-id="v3/SC-08-audit/P1"]');
@@ -342,9 +342,12 @@ test("模型运行中显示已等待秒数；刷新页面后仍接着等待并�
   const runs = await page.request.get("/api/runs?project=jiuli&promptId=jiuli-p1").then((r) => r.json());
   const runId: string = runs.data[0].run_id;
   let finished = false;
+  // 点了「运行模型」之后才开始假装运行中；否则刷新后恢复的当前结果就是「运行中」，按钮会被禁用
+  let started = false;
   await page.route(`**/api/runs/${runId}`, async (r) => {
     const res = await r.fetch();
     const body = await res.json();
+    if (!started) return r.fulfill({ response: res, json: body });
     if (!finished) body.data.run = { ...body.data.run, status: "RUNNING", view_model: null, started_at: new Date(Date.now() - 5000).toISOString() };
     else body.data.run = { ...body.data.run, finish_reason: "length" };
     await r.fulfill({ response: res, json: body });
@@ -352,7 +355,7 @@ test("模型运行中显示已等待秒数；刷新页面后仍接着等待并�
   await page.route("**/api/models", (r) =>
     r.fulfill({ json: { ok: true, data: { provider: "openai-compatible@fake", model: "fake", configured: true, supportsFileInput: false, adapterVersion: "1.0.0" }, request_id: "x" } }),
   );
-  await page.route("**/api/runs", (r) => (r.request().method() === "POST" ? r.fulfill({ status: 202, json: { ok: true, data: { run_id: runId, status: "RUNNING" }, request_id: "x" } }) : r.continue()));
+  await page.route("**/api/runs", (r) => (r.request().method() === "POST" ? ((started = true), r.fulfill({ status: 202, json: { ok: true, data: { run_id: runId, status: "RUNNING" }, request_id: "x" } })) : r.continue()));
   await page.reload();
   await page.getByTestId("btn-run").click();
   await expect(page.getByTestId("running-banner")).toContainText("已等待");
@@ -363,7 +366,7 @@ test("模型运行中显示已等待秒数；刷新页面后仍接着等待并�
   await expect(page.getByTestId("running-banner")).toBeVisible();
   finished = true;
   await expect(page.getByTestId("running-banner")).toHaveCount(0, { timeout: 10000 });
-  await expect(page.getByText("被截断（finish_reason=length）")).toBeVisible();
+  await expect(page.getByText("模型的回答太长，被截断了")).toBeVisible();
   await page.getByRole("tab", { name: "详情" }).click();
   await expect(page.getByText("达到 max_tokens 被截断")).toBeVisible();
   await page.unrouteAll({ behavior: "ignoreErrors" });
@@ -403,7 +406,8 @@ test("模型运行开始前的错误直接显示在顶栏，不出现运行中�
     r.request().method() === "POST" ? r.fulfill({ status: 400, json: { ok: false, error: { code: "FILE_INPUT_UNSUPPORTED", message: "模拟阻断" }, request_id: "x" } }) : r.continue(),
   );
   await page.getByTestId("btn-run").click();
-  await expect(page.getByTestId("error-message")).toContainText("FILE_INPUT_UNSUPPORTED");
+  await expect(page.getByTestId("error-message")).toContainText("模拟阻断");
+  await expect(page.getByTestId("error-message")).toHaveAttribute("title", /FILE_INPUT_UNSUPPORTED/);
   await expect(page.getByTestId("running-banner")).toHaveCount(0);
 });
 
@@ -417,13 +421,13 @@ test("AT26 快照刷新生成新快照（记录来源），快照列表按 Promp
   const list = page.getByTestId("snapshot-list");
   // 等列表刷新出刚创建并选中的九立快照，再取它的 ID
   const created = list.locator("[data-snapshot-id].ring-1");
-  await expect(created).toContainText("JIULI_READONLY");
+  await expect(created).toContainText("九立导入");
   const oldId = await created.getAttribute("data-snapshot-id");
   await page.getByRole("button", { name: `刷新输入 ${oldId}` }).click();
-  await expect(list).toContainText(`刷新自 ${oldId}`);
+  await expect(list).toContainText("刷新得到");
   const selected = list.locator("[data-snapshot-id].ring-1");
   await expect(selected).not.toHaveAttribute("data-snapshot-id", oldId!);
-  await expect(selected).toContainText(`刷新自 ${oldId}`);
+  await expect(selected).toContainText("刷新得到");
   // P4 无法从九立快照构造输入：默认隐藏，显示全部时标为不适用且不可选
   await page.click('[data-prompt="jiuli-p4"]');
   await page.getByRole("button", { name: "历史输入", exact: true }).click();
@@ -491,7 +495,7 @@ test("多项目：新建项目、切换项目，运行按项目隔离；不存�
   await expect(page.getByRole("button", { name: "运行历史（1）" })).toBeVisible();
   await page.getByLabel("切换项目").selectOption("jiuli");
   await expect(page).toHaveURL(/\/projects\/jiuli\/playground/);
-  await expect(page.getByRole("button", { name: /运行历史（\d{2,}\+?）/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /运行历史（[1-9]\d*\+?）/ })).toBeVisible();
   await page.goto("/projects/no-such-project/playground");
   await expect(page.getByTestId("project-missing")).toBeVisible();
 });
@@ -534,8 +538,8 @@ test("运行对比：显示关键指标、提示词差异区与输出差异", as
   await boxes.nth(0).check();
   await boxes.nth(1).check();
   const dialog = page.getByRole("region", { name: "对比两次运行" });
-  await expect(dialog.getByTestId("compare-metrics")).toContainText("Schema 错误数");
-  await expect(dialog.getByTestId("compare-metrics")).toContainText("原始响应 Hash");
+  await expect(dialog.getByTestId("compare-metrics")).toContainText("结构错误数");
+  await expect(dialog.getByTestId("compare-metrics")).toContainText("原始响应指纹");
   await expect(dialog.getByText("至少一方没有记录实际发送的提示词").first()).toBeVisible();
   await expect(dialog.getByText("输出 JSON 差异")).toBeVisible();
   // 委托行按 order_row_id 对齐：两次输出的委托行互不相同，显示为整行增删而不是逐位置"变化"
@@ -550,17 +554,20 @@ test("重渲染 / 回放 / 保存版本失败时显示错误，不静默", async
   await page.getByRole("button", { name: /运行历史/ }).click();
   await page.route("**/api/runs/*/re-render", boom("RERENDER_BOOM"));
   await page.getByTestId("history").getByRole("button", { name: "重渲染" }).first().click();
-  await expect(page.getByTestId("error-message")).toContainText("RERENDER_BOOM");
+  await expect(page.getByTestId("error-message")).toContainText("模拟失败");
+  await expect(page.getByTestId("error-message")).toHaveAttribute("title", /RERENDER_BOOM/);
   await page.route(/\/api\/runs\/run_[^/]+$/, boom("REPLAY_BOOM"));
   await page.getByTestId("history").getByRole("button", { name: "回放" }).first().click();
-  await expect(page.getByTestId("error-message")).toContainText("REPLAY_BOOM");
+  await expect(page.getByTestId("error-message")).toContainText("模拟失败");
+  await expect(page.getByTestId("error-message")).toHaveAttribute("title", /REPLAY_BOOM/);
   await page.route("**/api/prompts/*/versions", boom("SAVE_BOOM"));
   await page.getByRole("button", { name: /^提示词/ }).click();
   // 内容要唯一：与已有版本相同的内容不会发出保存请求
   await page.getByLabel("System 提示词").fill(`改动 ${Date.now()}`);
   await page.getByLabel("新版本名称").fill("会失败的版本");
   await page.getByRole("button", { name: "保存为新版本" }).click();
-  await expect(page.getByTestId("error-message")).toContainText("SAVE_BOOM");
+  await expect(page.getByTestId("error-message")).toContainText("模拟失败");
+  await expect(page.getByTestId("error-message")).toHaveAttribute("title", /SAVE_BOOM/);
   await expect(page.getByLabel("新版本名称")).toHaveValue("会失败的版本");
 });
 
@@ -637,7 +644,7 @@ test("切换 Prompt 时带上可用的快照；不适用或已有选择时不带
   await page.getByLabel(/选择批次/).first().check();
   await page.getByRole("button", { name: "只读读取并保存为输入" }).click();
   const selected = page.getByTestId("snapshot-list").locator("[data-snapshot-id].ring-1");
-  await expect(selected).toContainText("JIULI_READONLY");
+  await expect(selected).toContainText("九立导入");
   const sidebar = page.getByTestId("sidebar").locator("[data-prompt]");
   // P3 可用：自动带上，预览直接是九立 P3 构造
   await sidebar.filter({ hasText: "商品对应关系" }).click();
@@ -674,7 +681,7 @@ test("粘贴的请求可一键存为快照并选中，直接用于真实运行�
   await page.getByRole("button", { name: "粘贴 JSON", exact: true }).click();
   await page.getByLabel("请求上下文", { exact: true }).fill("{不是 JSON");
   await page.getByRole("button", { name: "把请求存为输入（用于真实运行）" }).click();
-  await expect(page.getByTestId("editor-pane")).toContainText("INVALID_JSON");
+  await expect(page.getByTestId("editor-pane")).toContainText("不是合法 JSON");
 });
 
 test("运行历史只列当前 Prompt，超过 100 条可加载更多；没有记录时显示空状态", async ({ page }) => {
@@ -697,7 +704,7 @@ test("运行历史只列当前 Prompt，超过 100 条可加载更多；没有�
   await expect(page.getByRole("button", { name: "运行历史（101）" })).toBeVisible();
   // 其他 Prompt 没有记录：显示空状态，不借用 P1 的记录
   await page.getByTestId("sidebar").locator("[data-prompt]").filter({ hasText: "查货材料识别" }).click();
-  await expect(page.getByTestId("history")).toContainText("当前 Prompt 还没有运行记录");
+  await expect(page.getByTestId("history")).toContainText("当前提示词还没有运行记录");
   await expect(page.getByTestId("history").locator("tbody tr")).toHaveCount(1);
 });
 

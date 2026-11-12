@@ -80,8 +80,7 @@ export function EvidenceCard({ e, active, canPreview, snapshotSource, request }:
   return (
     <div data-evidence-id={e.id} className={cx("rounded-lg border border-ink-700 bg-ink-950/60 p-2", active && "border-accent/60 ring-2 ring-accent/15")}>
       <div className="flex flex-wrap items-center gap-1.5">
-        <Badge tone={a.tone}>{e.availability}</Badge>
-        <span className="text-[11px] text-ink-400">{a.text}</span>
+        <Badge tone={a.tone} title={e.availability}>{a.text}</Badge>
       </div>
       {note && (
         <p className="mt-1 text-[11px] text-risk" data-testid="evidence-note">
@@ -142,7 +141,7 @@ export function EvidenceViewer({ vm, canPreview, snapshotSource, request }: { vm
   const sel = useStudio((s) => s.selection);
   const refs = selectedRefIds(vm, sel);
   const byId = new Map(vm.evidence.map((e) => [e.id, e]));
-  if (refs === null) return <p className="text-[12px] text-ink-400">点击表格单元格、问题、关系或 Patch 查看来源。</p>;
+  if (refs === null) return <p className="text-[12px] text-ink-400">点击表格单元格、问题、关系或修改项查看来源。</p>;
   if (sel.tableId && sel.rowId && !vm.tables.find((t) => t.id === sel.tableId)?.rows.some((r) => r.id === sel.rowId) && !sel.issueId) {
     return <p className="text-[12px] text-risk">无法定位：所选对象在当前结果中不存在。</p>;
   }

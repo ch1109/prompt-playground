@@ -190,30 +190,31 @@ export function inputComparability(a: Run, b: Run): { comparable: boolean; reaso
 
 export function compareRuns(a: Run, b: Run, versionLabels: [string | null | undefined, string | null | undefined] = [undefined, undefined]) {
   const schemaErrors = (r: Run) => String(r.schema_diagnostics.filter((d) => d.level === "ERROR").length);
-  const rows: [string, (r: Run) => string][] = [
-    ["状态", (r) => r.status],
-    ["模式", (r) => r.mode],
-    ["模型", (r) => dash(r.model_name)],
-    ["Prompt 版本", (r) => versionText(r, versionLabels[r === a ? 0 : 1])],
-    ["实际提示词 Hash", (r) => dash(r.actual_prompt_hash?.slice(0, 12))],
-    ["构造输入 Hash", (r) => dash(r.built_input_hash?.slice(0, 12))],
-    ["输入快照", (r) => dash(r.input_snapshot_id)],
-    ["输入构造器", (r) => dash((r as Run & { input_builder_id?: string }).input_builder_id)],
-    ["附带原件图片", imagesText],
-    ["预处理版本", preprocessText],
-    ["输入覆盖", (r) => (r.input_manifest ? `${r.input_manifest.complete ? "完整" : "不完整"} · 文本 ${r.input_manifest.sent_text_chars} 字 · 图片 ${r.input_manifest.sent_image_count}` : "未记录")],
-    ["模型参数", (r) => (r.model_params ? JSON.stringify(r.model_params) : "—")],
-    ["输入 Token", (r) => dash(r.token_usage?.prompt_tokens)],
-    ["输出 Token", (r) => dash(r.token_usage?.completion_tokens)],
-    ["耗时 (ms)", (r) => dash(r.latency_ms)],
-    ["结束原因", (r) => dash(r.finish_reason)],
-    ["Schema 错误数", schemaErrors],
-    ["原始响应 Hash", (r) => dash(r.raw_response_hash?.slice(0, 12))],
+  // key 是稳定的内部名（MCP 等处依赖它，不能改）；label 是界面上显示的中文名
+  const rows: [string, string, (r: Run) => string][] = [
+    ["状态", "状态", (r) => r.status],
+    ["模式", "模式", (r) => r.mode],
+    ["模型", "模型", (r) => dash(r.model_name)],
+    ["Prompt 版本", "提示词版本", (r) => versionText(r, versionLabels[r === a ? 0 : 1])],
+    ["实际提示词 Hash", "实际提示词指纹", (r) => dash(r.actual_prompt_hash?.slice(0, 12))],
+    ["构造输入 Hash", "构造输入指纹", (r) => dash(r.built_input_hash?.slice(0, 12))],
+    ["输入快照", "输入快照", (r) => dash(r.input_snapshot_id)],
+    ["输入构造器", "输入构造器", (r) => dash((r as Run & { input_builder_id?: string }).input_builder_id)],
+    ["附带原件图片", "附带原件图片", imagesText],
+    ["预处理版本", "预处理版本", preprocessText],
+    ["输入覆盖", "输入覆盖", (r) => (r.input_manifest ? `${r.input_manifest.complete ? "完整" : "不完整"} · 文本 ${r.input_manifest.sent_text_chars} 字 · 图片 ${r.input_manifest.sent_image_count}` : "未记录")],
+    ["模型参数", "模型参数", (r) => (r.model_params ? JSON.stringify(r.model_params) : "—")],
+    ["输入 Token", "输入 token", (r) => dash(r.token_usage?.prompt_tokens)],
+    ["输出 Token", "输出 token", (r) => dash(r.token_usage?.completion_tokens)],
+    ["耗时 (ms)", "耗时（毫秒）", (r) => dash(r.latency_ms)],
+    ["结束原因", "结束原因", (r) => dash(r.finish_reason)],
+    ["Schema 错误数", "结构错误数", schemaErrors],
+    ["原始响应 Hash", "原始响应指纹", (r) => dash(r.raw_response_hash?.slice(0, 12))],
   ];
   return {
     input: inputComparability(a, b),
     strict: strictConditions(a, b),
-    metrics: rows.map(([key, f]) => ({ key, a: f(a), b: f(b), differs: f(a) !== f(b) })),
+    metrics: rows.map(([key, label, f]) => ({ key, label, a: f(a), b: f(b), differs: f(a) !== f(b) })),
     system: textHunks(a.actual_prompt?.system, b.actual_prompt?.system),
     user: textHunks(a.actual_prompt?.user, b.actual_prompt?.user),
   };

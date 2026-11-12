@@ -11,7 +11,7 @@ import { fieldInputCoverage } from "@/lib/runs/run-evidence";
 import { diagnosisPrompt } from "@/lib/mcp/task-template";
 import { BusinessView } from "@/components/views/business-view";
 import { RuleCheck } from "@/components/views/rule-check";
-import { Badge, Btn, cx, Empty, runStatusView } from "@/components/ui";
+import { Badge, Btn, cx, Empty, RUN_STATUS_LABEL, runStatusView } from "@/components/ui";
 import { JsonTree, RawText } from "./json-tree";
 import { InputCoverage } from "./input-coverage";
 import { RunEvidencePanel } from "./run-evidence-panel";
@@ -141,7 +141,7 @@ export function ResultPane({
         </Banner>
       )}
       {run?.finish_reason === "length" && (
-        <Banner tone="bad">模型输出达到 max_tokens 上限被截断（finish_reason=length）。请在「提示词」页「运行参数」里调大 max_tokens 后重跑。</Banner>
+        <Banner tone="bad"><span title="finish_reason=length">模型的回答太长，被截断了。请在「提示词」页的「运行参数」里把 max_tokens 调大后重新运行。</span></Banner>
       )}
       {dirty && run && <Banner tone="warn">当前结果来自上次运行（与未保存/未运行的编辑不同）。</Banner>}
       {run?.mode === "RENDER_ONLY" && (detail?.snapshot?.source_type === "FIXTURE" || run.label?.startsWith("样本")) && (
@@ -170,10 +170,10 @@ export function ResultPane({
       {run?.status === "CANCELLED" && <Banner tone="warn">这次运行已取消，没有取得模型结果（服务商可能已开始处理并计费）。</Banner>}
       {run && onRetry && run.mode === "MODEL_RUN" && (run.status === "MODEL_ERROR" || run.status === "CANCELLED") && (
         <div className="mx-3 mt-1 flex items-center gap-2 text-[11.5px] text-ink-400">
-          <Btn tone="outline" onClick={() => onRetry(run.run_id)} disabled={!run.prompt_source} data-testid="btn-retry" title={run.prompt_source ? "用同一输入、同一提示词和参数再运行一次，原记录不变" : "这条记录没有保存提示词原文（v1.1 之前），无法原样重试"}>
+          <Btn tone="outline" onClick={() => onRetry(run.run_id)} disabled={!run.prompt_source} data-testid="btn-retry" title={run.prompt_source ? "用同一输入、同一提示词和参数再运行一次，原记录不变" : "这条记录较早，当时没有保存提示词原文，无法原样重试"}>
             原样重试
           </Btn>
-          {run.prompt_source ? "用同一输入、同一提示词和参数再运行一次；原失败记录保留。" : "这条记录早于 v1.1，没有保存提示词原文，不能原样重试。"}
+          {run.prompt_source ? "用同一输入、同一提示词和参数再运行一次；原失败记录保留。" : "这条记录较早，当时没有保存提示词原文，不能原样重试。"}
         </div>
       )}
       {run?.input_manifest && !run.input_manifest.complete && run.status !== "RUNNING" && (
@@ -341,6 +341,11 @@ function JsonTab({ detail }: { detail: RunDetail }) {
   );
 }
 
+const SCHEMA_STATUS_LABEL: Record<string, string> = { VALID: "符合约定", INVALID: "不符合约定", NOT_RUN: "没有校验", UNKNOWN_SCHEMA: "没有对应的结构定义" };
+const PHASE_LABEL = { PARSE: "解析回答", SCHEMA: "结构校验", ADAPTER: "整理成表格", RENDER: "显示" } as const;
+const LEVEL_LABEL: Record<string, string> = { ERROR: "错误", WARNING: "提醒", INFO: "提示" };
+const MODE_LABEL: Record<string, string> = { MODEL_RUN: "模型运行", RENDER_ONLY: "仅渲染", REPLAY: "回放" };
+
 function SchemaTab({ detail }: { detail: RunDetail }) {
   const run = detail.run;
   const select = useStudio((s) => s.select);
@@ -355,7 +360,7 @@ function SchemaTab({ detail }: { detail: RunDetail }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Badge tone={status === "VALID" ? "ok" : status === "INVALID" ? "warn" : status === "NOT_RUN" ? "bad" : "info"}>{status}</Badge>
+        <Badge tone={status === "VALID" ? "ok" : status === "INVALID" ? "warn" : status === "NOT_RUN" ? "bad" : "info"} title={status}>{SCHEMA_STATUS_LABEL[status]}</Badge>
         <span className="text-[12px] text-ink-300">Schema：{run.schema_id ?? "未登记"}（{run.schema_version ?? "—"}）</span>
         <span className="text-[11px] text-ink-400">Schema 由 Studio 依据文档推导，非九立官方；合法 ≠ 事实准确。</span>
       </div>
@@ -365,14 +370,14 @@ function SchemaTab({ detail }: { detail: RunDetail }) {
         return (
           <div key={phase}>
             <h4 className="mb-1 text-[11.5px] font-semibold text-ink-300">
-              {phase} · {list.length}
+              <span title={phase}>{PHASE_LABEL[phase]}</span> · {list.length}
             </h4>
             <table className="w-full text-[12px]">
               <tbody>
                 {list.map((d, i) => (
                   <tr key={i} className="border-b border-ink-800">
                     <td className="w-16 py-1 pr-2">
-                      <Badge tone={d.level === "ERROR" ? "bad" : d.level === "WARNING" ? "warn" : "info"}>{d.level}</Badge>
+                      <Badge tone={d.level === "ERROR" ? "bad" : d.level === "WARNING" ? "warn" : "info"} title={d.level}>{LEVEL_LABEL[d.level] ?? d.level}</Badge>
                     </td>
                     <td className="w-56 py-1 pr-2 font-mono text-[11px] text-ink-400">{d.code}</td>
                     <td className="py-1 pr-2 break-words">{d.message}</td>
@@ -399,7 +404,7 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
   return (
     <>
       <dt className="border-b border-ink-800 px-3.5 py-1.5 text-ink-400">{k}</dt>
-      <dd className="border-b border-ink-800 px-3.5 py-1.5 font-mono break-all">{v ?? <span className="text-ink-600">unknown</span>}</dd>
+      <dd className="border-b border-ink-800 px-3.5 py-1.5 font-mono break-all">{v ?? <span className="text-ink-600">未记录</span>}</dd>
     </>
   );
 }
@@ -412,7 +417,7 @@ function MetaTab({ detail }: { detail: RunDetail }) {
       {detail.evidence && r.status !== "RUNNING" && <RunEvidencePanel run={r} evidence={detail.evidence} />}
       <dl className="grid grid-cols-[180px_1fr] overflow-hidden rounded-xl border border-ink-700 bg-ink-900 [&>*:nth-last-child(-n+2)]:border-b-0">
         <Row k="run_id" v={r.run_id} />
-        <Row k="模式 / 状态" v={`${r.mode} / ${r.status}`} />
+        <Row k="模式 / 状态" v={<span title={`${r.mode} / ${r.status}`}>{`${MODE_LABEL[r.mode] ?? r.mode} / ${RUN_STATUS_LABEL[r.status] ?? r.status}`}</span>} />
         <Row k="标签" v={r.label} />
         <Row k="Prompt / 种类" v={`${r.prompt_id} / ${r.prompt_kind}`} />
         <Row
@@ -449,7 +454,7 @@ function MetaTab({ detail }: { detail: RunDetail }) {
         <Row k="耗时" v={r.latency_ms != null ? `${r.latency_ms} ms` : null} />
         <Row
           k="分阶段耗时"
-          v={r.timing ? `预处理 ${r.timing.preprocess_ms ?? "—"} ms · 模型 ${r.timing.inference_ms ?? "—"} ms · 解析与渲染 ${r.timing.parse_ms ?? "—"} ms` : r.mode === "MODEL_RUN" ? "未记录（v1.1 之前的 Run）" : "不适用"}
+          v={r.timing ? `预处理 ${r.timing.preprocess_ms ?? "—"} ms · 模型 ${r.timing.inference_ms ?? "—"} ms · 解析与渲染 ${r.timing.parse_ms ?? "—"} ms` : r.mode === "MODEL_RUN" ? "未记录（这条运行记录较早）" : "不适用"}
         />
         <Row k="服务商请求 ID" v={r.provider_request_id} />
         <Row k="重试来源" v={r.retry_of_run_id} />
@@ -460,7 +465,7 @@ function MetaTab({ detail }: { detail: RunDetail }) {
         <Row k="回放来源" v={r.replay_of_run_id} />
         <Row k="错误" v={r.error ? `${r.error.code}: ${r.error.message}` : "无"} />
       </dl>
-      {r.input_manifest ? <InputCoverage manifest={r.input_manifest} /> : r.mode === "MODEL_RUN" && <p className="text-[11.5px] text-ink-400">这条 Run 早于 v1.1，没有输入覆盖清单。</p>}
+      {r.input_manifest ? <InputCoverage manifest={r.input_manifest} /> : r.mode === "MODEL_RUN" && <p className="text-[11.5px] text-ink-400">这条运行记录较早，当时没有保存输入覆盖清单。</p>}
       {detail.snapshot?.warnings?.length ? (
         <div className="rounded-lg border border-risk/30 p-2 text-[11.5px] text-risk">
           {detail.snapshot.warnings.map((w) => (
@@ -521,12 +526,12 @@ function FieldVerdict({ detail }: { detail: RunDetail }) {
       <div className="mt-0.5 font-semibold break-words text-ink-100">{hit.found ? (typeof hit.value === "string" ? hit.value || "（空）" : JSON.stringify(hit.value)) : "（模型输出里没有这个位置）"}</div>
       <dl className="mt-1.5 grid grid-cols-[64px_1fr] gap-x-1.5 gap-y-0.5 text-[11px]">
         <dt className="text-ink-400">字段状态</dt>
-        <dd data-testid="field-state">{cell?.state ? `${CELL_STATE_LABEL[cell.state]}（${cell.state}）` : "模型没有标注状态"}</dd>
+        <dd data-testid="field-state">{cell?.state ? <span title={cell.state}>{CELL_STATE_LABEL[cell.state]}</span> : "模型没有标注状态"}</dd>
         {converted && (
           <>
             <dt className="text-ink-400">表格显示</dt>
             <dd className="text-risk" data-testid="field-converted">
-              {JSON.stringify(cell.value)}（Adapter 整理时转换，原始输出见上）
+              {JSON.stringify(cell.value)}（系统整理成表格时做了转换，原始输出见上）
             </dd>
           </>
         )}
@@ -561,7 +566,7 @@ function FieldVerdict({ detail }: { detail: RunDetail }) {
         onClick={copyDiagnosis}
         className="mt-1 text-[11px] text-ink-400 hover:text-info hover:underline"
         data-testid="btn-copy-diagnosis"
-        title="复制后粘贴到已接入 MCP 的 Codex / Claude Code（见 docs/MCP接入说明.md），Agent 会按 Run 读取证据并给出带引用的诊断"
+        title="复制后粘贴到已接入 MCP 的 Codex / Claude Code（见 docs/MCP接入说明.md），Agent 会按运行读取证据并给出带引用的诊断"
       >
         {copied ? "已复制" : "复制 Agent 诊断指令"}
       </button>
@@ -655,7 +660,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   MODEL_REASONING_ERROR: "模型判断：证据和规则都在但判断错",
   CANDIDATE_RECALL_ERROR: "候选召回：正确候选没进入 P3 输入",
   RELATION_SELECTION_ERROR: "关系裁决：候选已在输入中但 P3 选错",
-  SCHEMA_CONTRACT_ERROR: "输出结构：Schema / 契约问题",
+  SCHEMA_CONTRACT_ERROR: "输出结构：回答的格式不符合约定",
   ADAPTER_MAPPING_ERROR: "显示映射：模型输出正确但显示错",
   BUSINESS_RULE_ERROR: "业务规则：九立规则本身有误",
   INCORRECT_GOLD: "标准答案有误",
@@ -725,6 +730,12 @@ function AnnotationForm({ detail, children }: { detail: RunDetail; children?: Re
   // 修改旧标注时保留它原来的类型
   if (editing && !choices.includes(editing.issue_type)) choices.push(editing.issue_type);
   const target = [sel.tableId, sel.rowId, sel.fieldKey].filter(Boolean).join(" / ") || sel.relationId || null;
+  /** 标注的「目标」显示：字段 key 换成该列的中文名（找不到列就原样）；原始串放 title */
+  const targetText = (raw: string | null | undefined) => {
+    const parts = raw?.split(" / ") ?? [];
+    const col = parts.length === 3 ? detail.run.view_model?.tables.find((t) => t.id === parts[0])?.columns.find((c) => c.key === parts[2]) : undefined;
+    return col ? `${parts[0]} / ${parts[1]} / ${col.title}` : raw;
+  };
   const assessing = type === "ASSESSMENT";
   const done = detail.annotations.find((a) => a.target_json_pointer === sel.jsonPointer && a.assessment === "CORRECT");
   const needCategory = assessing && assess === "WRONG" && !category;
@@ -810,7 +821,7 @@ function AnnotationForm({ detail, children }: { detail: RunDetail; children?: Re
     <div className="space-y-3" data-testid="annotation-form">
       {(sel.jsonPointer || editing) && (
         <div className="space-y-1.5">
-          {editing && <div className="text-[11px] text-info">正在修改：{editing.target ?? editing.target_json_pointer ?? "整个 Run"}</div>}
+          {editing && <div className="text-[11px] text-info" title={editing.target ?? editing.target_json_pointer ?? undefined}>正在修改：{targetText(editing.target ?? editing.target_json_pointer) ?? "整个运行"}</div>}
           {(!editing || assessing) && (
             <div className="flex gap-1.5">
               {/* 新增时「对」直接保存；修改时三个按钮用来改评判 */}
@@ -886,7 +897,7 @@ function AnnotationForm({ detail, children }: { detail: RunDetail; children?: Re
               <li key={a.annotation_id} className={cx("rounded-lg bg-ink-800 px-2 py-1 text-[11px]", editing?.annotation_id === a.annotation_id && "ring-1 ring-info")}>
                 <div className="flex items-center gap-1">
                   <Badge tone={a.assessment === "WRONG" ? "bad" : a.assessment === "CORRECT" ? "ok" : a.assessment === "UNSURE" ? "warn" : "info"}>{a.assessment ? ASSESS_LABEL[a.assessment] : (ANN_LABEL[a.issue_type] ?? a.issue_type)}</Badge>{" "}
-                  <span className="min-w-0 flex-1 truncate text-ink-400">{a.target ?? a.target_json_pointer}</span>
+                  <span className="min-w-0 flex-1 truncate text-ink-400" title={a.target ?? a.target_json_pointer ?? undefined}>{targetText(a.target ?? a.target_json_pointer)}</span>
                   <button onClick={() => startEdit(a)} className="text-info hover:underline" aria-label={`修改标注 ${a.annotation_id}`}>
                     修改
                   </button>

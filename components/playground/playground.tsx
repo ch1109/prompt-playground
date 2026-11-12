@@ -47,6 +47,18 @@ const NEW_PROMPT_KINDS: [PromptKind, string][] = [
   ["JIULI_P4", "P4 字段核验"],
 ];
 
+/** 顶栏错误：message 给业务人员看，code（错误码）只放进悬停提示 */
+type ErrorInfo = { message: string; code?: string };
+
+/** 把异常转成顶栏错误 */
+function errorInfo(e: unknown): ErrorInfo {
+  if (e instanceof ApiError) return { message: e.message, code: e.code };
+  return { message: e instanceof Error ? e.message : String(e) };
+}
+
+/** 运行历史「模式」列的中文显示；英文原值放在悬停提示里 */
+const RUN_MODE_LABEL: Record<string, string> = { MODEL_RUN: "模型运行", RENDER_ONLY: "仅渲染", REPLAY: "回放" };
+
 export function Playground({ projectId }: { projectId: string }) {
   const s = useStudio();
   const router = useRouter();
@@ -64,7 +76,7 @@ export function Playground({ projectId }: { projectId: string }) {
   const [provider, setProvider] = useState<ProviderInfoDTO | null>(null);
   const [capability, setCapability] = useState<CapabilityDTO | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ErrorInfo | null>(null);
   const [compare, setCompare] = useState<string[]>([]);
   const narrow = useNarrow();
   const [narrowPane, setNarrowPane] = useState<"editor" | "result">("editor");
@@ -83,9 +95,13 @@ export function Playground({ projectId }: { projectId: string }) {
   const kindFixtures = prompt ? fixtures.filter((f) => f.promptKind === prompt.prompt_kind) : [];
   const exampleFixture = kindFixtures.find((f) => f.origin === "CONSTRUCTED" && f.hasRequest && f.schemaVersion) ?? kindFixtures.find((f) => f.origin === "RECORDED_MODEL_OUTPUT") ?? kindFixtures[0];
   const emptyHint =
-    (hasFixtures
-      ? "在「输入」上传文件后点「运行模型」；也可以在「示例」里选一个示例，点「仅渲染」直接看结果。"
-      : "在「输入」上传文件（可以是整个文件夹）后点「运行模型」；也可以在「更多 → 粘贴 JSON」粘贴模型输出后点「仅渲染」。") +
+    (mode === "check"
+      ? hasFixtures
+        ? "点上方「更换输入」上传文件或选一个示例，再点右上角「运行模型」；选了示例也可以点「仅渲染」直接看结果。"
+        : "点上方「更换输入」上传文件（可以是整个文件夹），再点右上角「运行模型」。"
+      : hasFixtures
+        ? "在「输入」上传文件后点「运行模型」；也可以在「示例」里选一个示例，点「仅渲染」直接看结果。"
+        : "在「输入」上传文件（可以是整个文件夹）后点「运行模型」；也可以在「更多 → 粘贴 JSON」粘贴模型输出后点「仅渲染」。") +
     (provider && !provider.configured ? "（模型未配置，目前只能仅渲染）" : "");
   /** 顶栏显示的当前版本；文本与该版本不同即为未保存草稿（与「提示词」页签的判断一致） */
   const currentVersion = versions[promptId]?.find((v) => v.version_id === ws.versionId);
@@ -98,7 +114,7 @@ export function Playground({ projectId }: { projectId: string }) {
     Promise.resolve(useStudio.persist.rehydrate()).then(() => setHydrated(true));
   }, []);
 
-  const loadProjects = useCallback(() => api<ProjectDTO[]>("/api/projects").then(setProjects).catch((e) => setError(e.message)), []);
+  const loadProjects = useCallback(() => api<ProjectDTO[]>("/api/projects").then(setProjects).catch((e) => setError({ message: e.message })), []);
   const loadPrompts = useCallback(
     () =>
       api<PromptDef[]>(`/api/prompts?project=${projectId}`)
@@ -108,7 +124,7 @@ export function Playground({ projectId }: { projectId: string }) {
           return p;
         })
         .catch((e) => {
-          setError(e.message);
+          setError({ message: e.message });
           return [] as PromptDef[];
         }),
     [projectId],
@@ -134,7 +150,7 @@ export function Playground({ projectId }: { projectId: string }) {
   }
 
   async function createPrompt() {
-    if (!newPrompt?.name.trim()) return setError("请填写提示词名称");
+    if (!newPrompt?.name.trim()) return setError({ message: "请填写提示词名称" });
     setError(null);
     try {
       const p = await api<PromptDef>("/api/prompts", { json: { projectId, ...newPrompt } });
@@ -152,7 +168,7 @@ export function Playground({ projectId }: { projectId: string }) {
   }, [hydrated, prompts, promptId, s]);
 
   async function createProject() {
-    if (!newProject?.name.trim()) return setError("请填写项目名称");
+    if (!newProject?.name.trim()) return setError({ message: "请填写项目名称" });
     setError(null);
     try {
       const p = await api<ProjectDTO>("/api/projects", { json: newProject });
@@ -292,7 +308,7 @@ export function Playground({ projectId }: { projectId: string }) {
       loadRuns();
       loadSnapshots();
     } catch (e) {
-      setError(e instanceof ApiError ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : String(e));
+      setError(errorInfo(e));
     } finally {
       setBusy(false);
     }
@@ -313,7 +329,7 @@ export function Playground({ projectId }: { projectId: string }) {
       // 期间用户又换了样本，就不覆盖
       if (useStudio.getState().workspaces[pid]?.fixtureId === fixtureId) s.patchWorkspace(pid, { fixtureSnapshotId: id });
     } catch (e) {
-      setError(e instanceof ApiError ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : String(e));
+      setError(errorInfo(e));
     }
   }
 
@@ -349,7 +365,7 @@ export function Playground({ projectId }: { projectId: string }) {
       await openRun(run.run_id, { sig: inputSignature(w, "MODEL_RUN"), mode: "MODEL_RUN" });
       loadRuns();
     } catch (e) {
-      setError(e instanceof ApiError ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : String(e));
+      setError(errorInfo(e));
     } finally {
       setBusy(false);
     }
@@ -358,7 +374,7 @@ export function Playground({ projectId }: { projectId: string }) {
   /** 现在不能真实运行的原因（与顶栏「运行模型」按钮的禁用条件一致）；null = 可以运行 */
   const runBlocked = busy ? "正在处理上一个操作" : !provider?.configured ? "未配置模型：请先在 .env.local 填写模型信息" : runningRunId ? "当前提示词的上一次运行尚未结束" : null;
 
-  const report = (e: unknown) => setError(e instanceof ApiError ? `${e.code}: ${e.message}` : e instanceof Error ? e.message : String(e));
+  const report = (e: unknown) => setError(errorInfo(e));
 
   /** 返回是否保存成功；失败时在顶栏显示错误 */
   async function saveVersion(label: string, changeNote: string): Promise<boolean> {
@@ -453,7 +469,7 @@ export function Playground({ projectId }: { projectId: string }) {
       <table className="w-full text-[12.5px]">
                 <thead className="sticky top-0 z-10 bg-ink-900/95 text-[11.5px] text-ink-400 backdrop-blur">
                   <tr className="border-b border-ink-700">
-                    {[...(mode === "compare" ? ["对比"] : []), "时间", "Prompt", "模式", "状态", "标签", "模型", ""].map((h) => (
+                    {[...(mode === "compare" ? ["对比"] : []), "时间", "提示词", "模式", "状态", "标签", "模型", ""].map((h) => (
                       <th key={h} className="px-3 py-2 text-left font-medium">
                         {h}
                       </th>
@@ -464,7 +480,7 @@ export function Playground({ projectId }: { projectId: string }) {
                   {!runs.length && (
                     <tr>
                       <td colSpan={8} className="px-3 py-5 text-ink-400">
-                        当前 Prompt 还没有运行记录。
+                        当前提示词还没有运行记录。
                       </td>
                     </tr>
                   )}
@@ -484,7 +500,7 @@ export function Playground({ projectId }: { projectId: string }) {
                       <td className="px-3 font-mono text-[11.5px] text-ink-400">{r.started_at.slice(5, 19).replace("T", " ")}</td>
                       <td className="px-3 font-mono text-[11.5px]">{SHORT[r.prompt_kind]}</td>
                       <td className="px-3">
-                        <Badge>{r.mode}</Badge>
+                        <Badge title={r.mode}>{RUN_MODE_LABEL[r.mode] ?? r.mode}</Badge>
                       </td>
                       <td className="px-3">
                         <Badge tone={runStatusView(r.status, r.schema_id, r.prompt_kind, r.mode).tone}>{runStatusView(r.status, r.schema_id, r.prompt_kind, r.mode).label}</Badge>
@@ -762,8 +778,8 @@ export function Playground({ projectId }: { projectId: string }) {
           )}
           <div className="ml-auto flex items-center gap-2">
             {error && (
-              <span className="max-w-[420px] truncate rounded-lg bg-stamp-soft px-2 py-1 text-[12px] text-stamp" title={error} data-testid="error-message">
-                {error}
+              <span className="max-w-[420px] truncate rounded-lg bg-stamp-soft px-2 py-1 text-[12px] text-stamp" title={error.code ? `${error.message}（错误码 ${error.code}）` : error.message} data-testid="error-message">
+                {error.message}
               </span>
             )}
             <span className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-ink-700 px-2.5 py-1 font-mono text-[11px] text-ink-300" title={provider?.provider}>
@@ -778,7 +794,7 @@ export function Playground({ projectId }: { projectId: string }) {
               tone="primary"
               onClick={modelRun}
               disabled={busy || !provider?.configured || runningRunId !== null}
-              title={!provider?.configured ? "未配置模型：请先在 .env.local 填写模型信息" : runningRunId ? "当前 Prompt 的上一次运行尚未结束" : "调用真实 AI 模型，会产生费用"}
+              title={!provider?.configured ? "未配置模型：请先在 .env.local 填写模型信息" : runningRunId ? "当前提示词的上一次运行尚未结束" : "调用真实 AI 模型，会产生费用"}
               data-testid="btn-run"
             >
               <Icon d={ICONS.play} />

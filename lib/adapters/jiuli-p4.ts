@@ -1,26 +1,9 @@
 import type { ChangeView, PatchSimulation, TableColumn, TableRow, TableView } from "@/lib/contracts/view-model";
 import { FIELD_LABELS, P1_VALUE_KEYS } from "@/lib/schemas/common";
 import { join, ptr } from "@/lib/pipeline/json-pointer";
-import { arr, display, indexEvidenceKeys, makeCell, obj, type Obj, reportKeyConflicts, resolveEvidenceKeys, strOrUndef, VMBuilder } from "./helpers";
+import { arr, display, indexEvidenceKeys, makeCell, obj, type Obj, reportKeyConflicts, resolveEvidenceKeys, STATE_LABEL, strOrUndef, VMBuilder } from "./helpers";
 import type { AdapterContext, AdapterOutput, BusinessAdapter } from "./types";
 
-export const VERIFICATION_LABEL: Record<string, string> = {
-  VERIFIED_CONSISTENT: "已核验一致",
-  VERIFIED_UPDATED: "已按规则更新",
-  CONFLICT: "冲突",
-  MISSING_REQUIRED: "必填缺失",
-  NO_EVIDENCE: "未取得证据",
-  NOT_CHECKED: "本轮未核验",
-};
-
-export const DECISION_LABEL: Record<string, string> = {
-  KEEP: "保持",
-  FILL: "补空",
-  UPDATE: "更新",
-  CONFLICT: "冲突",
-  MISSING: "缺失",
-  NO_ACTION: "不处理",
-};
 const WRITE_POLICY_LABEL: Record<string, string> = { AUTO: "可自动", REVIEW_ONLY: "仅复核", LOCKED: "人工锁定", UNSPECIFIED: "未指定" };
 /** 显示用：英文枚举保留（便于对照 JSON），附中文说明 */
 const withLabel = (v: string, labels: Record<string, string>) => (v && labels[v] ? `${v}（${labels[v]}）` : v);
@@ -135,7 +118,7 @@ function fieldMatrix(targets: Map<string, { row: Obj; pointer: string }>, change
       const lock = rf.write_policy === "LOCKED";
       if (lock) locked++;
       const tag = lock ? "【锁定】" : "";
-      if (ch) cells[k] = makeCell(id, k, `${tag}${DECISION_LABEL[ch.action] ?? ch.action}：${display(ch.after) || "（空）"}`, ch.jsonPointer, ch.sourceRefIds);
+      if (ch) cells[k] = makeCell(id, k, `${tag}${STATE_LABEL[ch.action] ?? ch.action}：${display(ch.after) || "（空）"}`, ch.jsonPointer, ch.sourceRefIds);
       else if (Object.prototype.hasOwnProperty.call(fields, k)) cells[k] = makeCell(id, k, `${tag}本轮未核验（当前 ${display(rf.current_value) || "空"}）`, "req:" + join(t!.pointer, "fields", k));
       else cells[k] = makeCell(id, k, "本轮未核验", t ? "req:" + join(t.pointer, "fields") : "");
     }
@@ -155,9 +138,9 @@ function summary(b: VMBuilder, out: Obj, changes: ChangeView[]): AdapterOutput["
     summary: [
       { label: "处理状态", value: display(out.processing_status) || "—" },
       { label: "字段决策", value: changes.length },
-      { label: "KEEP", value: by("KEEP") },
-      { label: "FILL/UPDATE", value: by("FILL") + by("UPDATE") },
-      { label: "CONFLICT/MISSING", value: by("CONFLICT") + by("MISSING") },
+      { label: "保持", value: by("KEEP") },
+      { label: "补空 / 更新", value: by("FILL") + by("UPDATE") },
+      { label: "冲突 / 缺失", value: by("CONFLICT") + by("MISSING") },
       { label: "可模拟应用", value: changes.filter((c) => c.simulation?.applicable).length },
     ],
     notes: ["「模拟新值」只在浏览器内存中模拟（SIMULATION_ONLY），禁止写回九立。"],
@@ -259,8 +242,8 @@ export const jiuliP4V3: BusinessAdapter = {
             value_origin: makeCell(id, "value_origin", rf.value_origin, reqField("value_origin")),
             write_policy: makeCell(id, "write_policy", withLabel(strOrUndef(rf.write_policy) ?? "", WRITE_POLICY_LABEL), reqField("write_policy")),
             result_value: makeCell(id, "result_value", d.result_value, join(dp, "result_value"), evIds),
-            decision: makeCell(id, "decision", withLabel(decision, DECISION_LABEL), join(dp, "decision"), evIds),
-            verification_status: makeCell(id, "verification_status", withLabel(status, VERIFICATION_LABEL), join(dp, "verification_status"), evIds),
+            decision: makeCell(id, "decision", withLabel(decision, STATE_LABEL), join(dp, "decision"), evIds),
+            verification_status: makeCell(id, "verification_status", withLabel(status, STATE_LABEL), join(dp, "verification_status"), evIds),
             missing_required: makeCell(id, "missing_required", d.missing_required, join(dp, "missing_required")),
             candidate_values: makeCell(id, "candidate_values", cands.length ? cands.map((c) => display(obj(c).value)).join(" / ") : "", join(dp, "candidate_values")),
             referenced_issue_ids: makeCell(id, "referenced_issue_ids", arr(d.referenced_issue_ids).join(", "), join(dp, "referenced_issue_ids")),
@@ -397,8 +380,8 @@ export const jiuliP4V2: BusinessAdapter = {
             field: makeCell(id, "field", FIELD_LABELS[field] ? `${FIELD_LABELS[field]}（${field}）` : field, join(dp, "field")),
             current_value: makeCell(id, "current_value", d.current_value, join(dp, "current_value")),
             result_value: makeCell(id, "result_value", d.result_value, join(dp, "result_value"), evIds),
-            decision: makeCell(id, "decision", withLabel(decision, DECISION_LABEL), join(dp, "decision"), evIds),
-            verification_status: makeCell(id, "verification_status", withLabel(status, VERIFICATION_LABEL), join(dp, "verification_status"), evIds),
+            decision: makeCell(id, "decision", withLabel(decision, STATE_LABEL), join(dp, "decision"), evIds),
+            verification_status: makeCell(id, "verification_status", withLabel(status, STATE_LABEL), join(dp, "verification_status"), evIds),
             rule_id: makeCell(id, "rule_id", d.rule_id, join(dp, "rule_id")),
             source_refs: makeCell(id, "source_refs", arr(d.source_refs).join(", "), join(dp, "source_refs"), evIds),
             conflict_values: makeCell(id, "conflict_values", conflicts.length ? conflicts : "", join(dp, "conflict_values")),

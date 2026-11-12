@@ -38,27 +38,30 @@ export function Hunks({ title, hunks, labels = ["A", "B"] }: { title: string; hu
 }
 
 /** 手动并排对比两次历史 Run 的 JSON（轻量对比，不是带准确率的正式评测） */
-/** inline：嵌在「版本对比」模式页面里显示，不弹窗 */
-export function RunCompare({ ids, onClose, inline }: { ids: [string, string]; onClose: () => void; inline?: boolean }) {
+/** 嵌在「版本对比」模式页面里显示。inline 已不再使用（组件只有内嵌形态），保留为可选仅为兼容调用方 */
+export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: () => void; inline?: boolean }) {
   const [a, setA] = useState<RunDetail | null>(null);
   const [b, setB] = useState<RunDetail | null>(null);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
-    api<RunDetail>(`/api/runs/${ids[0]}`).then(setA);
-    api<RunDetail>(`/api/runs/${ids[1]}`).then(setB);
+    setFailed(false);
+    const fail = () => setFailed(true);
+    api<RunDetail>(`/api/runs/${ids[0]}`).then(setA).catch(fail);
+    api<RunDetail>(`/api/runs/${ids[1]}`).then(setB).catch(fail);
   }, [ids]);
   const diff = useMemo(() => (a && b ? diffSummary(a.run.parsed_json ?? a.run.raw_response, b.run.parsed_json ?? b.run.raw_response) : { rows: [], same: 0 }), [a, b]);
   const rows = diff.rows;
   const count = (k: DiffRow["kind"]) => rows.filter((r) => r.kind === k).length;
   const cmp = useMemo(() => (a && b ? compareRuns(a.run, b.run, [a.prompt_version_label, b.prompt_version_label]) : null), [a, b]);
   return (
-    <div className={inline ? "" : "fixed inset-0 z-50 flex items-center justify-center bg-ink-100/25 p-8 backdrop-blur-[2px]"} role={inline ? "region" : "dialog"} aria-label="对比两次运行">
-      <div className={cx("flex w-full flex-col overflow-hidden rounded-2xl border border-ink-700 bg-ink-900", inline ? "" : "max-h-full max-w-5xl shadow-2xl")}>
+    <div role="region" aria-label="对比两次运行">
+      <div className="flex w-full flex-col overflow-hidden rounded-2xl border border-ink-700 bg-ink-900">
         <div className="flex items-center gap-2 border-b border-ink-700 px-4 py-3">
           <span className="font-semibold">运行对比</span>
           <Badge>{ids[0]}</Badge>→<Badge>{ids[1]}</Badge>
           <span className="text-[11px] text-ink-400">A=左 / B=右；仅展示差异，不代表准确率</span>
           <Btn className="ml-auto" onClick={onClose}>
-            {inline ? "清除选择" : "关闭"}
+            清除选择
           </Btn>
         </div>
         <div className="overflow-auto px-5 py-4">
@@ -82,7 +85,7 @@ export function RunCompare({ ids, onClose, inline }: { ids: [string, string]; on
                 {cmp.strict.reasons.map((r) => (
                   <div key={r}>· {r}</div>
                 ))}
-                <div className="mt-1 text-[11px] text-ink-400">差异数 ≠ 错误数。没有 Gold 标准答案时只展示差异，不计算正确率、修复或退化。</div>
+                <div className="mt-1 text-[11px] text-ink-400">差异数 ≠ 错误数。没有标准答案时只展示差异，不计算正确率、修复或退化。</div>
               </div>
               <table className="mb-5 w-full text-[12px]" data-testid="compare-metrics">
                 <thead className="text-ink-400">
@@ -95,7 +98,7 @@ export function RunCompare({ ids, onClose, inline }: { ids: [string, string]; on
                 <tbody>
                   {cmp.metrics.map((m) => (
                     <tr key={m.key} className={cx("border-b border-ink-800", m.differs && "bg-risk/[0.07]")}>
-                      <td className="px-2 py-1 text-ink-400">{m.key}</td>
+                      <td className="px-2 py-1 text-ink-400">{m.label}</td>
                       <td className="px-2 py-1 font-mono break-all">{m.a}</td>
                       <td className="px-2 py-1 font-mono break-all">{m.b}</td>
                     </tr>
@@ -115,7 +118,9 @@ export function RunCompare({ ids, onClose, inline }: { ids: [string, string]; on
               </div>
             </>
           )}
-          {!a || !b ? (
+          {failed ? (
+            <p className="text-stamp">读取失败，请重试。</p>
+          ) : !a || !b ? (
             <p className="text-ink-400">加载中…</p>
           ) : rows.length === 0 ? (
             <p className="text-verify">两次输出完全一致</p>
