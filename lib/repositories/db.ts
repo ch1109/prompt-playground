@@ -135,6 +135,15 @@ CREATE TRIGGER IF NOT EXISTS egress_consents_no_update BEFORE UPDATE ON egress_c
 BEGIN SELECT RAISE(ABORT, '外发确认记录只新增不修改'); END;
 CREATE TRIGGER IF NOT EXISTS egress_consents_no_delete BEFORE DELETE ON egress_consents
 BEGIN SELECT RAISE(ABORT, '外发确认记录只新增不删除'); END;
+-- 通用提示词的输出版式：按提示词保存，只追加（新版本 = 新一行），旧运行可用任一版式重新显示
+CREATE TABLE IF NOT EXISTS prompt_layouts (
+  prompt_id TEXT NOT NULL, layout_version INTEGER NOT NULL, layout_json TEXT NOT NULL, source TEXT NOT NULL, created_at TEXT NOT NULL,
+  PRIMARY KEY (prompt_id, layout_version)
+);
+CREATE TRIGGER IF NOT EXISTS prompt_layouts_no_update BEFORE UPDATE ON prompt_layouts
+BEGIN SELECT RAISE(ABORT, '版式记录只新增不修改'); END;
+CREATE TRIGGER IF NOT EXISTS prompt_layouts_no_delete BEFORE DELETE ON prompt_layouts
+BEGIN SELECT RAISE(ABORT, '版式记录只新增不删除'); END;
 CREATE TRIGGER IF NOT EXISTS raw_responses_immutable BEFORE UPDATE ON raw_responses
 BEGIN SELECT RAISE(ABORT, 'raw_responses 不可修改'); END;
 -- 只有运行中（RUNNING）的 Run 可以更新为终态；结束后不可修改

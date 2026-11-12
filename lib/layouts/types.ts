@@ -35,7 +35,7 @@ export interface ChecklistLayout {
   /** 状态字段；其值在 passValues 里算「通过」，否则算「未通过」 */
   statusPath?: string;
   passValues?: string[];
-  /** 严重度字段；取值含 严重/BLOCKER/high 等按 BLOCKER，提醒/WARNING/medium 按 WARNING，其余 INFO */
+  /** 严重度字段；取值含 严重/BLOCKER/high 等按 BLOCKER，提醒/WARNING/medium 按 WARNING，未通过项其余/缺失按 WARNING，通过项一律 INFO */
   severityPath?: string;
   detailPath?: string;
 }

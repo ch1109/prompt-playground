@@ -1,4 +1,5 @@
 "use client";
+import type { Layout, StoredLayout } from "@/lib/layouts/types";
 
 export class ApiError extends Error {
   constructor(
@@ -28,3 +29,6 @@ export async function api<T>(url: string, init?: RequestInit & { json?: unknown 
   if (!body.ok) throw new ApiError(body.error?.code ?? "UNKNOWN", body.error?.message ?? "请求失败", res.status, body.error?.details);
   return body.data as T;
 }
+
+export const getLayout = (promptId: string) => api<{ layout: StoredLayout | null }>(`/api/prompts/${encodeURIComponent(promptId)}/layout`);
+export const saveLayout = (promptId: string, layout: Layout) => api<StoredLayout>(`/api/prompts/${encodeURIComponent(promptId)}/layout`, { method: "PUT", json: { layout } });
