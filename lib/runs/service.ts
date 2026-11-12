@@ -10,6 +10,7 @@ import { runPipeline } from "@/lib/pipeline/pipeline";
 import { findRendererConfig } from "@/lib/renderer-config/registry";
 import { contentHash, getPrompt, getVersion } from "@/lib/repositories/prompts";
 import { finishRun, getRun, saveRun, startRun } from "@/lib/repositories/runs";
+import { getEgressConsent } from "@/lib/repositories/egress";
 import { getSnapshot, snapshotDeletedAt } from "@/lib/repositories/snapshots";
 import { materialInfo } from "@/lib/materials/store";
 import type { ProviderCapabilities } from "@/lib/models/provider-adapter";
@@ -243,7 +244,12 @@ export function cancelRun(runId: string) {
   ac.abort();
 }
 
-type ModelRunInput = Base & { snapshotId: string; system: string; userTemplate: string; promptVersionId?: string | null; params: ModelParams; /** 不填 = 默认模型；调用方须先确认它在可用列表里 */ model?: string | null; attachImages?: boolean; retryOfRunId?: string | null; experimentRef?: Run["experiment_ref"] };
+type ModelRunInput = Base & { snapshotId: string; system: string; userTemplate: string; promptVersionId?: string | null; params: ModelParams; /** 不填 = 默认模型；调用方须先确认它在可用列表里 */ model?: string | null; attachImages?: boolean; retryOfRunId?: string | null; /** 谁授权外发：web:<用户> / agent:<principal>；不传记为 unknown */ authorizedBy?: string; experimentRef?: Run["experiment_ref"] };
+
+/** 外发了哪几类材料：文字一定有；附带了页面图片再加图片 */
+export function egressKinds(imageCount: number): ("text" | "image")[] {
+  return imageCount > 0 ? ["text", "image"] : ["text"];
+}
 
 /** MODEL_RUN：服务端代理真实模型调用；失败保存失败 Run，绝不回退为 Mock */
 export async function modelRun(input: ModelRunInput): Promise<Run> {
@@ -323,6 +329,11 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
   const builderWarnings = built.warnings;
   const abort = new AbortController();
   running.set(runId, abort);
+  // 外发记录：材料真正交给服务商前才写入，没发出请求的 Run 没有这一项
+  const authorizedBy = input.authorizedBy ?? "unknown";
+  const providerHost = info.baseUrlHost ?? info.provider;
+  let egress: Run["egress"];
+  const egressField = () => (egress ? { egress } : {});
   const cancelled = () =>
     finishRun({
       ...common,
@@ -332,6 +343,7 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
       status: "CANCELLED",
       raw_response: "",
       raw_response_hash: sha256(""),
+      ...egressField(),
       error: { code: "CANCELLED", message: "用户取消了这次运行（服务商可能已开始处理并计费）" },
     });
   return { runId, done: finishModelRun().finally(() => running.delete(runId)) };
@@ -344,6 +356,7 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
       const preprocessMs = pages ? Date.now() - t0 : null;
       if (abort.signal.aborted) return cancelled();
       const images = pages?.images.map((i) => ({ mediaType: i.media_type, base64: i.base64, ref: { file_id: i.file_id, page: i.page, sha256: i.sha256 } }));
+      egress = { provider_host: providerHost, kinds: egressKinds(images?.length ?? 0), authorized_by: authorizedBy, consent_at: authorizedBy.startsWith("agent:") ? null : (getEgressConsent(input.projectId, providerHost)?.confirmed_at ?? null) };
       const result = await provider.complete({ system: input.system, user, params: input.params, images, signal: abort.signal });
       if (abort.signal.aborted) return cancelled();
       const done = {
@@ -354,6 +367,7 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
         actual_prompt_hash: pages?.images.length ? contentHash(input.system, `${user}\n${pages.images.map((i) => i.sha256).join(",")}`) : common.actual_prompt_hash,
         attached_images: pages ? pages.images.map(({ base64: _b, ...m }) => m) : null,
         input_builder_warnings: [...builderWarnings, ...(pages?.warnings ?? [])],
+        egress,
         request_actual: result.request ?? null,
         ended_at: new Date().toISOString(),
         latency_ms: result.latencyMs,
@@ -402,6 +416,7 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
         status: "MODEL_ERROR",
         raw_response: "",
         raw_response_hash: sha256(""),
+        ...egressField(),
         error: { code: "RUN_INTERNAL_ERROR", message: redactSecrets(e instanceof Error ? e.message : String(e)) },
       });
     }
@@ -412,7 +427,7 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
  * 原样重试：用原 Run 的同一快照、同一提示词原文、同一参数和图片开关新建 Run；原 Run 不变。
  * v1.1 之前的 Run 没有保存提示词原文，不能重试（不拿当前编辑内容冒充）。
  */
-export function retryRun(runId: string): { runId: string; done: Promise<Run> } {
+export function retryRun(runId: string, authorizedBy?: string): { runId: string; done: Promise<Run> } {
   const orig = getRun(runId) as (Run & { label?: string }) | undefined;
   if (!orig) throw new RunServiceError("RUN_NOT_FOUND", "Run 不存在", 404);
   if (orig.mode !== "MODEL_RUN") throw new RunServiceError("RETRY_NOT_APPLICABLE", "只有真实模型运行可以重试；仅渲染请直接重新渲染", 400);
@@ -429,6 +444,7 @@ export function retryRun(runId: string): { runId: string; done: Promise<Run> } {
     attachImages: !!orig.attached_images,
     label: `重试 · ${orig.label ?? orig.run_id}`,
     retryOfRunId: orig.run_id,
+    authorizedBy,
   });
 }
 

@@ -5,6 +5,7 @@ export class ApiError extends Error {
     public code: string,
     message: string,
     public status: number,
+    public details?: unknown,
   ) {
     super(message);
   }
@@ -18,12 +19,12 @@ export async function api<T>(url: string, init?: RequestInit & { json?: unknown 
     headers: init?.json !== undefined ? { "content-type": "application/json" } : init?.headers,
     body: init?.json !== undefined ? JSON.stringify(init.json) : init?.body,
   });
-  let body: { ok: boolean; data?: T; error?: { code: string; message: string } };
+  let body: { ok: boolean; data?: T; error?: { code: string; message: string; details?: unknown } };
   try {
     body = await res.json();
   } catch {
     throw new ApiError("NETWORK_OR_SERVER_ERROR", `服务端返回非 JSON（HTTP ${res.status}）`, res.status);
   }
-  if (!body.ok) throw new ApiError(body.error?.code ?? "UNKNOWN", body.error?.message ?? "请求失败", res.status);
+  if (!body.ok) throw new ApiError(body.error?.code ?? "UNKNOWN", body.error?.message ?? "请求失败", res.status, body.error?.details);
   return body.data as T;
 }

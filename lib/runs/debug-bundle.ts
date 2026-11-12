@@ -138,6 +138,7 @@ export function runManifest(c: RunContext) {
       token_usage: run.token_usage ?? null,
       latency_ms: run.latency_ms ?? null,
       timing: run.timing ?? null,
+      egress: run.egress ?? null,
       cost: null,
       cost_note: "服务商不返回价格，Studio 不估算",
     },

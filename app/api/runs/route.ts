@@ -1,3 +1,4 @@
+import { egressGate } from "@/lib/api/egress-gate";
 import { body, fail, handle, limitParam, ok } from "@/lib/api/respond";
 import type { ModelParams } from "@/lib/contracts/run";
 import { getFixture } from "@/lib/fixtures/catalog";
@@ -52,8 +53,10 @@ export const POST = (req: Request) =>
       if (!b.snapshotId) return fail("BAD_REQUEST", "真实运行必须选择输入快照");
       if (typeof b.system !== "string" || typeof b.userTemplate !== "string") return fail("BAD_REQUEST", "缺少提示词");
       if (b.model && !(await isAvailableModel(b.model))) return fail("MODEL_NOT_AVAILABLE", `模型 ${b.model} 不在服务商的可用模型列表里`);
+      const denied = egressGate(projectId, b.model);
+      if (denied) return denied;
       // 登记 RUNNING 后立即返回 run_id，模型在后台运行；浏览器凭 run_id 轮询，刷新页面不丢失
-      const { runId, done } = startModelRun({ projectId, promptId: b.promptId, snapshotId: b.snapshotId, system: b.system, userTemplate: b.userTemplate, promptVersionId: b.promptVersionId, params: b.params ?? {}, attachImages: b.attachImages, label: b.label, model: b.model });
+      const { runId, done } = startModelRun({ projectId, promptId: b.promptId, snapshotId: b.snapshotId, system: b.system, userTemplate: b.userTemplate, promptVersionId: b.promptVersionId, params: b.params ?? {}, attachImages: b.attachImages, label: b.label, model: b.model, authorizedBy: `web:${process.env.STUDIO_USER || "本机用户"}` });
       done.catch((e) => console.error(`Run ${runId} 收尾失败`, e));
       return ok({ run_id: runId, status: "RUNNING" }, 202);
     }

@@ -213,6 +213,8 @@ export function startExperiment(input: ExperimentInput & { createdBy: string; id
       params: s.params as ModelParams,
       label: `实验 ${exp.experiment_id.slice(-6)} · ${role === "BASELINE" ? "基线" : "候选"} · ${s.sample_id}`,
       experimentRef: { experiment_id: exp.experiment_id, candidate_id: cand.candidate_id, role, sample_id: s.sample_id },
+      // 令牌授权本身就是用户的明确授权：不查外发确认表，只在 Run 里留痕
+      authorizedBy: `agent:${input.createdBy}`,
     });
     currentRun.set(exp.experiment_id, started.runId);
     try {

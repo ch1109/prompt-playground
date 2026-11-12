@@ -351,6 +351,19 @@ export function Playground({ projectId }: { projectId: string }) {
     for (const [pid, w] of Object.entries(useStudio.getState().workspaces)) if (w.inputMode === "fixture" && w.fixtureId) pickFixture(w.fixtureId, pid);
   });
 
+  /** 发起会把材料发给模型服务商的请求；服务端说这个地址还没确认过，就弹确认框，同意后记录并自动再发一次。不同意返回 null（什么都不做） */
+  async function withEgressConfirm<T>(call: () => Promise<T>): Promise<T | null> {
+    try {
+      return await call();
+    } catch (e) {
+      const host = e instanceof ApiError && e.code === "EGRESS_NOT_CONFIRMED" ? (e.details as { provider_host?: string } | undefined)?.provider_host : undefined;
+      if (!host) throw e;
+      if (!window.confirm(`第一次把材料发给 ${host}。\n\n这次运行会把输入的文字内容（勾选「附带原件图片」时还包括原件页面图片）发送给这个模型服务商，其中可能有客户资料。\n\n确认后，本项目以后发往这个地址不再询问。`)) return null;
+      await api("/api/egress", { json: { project_id: projectId, provider_host: host } });
+      return call();
+    }
+  }
+
   async function modelRun() {
     setError(null);
     setBusy(true);
@@ -367,10 +380,13 @@ export function Playground({ projectId }: { projectId: string }) {
         if (!w.fixtureSnapshotId) throw new Error("这个示例没有附带输入，不能真实运行，只能「仅渲染」");
       }
       const snapshotId = runSnapshotId(w);
-      if (!snapshotId) throw new Error("真实运行必须选择输入快照（带 ctx 的样本、已有快照，或从九立只读导入）；粘贴的请求可先点「请求存为快照」");
-      const run = await api<{ run_id: string }>("/api/runs", {
-        json: { mode: "MODEL_RUN", projectId, promptId, snapshotId, system: w.system, userTemplate: w.userTemplate, promptVersionId: w.versionId, params: w.params, attachImages: w.attachImages ?? undefined, model: w.model },
-      });
+      if (!snapshotId) throw new Error("还没有可以发给模型的输入：请上传文件、选一个能真实运行的示例或历史输入；粘贴的请求可先点「把请求存为输入」");
+      const run = await withEgressConfirm(() =>
+        api<{ run_id: string }>("/api/runs", {
+          json: { mode: "MODEL_RUN", projectId, promptId, snapshotId, system: w.system, userTemplate: w.userTemplate, promptVersionId: w.versionId, params: w.params, attachImages: w.attachImages ?? undefined, model: w.model },
+        }),
+      );
+      if (!run) return;
       // 服务端登记 RUNNING 后立即返回：先打开这条 Run（ID 存入工作区，刷新也能接上），结果由轮询自动显示
       await openRun(run.run_id, { sig: inputSignature(w, "MODEL_RUN"), mode: "MODEL_RUN" });
       loadRuns();
@@ -431,7 +447,8 @@ export function Playground({ projectId }: { projectId: string }) {
   async function retryRun(runId: string) {
     setError(null);
     try {
-      const r = await api<{ run_id: string }>(`/api/runs/${runId}/retry`, { method: "POST" });
+      const r = await withEgressConfirm(() => api<{ run_id: string }>(`/api/runs/${runId}/retry`, { method: "POST" }));
+      if (!r) return;
       await openRun(r.run_id);
       loadRuns();
     } catch (e) {

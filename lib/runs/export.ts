@@ -7,6 +7,7 @@ import { listDiagnoses } from "@/lib/repositories/diagnoses";
 import { getPrompt, getVersion } from "@/lib/repositories/prompts";
 import { issueSummaryOfTarget } from "@/lib/client/types";
 import { listAnnotations } from "@/lib/repositories/runs";
+import { describeEgress } from "./egress-text";
 import { loadRunContext, runFileIds, type RunContext } from "./debug-bundle";
 
 // 一键导出一次运行的完整上下文（用户自己交给 Codex / Claude Code 改提示词）：
@@ -58,6 +59,7 @@ export function contextMarkdown(c: RunContext, files: ExportedFile[]): string {
       `- 提示词版本：${version ? `${version.label}（${version.version_id}）` : "没有对应的已保存版本"}${run.is_unsaved_draft ? "；这次用的是未保存的编辑内容" : ""}`,
       `- 模型：${run.model_name ?? "—"}${typeof meta.model === "string" && meta.model !== run.model_name ? `（服务商回报：${meta.model}）` : ""}；参数 ${JSON.stringify(run.model_params ?? {})}`,
       `- 开始时间：${run.started_at}；耗时 ${run.latency_ms ?? "—"} ms；token：${usage ? `输入 ${usage.prompt_tokens ?? "—"} / 输出 ${usage.completion_tokens ?? "—"} / 合计 ${usage.total_tokens ?? "—"}` : "—"}；结束原因 ${run.finish_reason ?? "—"}`,
+      `- 外发：${run.egress ? describeEgress(run.egress) : run.mode === "MODEL_RUN" ? "未记录" : "没有调用模型，未外发"}`,
       `- 原件图片：${run.attached_images?.length ? `附带了 ${run.attached_images.length} 张页图（模型看到了原件图像）` : "没有附带，模型只收到文字"}`,
     ].join("\n"),
   );

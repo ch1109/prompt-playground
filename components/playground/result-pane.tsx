@@ -7,6 +7,7 @@ import { explainModelError } from "@/lib/models/error-hints";
 import { getByPointer } from "@/lib/pipeline/json-pointer";
 import { useStudio, type ResultTab } from "@/lib/state/studio-store";
 import { EvidenceViewer, selectedRefIds } from "@/components/renderers/evidence-viewer";
+import { describeEgress } from "@/lib/runs/egress-text";
 import { fieldInputCoverage } from "@/lib/runs/run-evidence";
 import { diagnosisPrompt } from "@/lib/mcp/task-template";
 import { BusinessView } from "@/components/views/business-view";
@@ -445,6 +446,7 @@ function MetaTab({ detail }: { detail: RunDetail }) {
           }
         />
         <Row k="模型" v={r.model_provider ? `${r.model_provider} · ${r.model_name}` : "未调用模型"} />
+        {r.mode === "MODEL_RUN" && <Row k="外发" v={r.egress ? describeEgress(r.egress) : null} />}
         <Row k="Provider 适配器版本" v={r.provider_adapter_version} />
         <Row k="模型参数" v={r.model_params ? JSON.stringify(r.model_params) : null} />
         <Row k="附带原件图片" v={r.attached_images ? (r.attached_images.length ? r.attached_images.map((i) => `${i.file_id}${i.page ? ` 第${i.page}页` : ""}`).join("，") : "已开启，但没有可附带的图片") : null} />

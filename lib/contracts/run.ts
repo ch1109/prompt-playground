@@ -185,6 +185,8 @@ export interface Run {
   response_meta?: Record<string, unknown> | null;
   /** 模型思考内容全文（2026-10-14 起保存；更早的运行没有，服务商不返回时为 null） */
   reasoning_content?: string | null;
+  /** 材料外发记录（2026-11 起的模型运行才有；更早的运行没有，显示「未记录」）：发给了谁、发了什么、谁授权、确认记录的时间（试运行等没有确认记录时为 null） */
+  egress?: { provider_host: string; kinds: ("text" | "image")[]; authorized_by: string; consent_at: string | null } | null;
   /** Adapter / 渲染阶段的诊断；Adapter 出错没有 view_model 时也保留 */
   adapter_diagnostics?: Diagnostic[];
   /** P3 / P4 的上游 Run；本系统的 P3/P4 输入取自快照，不由上游 Run 生成，故为空并在 upstream_note 说明 */

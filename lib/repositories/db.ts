@@ -126,6 +126,15 @@ CREATE TRIGGER IF NOT EXISTS optimization_events_no_update BEFORE UPDATE ON opti
 BEGIN SELECT RAISE(ABORT, '优化事件只追加不修改'); END;
 CREATE TRIGGER IF NOT EXISTS optimization_events_no_delete BEFORE DELETE ON optimization_events
 BEGIN SELECT RAISE(ABORT, '优化事件只追加不删除'); END;
+-- 材料外发确认（v1.3 §13.1-3）：某项目第一次往某个服务商地址发材料时，用户确认一次；只新增，不修改、不删除
+CREATE TABLE IF NOT EXISTS egress_consents (
+  project_id TEXT NOT NULL, provider_host TEXT NOT NULL, confirmed_by TEXT NOT NULL, confirmed_at TEXT NOT NULL,
+  PRIMARY KEY (project_id, provider_host)
+);
+CREATE TRIGGER IF NOT EXISTS egress_consents_no_update BEFORE UPDATE ON egress_consents
+BEGIN SELECT RAISE(ABORT, '外发确认记录只新增不修改'); END;
+CREATE TRIGGER IF NOT EXISTS egress_consents_no_delete BEFORE DELETE ON egress_consents
+BEGIN SELECT RAISE(ABORT, '外发确认记录只新增不删除'); END;
 CREATE TRIGGER IF NOT EXISTS raw_responses_immutable BEFORE UPDATE ON raw_responses
 BEGIN SELECT RAISE(ABORT, 'raw_responses 不可修改'); END;
 -- 只有运行中（RUNNING）的 Run 可以更新为终态；结束后不可修改

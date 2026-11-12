@@ -1,3 +1,4 @@
+import { rejectForeignOrigin } from "@/lib/api/origin";
 import { fail, handle, ok } from "@/lib/api/respond";
 import { resetModelListCache } from "@/lib/models/catalog";
 import { clearModelConfig, effectiveModelConfig, readModelConfig, writeModelConfig } from "@/lib/models/config-store";
@@ -5,23 +6,6 @@ import { explainModelError } from "@/lib/models/error-hints";
 import { OpenAICompatibleProvider, redactSecrets } from "@/lib/models/openai-compatible";
 
 // 网页「模型设置」。密钥只进不出：任何响应都不含完整密钥，也不写日志。
-
-/** 修改类请求的来源校验：防止别的网站（或被劫持域名指向本机的页面）偷偷改配置。通过返回 null，否则返回 403 */
-function rejectForeignOrigin(req: Request, needJson: boolean): Response | null {
-  const deny = (msg: string) => fail("FORBIDDEN_ORIGIN", msg, 403);
-  const origin = req.headers.get("origin");
-  const host = req.headers.get("host");
-  if (!origin || !host) return deny("只允许从本机页面修改模型设置");
-  let url: URL;
-  try {
-    url = new URL(origin);
-  } catch {
-    return deny("只允许从本机页面修改模型设置");
-  }
-  if (url.host !== host.toLowerCase() || (url.hostname !== "127.0.0.1" && url.hostname !== "localhost")) return deny("只允许从本机页面修改模型设置");
-  if (needJson && !(req.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json")) return deny("请求格式不对");
-  return null;
-}
 
 type Input = { baseUrl: string; model: string; apiKey: string | undefined };
 
