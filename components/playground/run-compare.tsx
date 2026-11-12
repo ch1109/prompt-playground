@@ -5,8 +5,13 @@ import { api } from "@/lib/client/api";
 import type { RunDetail } from "@/lib/client/types";
 import { Badge, Btn, cx } from "@/components/ui";
 import { compareRuns, diffSummary, type DiffRow } from "@/lib/runs/compare";
+import { compareVerdict, type VerdictField } from "@/lib/runs/compare-verdict";
+import type { Annotation } from "@/lib/repositories/runs";
 
 export { compareRuns, diffJson, diffSummary, flatten, inputComparability, strictConditions, textHunks } from "@/lib/runs/compare";
+
+const OUTCOME_LABEL: Record<VerdictField["outcome"], string> = { FIXED: "修好了", REGRESSED: "变差了", CHANGED_UNVERIFIED: "需要你看", NOT_FIXED: "还没修好", KEPT: "保持正确" };
+const ASSESSMENT_LABEL: Record<string, string> = { CORRECT: "对", WRONG: "错" };
 
 const KIND_LABEL: Record<DiffRow["kind"], string> = { ADDED: "新增", REMOVED: "删除", CHANGED: "变化", UNALIGNED: "无法对齐" };
 
@@ -53,6 +58,7 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
   const rows = diff.rows;
   const count = (k: DiffRow["kind"]) => rows.filter((r) => r.kind === k).length;
   const cmp = useMemo(() => (a && b ? compareRuns(a.run, b.run, [a.prompt_version_label, b.prompt_version_label]) : null), [a, b]);
+  const verdict = useMemo(() => (a && b ? compareVerdict(a.run, b.run, a.annotations as unknown as Annotation[]) : null), [a, b]);
   return (
     <div role="region" aria-label="对比两次运行">
       <div className="flex w-full flex-col overflow-hidden rounded-2xl border border-ink-700 bg-ink-900">
@@ -67,6 +73,46 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
         <div className="overflow-auto px-5 py-4">
           {cmp && (
             <>
+              {verdict && (
+                <div className="mb-3" data-testid="compare-verdict">
+                  <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
+                    <Badge tone="ok">修好 {verdict.fixed}</Badge>
+                    <Badge tone="bad">变差 {verdict.regressed}</Badge>
+                    <Badge tone="warn">需要你看 {verdict.needsReview}</Badge>
+                    <span className="text-[11px] text-ink-400">按 A 上你标过的字段判断</span>
+                  </div>
+                  <details className="mt-1.5 text-[12px]">
+                    <summary className="cursor-pointer text-ink-300">查看是哪些字段</summary>
+                    <table className="mt-1.5 w-full text-[11.5px]">
+                      <thead className="text-ink-400">
+                        <tr>
+                          <th className="px-2 py-1 text-left font-medium">字段</th>
+                          <th className="px-2 py-1 text-left font-medium">你标的</th>
+                          <th className="px-2 py-1 text-left font-medium">A</th>
+                          <th className="px-2 py-1 text-left font-medium">B</th>
+                          <th className="px-2 py-1 text-left font-medium">结论</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {verdict.fields.map((f) => (
+                          <tr key={f.pointer} className="border-b border-ink-800 align-top">
+                            <td className="px-2 py-1 break-all" title={f.pointer}>
+                              {f.target ?? f.pointer}
+                            </td>
+                            <td className="px-2 py-1 break-all">
+                              {ASSESSMENT_LABEL[f.assessment ?? ""] ?? f.assessment}
+                              {f.expected ? `，正确值：${f.expected}` : ""}
+                            </td>
+                            <td className="px-2 py-1 break-all">{f.a}</td>
+                            <td className="px-2 py-1 break-all">{f.b}</td>
+                            <td className="px-2 py-1">{OUTCOME_LABEL[f.outcome]}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </details>
+                </div>
+              )}
               {!cmp.input.comparable && (
                 <div className="mb-3 rounded-lg border border-stamp/40 bg-stamp/[0.07] px-3 py-2 text-[12px] text-stamp" data-testid="input-not-comparable">
                   <div className="font-semibold">输入不可直接比较：只能看技术差异，不能作为提示词改进的依据</div>
