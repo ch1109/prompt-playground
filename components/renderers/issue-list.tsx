@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import type { IssueView } from "@/lib/contracts/view-model";
+import { ISSUE_VERDICT_LABEL, issueIdOfTarget } from "@/lib/client/types";
 import { useStudio } from "@/lib/state/studio-store";
 import { Badge, cx, Empty } from "@/components/ui";
 
@@ -18,6 +19,9 @@ export function IssueList({ issues }: { issues: IssueView[] }) {
   const sel = useStudio((s) => s.selection);
   const select = useStudio((s) => s.select);
   const setStore = useStudio((s) => s.set);
+  // 标过「属实 / 误报」的问题：id -> issue_type
+  const verdicts = useStudio((s) => (s.selection.runId ? s.runs[s.selection.runId]?.annotations : undefined));
+  const verdictOf = useMemo(() => new Map((verdicts ?? []).filter((a) => a.issue_type in ISSUE_VERDICT_LABEL).map((a) => [issueIdOfTarget(a.target), a.issue_type])), [verdicts]);
   const [origin, setOrigin] = useState<string>("ALL");
   const origins = useMemo(() => [...new Set(issues.map((i) => i.origin))], [issues]);
   const shown = issues.filter((i) => origin === "ALL" || i.origin === origin);
@@ -42,7 +46,9 @@ export function IssueList({ issues }: { issues: IssueView[] }) {
         <Empty>没有问题记录</Empty>
       ) : (
         <ul className="max-h-72 divide-y divide-ink-800 overflow-auto">
-          {shown.map((i) => (
+          {shown.map((i) => {
+            const verdict = verdictOf.get(i.id);
+            return (
             <li key={i.id} className="group relative">
               <button
                 data-issue-id={i.id}
@@ -52,7 +58,12 @@ export function IssueList({ issues }: { issues: IssueView[] }) {
                 <Badge tone={SEV_TONE[i.severity ?? "UNKNOWN"]} title={`严重度：${i.severity ?? "UNKNOWN"}（模型没给出时为未分级）`}>
                   {SEV_LABEL[i.severity ?? "UNKNOWN"]}
                 </Badge>
-                <span className="min-w-0 flex-1">
+                {verdict && (
+                  <span data-testid="issue-verdict">
+                    <Badge tone={verdict === "ISSUE_FALSE_POSITIVE" ? "mute" : "ok"}>{ISSUE_VERDICT_LABEL[verdict]}</Badge>
+                  </span>
+                )}
+                <span className={cx("min-w-0 flex-1", verdict === "ISSUE_FALSE_POSITIVE" && "opacity-50")}>
                   <span className="break-words" title={`类型：${i.type}`}>{i.summary}</span>
                   {i.detail && <span className="block text-[11px] text-ink-400">{i.detail}</span>}
                   <span className="block text-[10.5px] text-ink-600">
@@ -71,7 +82,8 @@ export function IssueList({ issues }: { issues: IssueView[] }) {
                 </button>
               </span>
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
     </div>

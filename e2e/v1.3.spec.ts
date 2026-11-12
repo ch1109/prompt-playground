@@ -443,7 +443,7 @@ test("示例可以用当前提示词重新运行：卡片上的按钮发起真�
   await page.getByTestId("btn-change-input").click();
   const drawer = page.getByTestId("input-drawer");
   await expect(drawer.getByTestId("btn-rerun-fixture")).toBeDisabled();
-  await expect(drawer.getByTestId("btn-rerun-fixture")).toHaveAttribute("title", /未配置模型/);
+  await expect(drawer.getByTestId("btn-rerun-fixture")).toHaveAttribute("title", /还没设置模型/);
   // 模拟已配置模型与「发起运行」接口（不调用真实模型、不花钱），检查发出的是 MODEL_RUN 且带这个示例的输入
   const current = await page.evaluate(() => JSON.parse(localStorage.getItem("prompt-studio:workspace") ?? "{}").state?.workspaces?.["jiuli-p1"]?.runId);
   let body: Record<string, unknown> | null = null;
@@ -496,4 +496,53 @@ test("提示词可切到「阅读」按 Markdown 显示（章节标题、编号�
   // 切回编辑，原文不变
   await page.getByTestId("btn-prompt-edit").click();
   await expect(page.getByLabel("System 提示词")).toHaveValue(system);
+});
+
+test("版本对比：A 上标过「对」的字段在 B 里没变，显示结论行「变差 0」", async ({ page }) => {
+  await pickInDrawer(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
+  await expect(page.getByTestId("context-bar")).toContainText("P1 冲突");
+  // 再仅渲染同一个示例一次，得到输入相同的第二次运行
+  const second = page.waitForResponse((r) => /\/api\/runs$/.test(r.url()) && r.request().method() === "POST");
+  await page.getByTestId("btn-render").click();
+  await second;
+  await page.getByTestId("work-modes").getByRole("tab", { name: "版本对比" }).click();
+  const mode = page.getByTestId("compare-mode");
+  await expect(mode.getByRole("row").nth(2)).toContainText("P1 冲突");
+  const runs: { run_id: string; started_at: string }[] = await page.request.get("/api/runs?project=jiuli&promptId=jiuli-p1").then(async (r) => (await r.json()).data);
+  const [newer, older] = runs.slice(0, 2);
+  const detail = await page.request.get(`/api/runs/${older.run_id}`).then((r) => r.json());
+  const pointer = "/" + Object.keys(detail.data.run.parsed_json)[0];
+  // 两次都标「对」，这样不管勾选后哪个当 A，A 上都有字段标注
+  for (const id of [older.run_id, newer.run_id]) {
+    const res = await page.request.post(`/api/runs/${id}/annotations`, { data: { target_json_pointer: pointer, target: "整体", assessment: "CORRECT" } });
+    expect(res.ok()).toBe(true);
+  }
+  await page.reload();
+  await page.getByTestId("work-modes").getByRole("tab", { name: "版本对比" }).click();
+  await expect(mode.getByRole("row").nth(2)).toBeVisible();
+  const boxes = mode.getByRole("checkbox");
+  await boxes.nth(0).check();
+  await boxes.nth(1).check();
+  const verdict = page.getByRole("region", { name: "对比两次运行" }).getByTestId("compare-verdict");
+  await expect(verdict).toBeVisible();
+  await expect(verdict).toContainText("变差 0");
+  expect(newer.run_id).not.toBe(older.run_id);
+});
+
+test("问题标注：点一条问题 → 标「误报」→ 列表里出现标记，刷新后仍在", async ({ page }) => {
+  await pickInDrawer(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
+  const issue = page.locator("[data-issue-id]").first();
+  await expect(page.getByTestId("issue-verdict")).toHaveCount(0);
+  await issue.click();
+  await page.getByTestId("btn-issue-false").click();
+  await expect(page.getByTestId("issue-verdict")).toHaveText("误报");
+  await expect(page.getByTestId("annotation-form")).toContainText("— 误报");
+  // 改成「属实」是修改，不会多出一条
+  await page.getByTestId("btn-issue-real").click();
+  await expect(page.getByTestId("issue-verdict")).toHaveText("属实");
+  await page.getByTestId("btn-issue-false").click();
+  await expect(page.getByTestId("issue-verdict")).toHaveText("误报");
+  await page.reload();
+  await expect(page.getByTestId("issue-verdict")).toHaveText("误报");
+  await expect(page.getByTestId("issue-verdict")).toHaveCount(1);
 });

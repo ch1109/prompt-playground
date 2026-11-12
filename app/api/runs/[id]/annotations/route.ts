@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { body, fail, handle, ok } from "@/lib/api/respond";
 import { getByPointer } from "@/lib/pipeline/json-pointer";
-import { addAnnotation, ANNOTATION_TYPES as TYPES, checkAssessment, getRun, listAnnotations, type Annotation } from "@/lib/repositories/runs";
+import { addAnnotation, ANNOTATION_TYPES as TYPES, checkAssessment, getRun, listAnnotations, setIssueVerdict, type Annotation } from "@/lib/repositories/runs";
 
 export const GET = (_req: NextRequest, ctx: RouteContext<"/api/runs/[id]/annotations">) => handle(async () => ok(listAnnotations((await ctx.params).id)));
 
@@ -15,6 +15,13 @@ export const POST = (req: NextRequest, ctx: RouteContext<"/api/runs/[id]/annotat
     const run = getRun(runId);
     if (!run) return fail("RUN_NOT_FOUND", "Run 不存在", 404);
     const b = await body<Partial<Annotation>>(req);
+    // 「问题是否属实」：只收问题 id，摘要、位置由服务端从这次运行的问题列表里取
+    if (b.issue_type === "ISSUE_REAL" || b.issue_type === "ISSUE_FALSE_POSITIVE") {
+      const id = (b as { issue_id?: string }).issue_id;
+      const issue = run.view_model?.issues.find((i) => i.id === id);
+      if (!issue) return fail("BAD_REQUEST", "这次运行里没有这条问题");
+      return ok(setIssueVerdict(runId, { id: issue.id, type: issue.type, summary: issue.summary, jsonPointer: issue.target?.jsonPointer ?? null, sourceRefIds: issue.sourceRefIds }, b.issue_type, process.env.STUDIO_USER || "本机用户"), 201);
+    }
     const issueType = b.issue_type ?? (b.assessment ? "ASSESSMENT" : undefined);
     if (!issueType || !TYPES.includes(issueType)) return fail("BAD_REQUEST", `issue_type 必须是 ${TYPES.join("/")}`);
     const bad = checkAssessment(b);

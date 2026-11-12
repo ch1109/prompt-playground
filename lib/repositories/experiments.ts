@@ -134,6 +134,7 @@ export function annotationsForSample(promptId: string, snapshotId: string): Anno
     .prepare(
       `SELECT a.* FROM annotations a JOIN runs r ON r.run_id = a.run_id
        WHERE r.prompt_id = ? AND r.input_snapshot_id = ? AND a.deleted_at IS NULL
+         AND a.issue_type NOT IN ('ISSUE_REAL', 'ISSUE_FALSE_POSITIVE')
          AND (json_extract(r.body, '$.experiment_ref.role') IS NULL OR json_extract(r.body, '$.experiment_ref.role') = 'BASELINE')
        ORDER BY a.created_at`,
     )

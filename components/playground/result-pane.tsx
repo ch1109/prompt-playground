@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/client/api";
-import type { AnnotationDTO, FixtureSummary, RunDetail, RunListItem } from "@/lib/client/types";
+import { ISSUE_VERDICT_LABEL, issueIdOfTarget, issueSummaryOfTarget, type AnnotationDTO, type FixtureSummary, type RunDetail, type RunListItem } from "@/lib/client/types";
 import type { CellState, ViewModel } from "@/lib/contracts/view-model";
 import { explainModelError } from "@/lib/models/error-hints";
 import { getByPointer } from "@/lib/pipeline/json-pointer";
@@ -237,6 +237,7 @@ export function ResultPane({
           </div>
           <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
             <SelectionInfo />
+            <IssueVerdict detail={detail!} />
             <FieldVerdict detail={detail!} />
             <AnnotationForm detail={detail!}>
               {vm ? <EvidenceViewer vm={vm} canPreview={canPreview} snapshotSource={detail?.snapshot?.source_type} request={detail?.request} /> : <p className="text-[12px] text-ink-400">无业务视图，无法定位来源。</p>}
@@ -490,6 +491,40 @@ function MetaTab({ detail }: { detail: RunDetail }) {
   );
 }
 
+/** 选中一条「问题」时：这条问题属实吗（属实 / 误报）。点一下直接保存；再点另一个就是修改 */
+function IssueVerdict({ detail }: { detail: RunDetail }) {
+  const sel = useStudio((s) => s.selection);
+  const putRun = useStudio((s) => s.putRun);
+  const [err, setErr] = useState<string | null>(null);
+  const issue = sel.issueId ? detail.run.view_model?.issues.find((i) => i.id === sel.issueId) : undefined;
+  if (!issue) return null;
+  const cur = detail.annotations.find((a) => a.issue_type in ISSUE_VERDICT_LABEL && issueIdOfTarget(a.target) === issue.id);
+  async function mark(type: string) {
+    setErr(null);
+    try {
+      const a = await api<AnnotationDTO>(`/api/runs/${detail.run.run_id}/annotations`, { json: { issue_type: type, issue_id: issue!.id } });
+      putRun({ ...detail, annotations: cur ? detail.annotations.map((x) => (x.annotation_id === a.annotation_id ? a : x)) : [...detail.annotations, a] });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    }
+  }
+  return (
+    <div className="space-y-1.5 rounded-lg border border-ink-700 bg-ink-900 p-2.5 text-[12px]" data-testid="issue-verdict-box">
+      <div className="break-words text-ink-100">{issue.summary}</div>
+      <div className="text-ink-400">这条问题属实吗？</div>
+      <div className="flex gap-1.5">
+        <Btn tone="outline" onClick={() => mark("ISSUE_REAL")} aria-pressed={cur?.issue_type === "ISSUE_REAL"} data-testid="btn-issue-real" className={cx(cur?.issue_type === "ISSUE_REAL" && "border-verify text-verify")}>
+          属实
+        </Btn>
+        <Btn tone="outline" onClick={() => mark("ISSUE_FALSE_POSITIVE")} aria-pressed={cur?.issue_type === "ISSUE_FALSE_POSITIVE"} data-testid="btn-issue-false" className={cx(cur?.issue_type === "ISSUE_FALSE_POSITIVE" && "border-stamp text-stamp")}>
+          误报
+        </Btn>
+      </div>
+      {err && <p className="text-[11px] text-stamp">{err}</p>}
+    </div>
+  );
+}
+
 /** 选中字段的值、状态、实际输入；对 / 错的标注在下方 AnnotationForm */
 function FieldVerdict({ detail }: { detail: RunDetail }) {
   const sel = useStudio((s) => s.selection);
@@ -648,6 +683,7 @@ const ANN_LABEL: Record<string, string> = {
   CORRECT_CANDIDATE: "正确候选（P3）",
   WRONG_RELATION: "错误关系（P3）",
   NOTE: "备注",
+  ...ISSUE_VERDICT_LABEL,
 };
 const ASSESS_LABEL = { WRONG: "标注错误", CORRECT: "标注正确", UNSURE: "暂不确定" } as const;
 type Assess = keyof typeof ASSESS_LABEL;
@@ -714,6 +750,7 @@ function RevisionHistory({ a }: { a: AnnotationDTO }) {
 function AnnotationForm({ detail, children }: { detail: RunDetail; children?: React.ReactNode }) {
   const sel = useStudio((s) => s.selection);
   const putRun = useStudio((s) => s.putRun);
+  const select = useStudio((s) => s.select);
   const [type, setType] = useState("ASSESSMENT");
   /** 展开区对应的评判；null = 收起 */
   const [assess, setAssess] = useState<Assess | null>(null);
@@ -802,6 +839,12 @@ function AnnotationForm({ detail, children }: { detail: RunDetail; children?: Re
     setCategory(a.error_category ?? "");
     setExpected(a.expected_value ?? "");
     setNote(a.note ?? "");
+  }
+
+  /** 问题的属实 / 误报没有展开表单：选中那条问题，抽屉顶部的两个按钮就是修改入口 */
+  function editIssueVerdict(a: AnnotationDTO) {
+    const issue = detail.run.view_model?.issues.find((i) => i.id === issueIdOfTarget(a.target));
+    if (issue) select({ issueId: issue.id, tableId: issue.target?.tableId, rowId: issue.target?.rowId, fieldKey: issue.target?.fieldKey, jsonPointer: issue.target?.jsonPointer, sourceRefId: issue.sourceRefIds[0] });
   }
 
   async function remove(a: AnnotationDTO) {
@@ -897,8 +940,10 @@ function AnnotationForm({ detail, children }: { detail: RunDetail; children?: Re
               <li key={a.annotation_id} className={cx("rounded-lg bg-ink-800 px-2 py-1 text-[11px]", editing?.annotation_id === a.annotation_id && "ring-1 ring-info")}>
                 <div className="flex items-center gap-1">
                   <Badge tone={a.assessment === "WRONG" ? "bad" : a.assessment === "CORRECT" ? "ok" : a.assessment === "UNSURE" ? "warn" : "info"}>{a.assessment ? ASSESS_LABEL[a.assessment] : (ANN_LABEL[a.issue_type] ?? a.issue_type)}</Badge>{" "}
-                  <span className="min-w-0 flex-1 truncate text-ink-400" title={a.target ?? a.target_json_pointer ?? undefined}>{targetText(a.target ?? a.target_json_pointer)}</span>
-                  <button onClick={() => startEdit(a)} className="text-info hover:underline" aria-label={`修改标注 ${a.annotation_id}`}>
+                  <span className="min-w-0 flex-1 truncate text-ink-400" title={a.target ?? a.target_json_pointer ?? undefined}>
+                    {a.issue_type in ISSUE_VERDICT_LABEL ? `问题：${issueSummaryOfTarget(a.target).slice(0, 20)} — ${ISSUE_VERDICT_LABEL[a.issue_type]}` : targetText(a.target ?? a.target_json_pointer)}
+                  </span>
+                  <button onClick={() => (a.issue_type in ISSUE_VERDICT_LABEL ? editIssueVerdict(a) : startEdit(a))} className="text-info hover:underline" aria-label={`修改标注 ${a.annotation_id}`}>
                     修改
                   </button>
                   <button onClick={() => remove(a)} className="text-stamp hover:underline" aria-label={`删除标注 ${a.annotation_id}`}>

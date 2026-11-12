@@ -131,7 +131,7 @@ export function fixtureRunStats(projectId: string): Map<string, { run_count: num
 }
 
 /** ASSESSMENT = v1.1 的评判型标注（错误 / 正确 / 不确定 + 错误归因）；其余为旧类型与 P3 关系类型 */
-export const ANNOTATION_TYPES = ["ASSESSMENT", "MODEL_WRONG", "CORRECT_VALUE", "ERROR_REASON", "CORRECT_CANDIDATE", "WRONG_RELATION", "NOTE"];
+export const ANNOTATION_TYPES = ["ASSESSMENT", "MODEL_WRONG", "CORRECT_VALUE", "ERROR_REASON", "CORRECT_CANDIDATE", "WRONG_RELATION", "NOTE", "ISSUE_REAL", "ISSUE_FALSE_POSITIVE"];
 export const ASSESSMENTS = ["WRONG", "CORRECT", "UNSURE"] as const;
 /** 错误归因（v1.3 §6.2）：新标注使用这 13 类 */
 export const ERROR_CATEGORIES = [
@@ -270,6 +270,14 @@ export function addAnnotation(a: AnnotationInput): Annotation {
     );
   appendRevision("CREATE", readAnnotation(full.annotation_id)!);
   return getAnnotation(full.annotation_id)!;
+}
+
+/** 「问题是否属实」：同一次运行里同一条问题（target 以「问题 <id>（」开头）只保留一条，再次标注就是修改（留修订）。assessment 留空，评判逻辑看不到它 */
+export function setIssueVerdict(runId: string, issue: { id: string; type: string; summary: string; jsonPointer?: string | null; sourceRefIds?: string[] }, verdict: "ISSUE_REAL" | "ISSUE_FALSE_POSITIVE", author: string): Annotation {
+  const target = `问题 ${issue.id}（${issue.type}）：${issue.summary.slice(0, 30)}`;
+  const cur = listAnnotations(runId).find((a) => a.issue_type.startsWith("ISSUE_") && a.target?.startsWith(`问题 ${issue.id}（`));
+  if (cur) return updateAnnotation(cur.annotation_id, { issue_type: verdict, expected_value: cur.expected_value, note: cur.note })!;
+  return addAnnotation({ run_id: runId, target_json_pointer: issue.jsonPointer ?? null, target, issue_type: verdict, expected_value: null, note: null, assessment: null, error_category: null, category_confirmed: null, model_value: null, source_ref_ids: issue.sourceRefIds ?? [], author });
 }
 
 const ANN_COLS = "annotation_id, run_id, target_json_pointer, target, issue_type, expected_value, note, created_at, updated_at, assessment, error_category, category_confirmed, model_value, source_ref_ids, author";

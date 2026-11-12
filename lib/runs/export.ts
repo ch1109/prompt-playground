@@ -5,6 +5,7 @@ import { businessViolations } from "@/lib/experiments/business-rules";
 import { resolveMaterialFile } from "@/lib/materials/store";
 import { listDiagnoses } from "@/lib/repositories/diagnoses";
 import { getPrompt, getVersion } from "@/lib/repositories/prompts";
+import { issueSummaryOfTarget } from "@/lib/client/types";
 import { listAnnotations } from "@/lib/repositories/runs";
 import { loadRunContext, runFileIds, type RunContext } from "./debug-bundle";
 
@@ -62,7 +63,9 @@ export function contextMarkdown(c: RunContext, files: ExportedFile[]): string {
   );
 
   out.push("## 人工标注");
-  const anns = listAnnotations(run.run_id);
+  const all = listAnnotations(run.run_id);
+  const anns = all.filter((a) => !a.issue_type.startsWith("ISSUE_"));
+  const issueAnns = all.filter((a) => a.issue_type.startsWith("ISSUE_"));
   out.push(
     anns.length
       ? anns
@@ -78,8 +81,13 @@ export function contextMarkdown(c: RunContext, files: ExportedFile[]): string {
               .join("\n"),
           )
           .join("\n")
-      : "（没有人工标注）",
+      : issueAnns.length ? "（没有字段标注）" : "（没有人工标注）",
   );
+  if (issueAnns.length)
+    out.push(
+      "### 对模型报告问题的判断\n\n" +
+        issueAnns.map((a) => `- ${a.issue_type === "ISSUE_FALSE_POSITIVE" ? "误报" : "属实"} · ${issueSummaryOfTarget(a.target)}${a.target_json_pointer ? `（JSON 位置 \`${a.target_json_pointer}\`）` : ""}`).join("\n"),
+    );
   const diags = listDiagnoses(run.run_id);
   if (diags.length)
     out.push(
