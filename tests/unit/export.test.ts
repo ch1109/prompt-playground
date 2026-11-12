@@ -9,7 +9,10 @@ import { getFixture } from "@/lib/fixtures/catalog";
 import { snapshotForFixture } from "@/lib/fixtures/snapshot";
 import { OpenAICompatibleProvider, setProviderForTests } from "@/lib/models/openai-compatible";
 import { createFileSnapshot, resolveMaterialFile } from "@/lib/materials/store";
+import type { Layout } from "@/lib/layouts/types";
 import { resetDbForTests } from "@/lib/repositories/db";
+import { saveLayout } from "@/lib/repositories/layouts";
+import { ensureSeed } from "@/lib/repositories/prompts";
 import { addAnnotation, getRun } from "@/lib/repositories/runs";
 import { loadRunContext } from "@/lib/runs/debug-bundle";
 import { contextMarkdown, exportZip } from "@/lib/runs/export";
@@ -118,5 +121,20 @@ describe("导出 ZIP", () => {
 
   it("Run 不存在返回 undefined", async () => {
     expect(await exportZip("run_nope")).toBeUndefined();
+  });
+});
+
+describe("按版式显示的结果", () => {
+  const layout: Layout = { version: 1, kind: "table", itemsPath: "/items", columns: [{ label: "名称", path: "/name" }] };
+  it("通用提示词有版式且有 parsed_json 时出现该节；没有版式时不出现", async () => {
+    ensureSeed();
+    const base = loadRunContext((await runP1()).run_id)!;
+    const generic = { ...base, run: { ...base.run, prompt_id: "generic-json", prompt_kind: "GENERIC_JSON" as const, parsed_json: { items: [{ name: "苹果" }] } } };
+    expect(contextMarkdown(generic, [])).not.toContain("## 按版式显示的结果");
+    saveLayout("generic-json", layout, "USER");
+    const text = contextMarkdown(generic, []);
+    expect(text).toContain("## 按版式显示的结果");
+    expect(text).toContain("| 苹果 |");
+    expect(contextMarkdown(base, [])).not.toContain("## 按版式显示的结果");
   });
 });

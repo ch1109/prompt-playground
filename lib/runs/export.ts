@@ -7,6 +7,9 @@ import { listDiagnoses } from "@/lib/repositories/diagnoses";
 import { getPrompt, getVersion } from "@/lib/repositories/prompts";
 import { issueSummaryOfTarget } from "@/lib/client/types";
 import { listAnnotations } from "@/lib/repositories/runs";
+import { applyLayout } from "@/lib/layouts/apply";
+import { layoutResultToMarkdown } from "@/lib/layouts/to-markdown";
+import { getLayout } from "@/lib/repositories/layouts";
 import { describeEgress } from "./egress-text";
 import { loadRunContext, runFileIds, type RunContext } from "./debug-bundle";
 
@@ -128,6 +131,11 @@ export function contextMarkdown(c: RunContext, files: ExportedFile[]): string {
 
   out.push("## 模型输出");
   out.push(run.raw_response ? "原始响应全文：\n\n" + fence(run.raw_response) : `（没有输出${run.error ? `：${run.error.code} ${run.error.message}` : ""}）`);
+
+  if (run.prompt_kind === "GENERIC_JSON" && run.parsed_json != null) {
+    const stored = getLayout(run.prompt_id);
+    if (stored) out.push("## 按版式显示的结果\n\n" + layoutResultToMarkdown(applyLayout(stored.layout, run.parsed_json)));
+  }
 
   out.push("## 原件");
   const mf = run.input_manifest?.files ?? [];
