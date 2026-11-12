@@ -1,6 +1,6 @@
 import { defineConfig } from "@playwright/test";
 
-// E2E 使用生产构建（next build && next start），独立数据库，不影响开发数据
+// E2E 使用生产构建（next build && next start），独立数据库，不影响开发数据；每次启动前清空测试库（data/e2e.db、data/e2e-materials），避免越跑越大
 // 端口默认 3100，被占用时可用 E2E_PORT 覆盖
 const port = process.env.E2E_PORT ?? "3100";
 
@@ -12,7 +12,7 @@ export default defineConfig({
   reporter: [["list"]],
   use: { baseURL: `http://127.0.0.1:${port}`, viewport: { width: 1600, height: 1000 } },
   webServer: {
-    command: `pnpm build && pnpm next start -H 127.0.0.1 -p ${port}`,
+    command: `rm -rf data/e2e.db data/e2e.db-shm data/e2e.db-wal data/e2e-materials && pnpm build && pnpm next start -H 127.0.0.1 -p ${port}`,
     url: `http://127.0.0.1:${port}/api/projects`,
     timeout: 240_000,
     reuseExistingServer: false,
