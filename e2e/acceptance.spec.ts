@@ -440,6 +440,8 @@ test("AT26 快照刷新生成新快照（记录来源），快照列表按 Promp
 test("窄屏（<1280px）编辑区与结果区改为可切换页签，运行后自动切到结果", async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 800 });
   await page.goto("/projects/jiuli/playground");
+  // 窄屏也有三种工作模式；「提示词调试」下才分编辑 / 结果页签
+  await page.getByTestId("work-modes").getByRole("tab", { name: "提示词调试" }).click();
   const tabs = page.getByTestId("narrow-tabs");
   await expect(tabs).toBeVisible();
   await expect(page.getByTestId("editor-pane")).toBeVisible();
@@ -459,6 +461,20 @@ test("窄屏（<1280px）编辑区与结果区改为可切换页签，运行后�
   await expect(tabs).toHaveCount(0);
   await expect(page.getByTestId("editor-pane")).toBeVisible();
   await expect(page.getByTestId("result-pane")).toBeVisible();
+});
+
+test("窄屏（<1280px）也能用「结果检查」和「版本对比」，页面不出现横向滚动", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 800 });
+  await page.goto("/projects/jiuli/playground");
+  const modes = page.getByTestId("work-modes");
+  await modes.getByRole("tab", { name: "结果检查" }).click();
+  await expect(page.getByTestId("result-pane")).toBeVisible();
+  await expect(page.getByTestId("context-bar")).toBeVisible();
+  await expect(page.getByTestId("narrow-tabs")).toHaveCount(0);
+  await modes.getByRole("tab", { name: "版本对比" }).click();
+  await expect(page.getByTestId("compare-mode")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
+  await page.setViewportSize({ width: 1440, height: 900 });
 });
 
 test("快照可设置保留期限、可删除；历史 Run 保留并标明快照已删除", async ({ page }) => {

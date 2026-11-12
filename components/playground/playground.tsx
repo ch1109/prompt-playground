@@ -85,8 +85,8 @@ export function Playground({ projectId }: { projectId: string }) {
   const [narrowPane, setNarrowPane] = useState<"editor" | "result">("editor");
   /** 结果检查模式下的「更换输入」抽屉 */
   const [inputDrawer, setInputDrawer] = useState(false);
-  // 窄屏沿用「编辑 / 结果」页签；三种工作模式只在宽屏生效
-  const mode: WorkMode = narrow ? "debug" : s.workMode;
+  // 三种工作模式窄屏也能用；窄屏的「提示词调试」里，编辑区和结果区改成页签切换
+  const mode: WorkMode = s.workMode;
 
   const promptId = s.activePromptId;
   const prompt = prompts.find((p) => p.prompt_id === promptId);
@@ -584,6 +584,23 @@ export function Playground({ projectId }: { projectId: string }) {
   }, [s]);
 
 
+  const modeTabs = (
+    <div className={cx("flex gap-0.5 rounded-xl bg-ink-800 p-1 text-[12.5px]", narrow && "mx-3 mt-2")} role="tablist" aria-label="工作模式" data-testid="work-modes">
+      {MODES.map(([id, label, hint]) => (
+        <button
+          key={id}
+          role="tab"
+          aria-selected={mode === id}
+          title={hint}
+          onClick={() => s.set("workMode", id)}
+          className={cx("whitespace-nowrap rounded-lg px-2.5 py-0.5 transition-colors", narrow && "flex-1 py-1.5", mode === id ? "bg-ink-900 font-medium text-ink-100 shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-ink-400 hover:text-ink-100")}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
   const field = "w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-1.5 text-[12.5px] outline-none focus:border-ink-400";
 
   return (
@@ -758,7 +775,7 @@ export function Playground({ projectId }: { projectId: string }) {
 
       {/* 主区：顶栏 + 编辑区 | 结果区 + 运行历史 */}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-ink-700 bg-ink-900 shadow-[0_1px_3px_rgb(0_0_0/0.05),0_8px_24px_-12px_rgb(0_0_0/0.08)]">
-        <header className="flex items-center gap-3 border-b border-ink-700 px-4 py-2.5">
+        <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-ink-700 px-4 py-2.5">
           {s.sidebarCollapsed && (
             <button onClick={() => s.set("sidebarCollapsed", false)} className="rounded-md p-1 text-ink-400 hover:bg-ink-800 hover:text-ink-100" aria-label="展开侧栏" title="展开侧栏">
               <Icon d={ICONS.sidebar} />
@@ -777,22 +794,7 @@ export function Playground({ projectId }: { projectId: string }) {
               {versionDraft && <Badge tone="warn">未保存草稿</Badge>}
             </span>
           )}
-          {!narrow && (
-            <div className="flex gap-0.5 rounded-xl bg-ink-800 p-1 text-[12.5px]" role="tablist" aria-label="工作模式" data-testid="work-modes">
-              {MODES.map(([id, label, hint]) => (
-                <button
-                  key={id}
-                  role="tab"
-                  aria-selected={mode === id}
-                  title={hint}
-                  onClick={() => s.set("workMode", id)}
-                  className={cx("whitespace-nowrap rounded-lg px-2.5 py-0.5 transition-colors", mode === id ? "bg-ink-900 font-medium text-ink-100 shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-ink-400 hover:text-ink-100")}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
+          {!narrow && modeTabs}
           <div className="ml-auto flex items-center gap-2">
             {error && (
               <span className="max-w-[420px] truncate rounded-lg bg-stamp-soft px-2 py-1 text-[12px] text-stamp" title={error.code ? `${error.message}（错误码 ${error.code}）` : error.message} data-testid="error-message">
@@ -820,7 +822,8 @@ export function Playground({ projectId }: { projectId: string }) {
           </div>
         </header>
 
-        {narrow && (
+        {narrow && modeTabs}
+        {narrow && mode === "debug" && (
           <div className="flex gap-1 border-b border-ink-700 px-3 py-1.5 text-[12.5px]" data-testid="narrow-tabs">
             {(
               [
@@ -865,7 +868,7 @@ export function Playground({ projectId }: { projectId: string }) {
               )}
             </>
           )}
-          {mode !== "compare" && (!narrow || narrowPane === "result") && (
+          {mode !== "compare" && (!narrow || mode !== "debug" || narrowPane === "result") && (
             <div className="flex min-w-0 flex-1 flex-col bg-ink-850">
               {promptsLoaded && !prompts.length ? (
                 <p className="m-4 rounded-xl border border-risk/25 bg-risk/[0.08] p-3 text-[12.5px] text-risk" data-testid="project-missing">
