@@ -1,6 +1,10 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api } from "@/lib/client/api";
+import { api, getLayout } from "@/lib/client/api";
+import { applyLayout } from "@/lib/layouts/apply";
+import type { StoredLayout } from "@/lib/layouts/types";
+import { LayoutView } from "@/components/views/layout-view";
+import { LayoutEditor } from "./layout-editor";
 import { ISSUE_VERDICT_LABEL, issueIdOfTarget, issueSummaryOfTarget, type AnnotationDTO, type FixtureSummary, type RunDetail, type RunListItem } from "@/lib/client/types";
 import type { CellState, ViewModel } from "@/lib/contracts/view-model";
 import { explainModelError } from "@/lib/models/error-hints";
@@ -57,6 +61,7 @@ function Elapsed({ since }: { since: number }) {
 }
 
 export function ResultPane({
+  projectId,
   detail,
   dirty,
   canPreview,
@@ -69,6 +74,7 @@ export function ResultPane({
   example,
   onOpenExample,
 }: {
+  projectId: string;
   detail?: RunDetail;
   dirty: boolean;
   canPreview: boolean;
@@ -212,7 +218,7 @@ export function ResultPane({
             </div>
           </div>
         )}
-        {run && tab === "visual" && <ResultTab detail={detail!} canPreview={canPreview} />}
+        {run && tab === "visual" && <ResultTab projectId={projectId} detail={detail!} canPreview={canPreview} />}
         {run && tab === "json" && <JsonTab detail={detail!} />}
         {run && tab === "details" && (
           <div className="space-y-5">
@@ -252,21 +258,100 @@ export function ResultPane({
 }
 
 /** 「结果」：九立预设显示业务视图；其他情况按 JSON 树（回答是 JSON）或文本（回答是文字）显示 */
-function ResultTab({ detail, canPreview }: { detail: RunDetail; canPreview: boolean }) {
+function ResultTab({ projectId, detail, canPreview }: { projectId: string; detail: RunDetail; canPreview: boolean }) {
   const run = detail.run;
-  const select = useStudio((s) => s.select);
   if (run.view_model && detail.renderer) return <BusinessView vm={run.view_model} cfg={detail.renderer} canPreview={canPreview} status={run.status} mode={run.mode} afterHeadline={<RuleCheck detail={detail} />} />;
   if (run.status !== "SUCCEEDED") return <Empty>没有可展示的结果，原因见上方提示。</Empty>;
   if (run.parsed_json !== undefined) {
-    return (
-      <div className="rounded-lg border border-ink-700 bg-ink-950/70 p-2" data-testid="result-json">
-        <JsonTree value={run.parsed_json} onSelect={(p) => select({ jsonPointer: p })} />
-      </div>
-    );
+    if (run.prompt_kind === "GENERIC_JSON") return <GenericJsonResult projectId={projectId} run={run} />;
+    return <JsonResult value={run.parsed_json} />;
   }
   return (
     <div className="max-w-3xl rounded-lg border border-ink-700 bg-ink-900 p-4 text-[13px] leading-7 whitespace-pre-wrap" data-testid="result-text">
       {run.raw_response}
+    </div>
+  );
+}
+
+function JsonResult({ value }: { value: unknown }) {
+  const select = useStudio((s) => s.select);
+  return (
+    <div className="rounded-lg border border-ink-700 bg-ink-950/70 p-2" data-testid="result-json">
+      <JsonTree value={value} onSelect={(p) => select({ jsonPointer: p })} />
+    </div>
+  );
+}
+
+const KIND_NAME = { table: "表格", cards: "卡片", checklist: "清单", report: "报告" } as const;
+/** 同一提示词的版式只请求一次；保存后刷新 */
+const layoutCache = new Map<string, StoredLayout | null>();
+
+/** 通用提示词的 JSON 输出：有版式就按版式显示，没有就是 JSON 树 */
+function GenericJsonResult({ projectId, run }: { projectId: string; run: RunDetail["run"] }) {
+  const promptId = run.prompt_id;
+  const [, bump] = useState(0);
+  const [loaded, setLoaded] = useState(layoutCache.has(promptId));
+  const [showTree, setShowTree] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const stored = layoutCache.get(promptId) ?? null;
+
+  useEffect(() => {
+    if (layoutCache.has(promptId)) return setLoaded(true);
+    setLoaded(false);
+    let alive = true;
+    getLayout(promptId)
+      .then((r) => layoutCache.set(promptId, r.layout))
+      .catch(() => layoutCache.set(promptId, null))
+      .finally(() => alive && setLoaded(true));
+    return () => {
+      alive = false;
+    };
+  }, [promptId]);
+
+  const result = useMemo(() => (stored ? applyLayout(stored.layout, run.parsed_json) : null), [stored, run.parsed_json]);
+  const link = "text-[12px] text-ink-400 hover:text-ink-100 hover:underline";
+  return (
+    <div className="space-y-2">
+      {loaded && (
+        <div className="flex items-center justify-end gap-3">
+          {stored ? (
+            <>
+              <span className="text-[12px] text-ink-400">
+                版式：{KIND_NAME[stored.layout.kind]} ·{" "}
+                <button onClick={() => setEditing(true)} className="hover:text-ink-100 hover:underline" data-testid="layout-adjust">
+                  调整
+                </button>
+              </span>
+              <button onClick={() => setShowTree((v) => !v)} className={link} data-testid="layout-toggle-tree">
+                {showTree ? "看版式" : "看 JSON 树"}
+              </button>
+            </>
+          ) : (
+            <button onClick={() => setEditing(true)} className={link} data-testid="layout-generate">
+              生成版式
+            </button>
+          )}
+        </div>
+      )}
+      {result && !showTree && <LayoutView result={result} />}
+      {(!result || showTree || result.kind === "mismatch") && <JsonResult value={run.parsed_json} />}
+      {editing && (
+        <LayoutEditor
+          projectId={projectId}
+          promptId={promptId}
+          runId={run.run_id}
+          sample={run.parsed_json}
+          initial={stored?.layout ?? null}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            layoutCache.delete(promptId);
+            setEditing(false);
+            getLayout(promptId)
+              .then((r) => layoutCache.set(promptId, r.layout))
+              .finally(() => bump((n) => n + 1));
+          }}
+        />
+      )}
     </div>
   );
 }
