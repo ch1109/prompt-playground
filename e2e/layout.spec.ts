@@ -104,3 +104,30 @@ test("样例只有一个列表时不显示「数据」选择", async ({ page }) 
   await expect(page.getByTestId("layout-editor")).toBeVisible();
   await expect(page.getByTestId("le-items")).toHaveCount(0);
 });
+
+test("版本对比：通用提示词设置了版式后，两次结果按版式并排显示", async ({ page }) => {
+  await setup(page, DATA);
+  // 保存一个表格版式（用接口，避免依赖弹窗）
+  const promptId = await page.locator("[data-prompt][aria-current='true']").first().getAttribute("data-prompt");
+  const saved = await page.request.put(`/api/prompts/${promptId}/layout`, {
+    headers: { Origin: new URL(page.url()).origin },
+    data: { layout: { version: 1, kind: "table", itemsPath: "", columns: [{ label: "水果名称", path: "/name" }, { label: "单价", path: "/price" }] } },
+  });
+  expect(saved.ok()).toBe(true);
+  await page.reload();
+  // 再仅渲染一次，得到第二次运行（内容略有不同）
+  await page.getByRole("button", { name: "粘贴 JSON", exact: true }).click();
+  await page.getByLabel("原始输出", { exact: true }).fill(JSON.stringify([{ name: "苹果", price: 4 }, { name: "香蕉", price: 5 }]));
+  await page.click('[data-testid="btn-render"]');
+  await expect(page.getByTestId("layout-view")).toBeVisible();
+  await page.getByTestId("work-modes").getByRole("tab", { name: "版本对比" }).click();
+  const mode = page.getByTestId("compare-mode");
+  await expect(mode.getByRole("row").nth(2)).toBeVisible();
+  const boxes = mode.getByRole("checkbox");
+  await boxes.nth(0).check();
+  await boxes.nth(1).check();
+  const side = page.getByRole("region", { name: "对比两次运行" }).getByTestId("compare-layout");
+  await expect(side).toBeVisible();
+  await expect(side.getByTestId("layout-view")).toHaveCount(2);
+  await expect(side).toContainText("水果名称");
+});

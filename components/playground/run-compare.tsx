@@ -1,12 +1,15 @@
 "use client";
 import type { StructuredPatchHunk } from "diff";
 import { useEffect, useMemo, useState } from "react";
-import { api } from "@/lib/client/api";
+import { api, getLayout } from "@/lib/client/api";
 import type { RunDetail } from "@/lib/client/types";
 import { Badge, Btn, cx } from "@/components/ui";
 import { compareRuns, diffSummary, type DiffRow } from "@/lib/runs/compare";
 import { compareVerdict, type VerdictField } from "@/lib/runs/compare-verdict";
 import type { Annotation } from "@/lib/repositories/runs";
+import { applyLayout } from "@/lib/layouts/apply";
+import type { Layout } from "@/lib/layouts/types";
+import { LayoutView } from "@/components/views/layout-view";
 
 export { compareRuns, diffJson, diffSummary, flatten, inputComparability, strictConditions, textHunks } from "@/lib/runs/compare";
 
@@ -56,6 +59,14 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
     api<RunDetail>(`/api/runs/${ids[0]}`).then(setA).catch(fail);
     api<RunDetail>(`/api/runs/${ids[1]}`).then(setB).catch(fail);
   }, [ids]);
+  // 通用提示词设置过版式时，把两次结果按版式并排显示（业务人员先看这个；下面的 JSON 差异留给排查）
+  const [layout, setLayout] = useState<Layout | null>(null);
+  const promptId = a?.run.prompt_id;
+  useEffect(() => {
+    setLayout(null);
+    if (promptId && a?.run.prompt_kind === "GENERIC_JSON") getLayout(promptId).then((r) => setLayout(r.layout?.layout ?? null)).catch(() => {});
+  }, [promptId, a?.run.prompt_kind]);
+  const sideBySide = layout && a?.run.parsed_json !== undefined && b?.run.parsed_json !== undefined ? ([a, b] as const).map((d) => applyLayout(layout, d.run.parsed_json)) : null;
   const diff = useMemo(() => (a && b ? diffSummary(a.run.parsed_json ?? a.run.raw_response, b.run.parsed_json ?? b.run.raw_response) : { rows: [], same: 0 }), [a, b]);
   const rows = diff.rows;
   const count = (k: DiffRow["kind"]) => rows.filter((r) => r.kind === k).length;
@@ -155,6 +166,19 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
               </table>
               <Hunks title="System 提示词差异" hunks={cmp.system} />
               <Hunks title="User 消息差异（含构造输入）" hunks={cmp.user} />
+              {sideBySide && (
+                <div className="mb-5" data-testid="compare-layout">
+                  <h4 className="mb-1.5 text-[12.5px] font-semibold text-ink-100">两次结果（按版式）</h4>
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    {sideBySide.map((r, i) => (
+                      <div key={i} className="min-w-0">
+                        <div className="mb-1 text-[11px] text-ink-400">{i === 0 ? "A（较早）" : "B（较晚）"}</div>
+                        <LayoutView result={r} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <h4 className="mb-1.5 text-[12.5px] font-semibold text-ink-100">输出 JSON 差异</h4>
               <p className="mb-1 text-[11px] text-ink-400">行按业务键对齐（委托行 ID、字段名、原文位置等，路径中显示为 [键=值]）；对象数组找不到可靠的键时标为「无法对齐」，不按行号硬配。</p>
               <div className="mb-2 flex flex-wrap gap-1.5 text-[11.5px]" data-testid="diff-counts">
