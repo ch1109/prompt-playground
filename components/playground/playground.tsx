@@ -8,6 +8,7 @@ import { emptyWorkspace, inputSignature, runSnapshotId, useStudio, type WorkMode
 import { Badge, Btn, cx, Empty, runStatusView } from "@/components/ui";
 import { EditorPane, InputTab } from "./editor-pane";
 import { ResultPane } from "./result-pane";
+import { ModelSettings } from "./model-settings";
 import { RunCompare } from "./run-compare";
 
 const SHORT: Record<string, string> = { JIULI_P1: "P1", JIULI_P2: "P2", JIULI_P3: "P3", JIULI_P4: "P4", GENERIC_JSON: "通用" };
@@ -74,6 +75,7 @@ export function Playground({ projectId }: { projectId: string }) {
   const [snapshots, setSnapshots] = useState<SnapshotListItem[]>([]);
   const [runs, setRuns] = useState<RunListItem[]>([]);
   const [provider, setProvider] = useState<ProviderInfoDTO | null>(null);
+  const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
   const [capability, setCapability] = useState<CapabilityDTO | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ErrorInfo | null>(null);
@@ -102,7 +104,7 @@ export function Playground({ projectId }: { projectId: string }) {
       : hasFixtures
         ? "在「输入」上传文件后点「运行模型」；也可以在「示例」里选一个示例，点「仅渲染」直接看结果。"
         : "在「输入」上传文件（可以是整个文件夹）后点「运行模型」；也可以在「更多 → 粘贴 JSON」粘贴模型输出后点「仅渲染」。") +
-    (provider && !provider.configured ? "（模型未配置，目前只能仅渲染）" : "");
+    (provider && !provider.configured ? "（还没设置模型，目前只能仅渲染；点右上角「模型未配置」设置）" : "");
   /** 顶栏显示的当前版本；文本与该版本不同即为未保存草稿（与「提示词」页签的判断一致） */
   const currentVersion = versions[promptId]?.find((v) => v.version_id === ws.versionId);
   const versionDraft = !!currentVersion && (currentVersion.system_prompt !== ws.system || currentVersion.user_prompt_template !== ws.userTemplate);
@@ -239,9 +241,17 @@ export function Playground({ projectId }: { projectId: string }) {
     api<CapabilityDTO>("/api/connectors/jiuli/capabilities").then(setCapability).catch(() => setCapability(null));
   }, [loadProjects, loadPrompts]);
   // 顶栏、运行按钮、能力说明都跟着当前提示词选的模型
-  useEffect(() => {
+  const loadProvider = useCallback(() => {
     api<ProviderInfoDTO>(ws.model ? `/api/models?model=${encodeURIComponent(ws.model)}` : "/api/models").then(setProvider);
   }, [ws.model]);
+  useEffect(loadProvider, [loadProvider]);
+  // 保存模型设置后：不再沿用旧服务商下选过的模型，重新读取模型信息与下拉列表
+  const modelSettingsSaved = () => {
+    setModelSettingsOpen(false);
+    useStudio.getState().patchWorkspace(promptId, { model: null });
+    window.dispatchEvent(new Event("model-settings-changed"));
+    loadProvider();
+  };
   useEffect(() => {
     loadRuns();
   }, [loadRuns]);
@@ -372,7 +382,7 @@ export function Playground({ projectId }: { projectId: string }) {
   }
 
   /** 现在不能真实运行的原因（与顶栏「运行模型」按钮的禁用条件一致）；null = 可以运行 */
-  const runBlocked = busy ? "正在处理上一个操作" : !provider?.configured ? "未配置模型：请先在 .env.local 填写模型信息" : runningRunId ? "当前提示词的上一次运行尚未结束" : null;
+  const runBlocked = busy ? "正在处理上一个操作" : !provider?.configured ? "还没设置模型：点右上角的「模型未配置」设置" : runningRunId ? "当前提示词的上一次运行尚未结束" : null;
 
   const report = (e: unknown) => setError(errorInfo(e));
 
@@ -782,10 +792,10 @@ export function Playground({ projectId }: { projectId: string }) {
                 {error.message}
               </span>
             )}
-            <span className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-ink-700 px-2.5 py-1 font-mono text-[11px] text-ink-300" title={provider?.provider}>
+            <button onClick={() => setModelSettingsOpen(true)} className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full border border-ink-700 px-2.5 py-1 font-mono text-[11px] text-ink-300 hover:border-ink-600 hover:bg-ink-850 hover:text-ink-100" title="点这里设置模型" data-testid="btn-model-settings">
               <span className={cx("h-1.5 w-1.5 rounded-full", provider?.configured ? "bg-verify" : "bg-risk")} />
               {provider?.configured ? provider.model : "模型未配置"}
-            </span>
+            </button>
             <Btn tone="outline" onClick={renderOnly} disabled={busy} data-testid="btn-render" title="离线整理已有输出为表格，不调用模型，不花钱">
               <Icon d={ICONS.layers} />
               仅渲染
@@ -794,7 +804,7 @@ export function Playground({ projectId }: { projectId: string }) {
               tone="primary"
               onClick={modelRun}
               disabled={busy || !provider?.configured || runningRunId !== null}
-              title={!provider?.configured ? "未配置模型：请先在 .env.local 填写模型信息" : runningRunId ? "当前提示词的上一次运行尚未结束" : "调用真实 AI 模型，会产生费用"}
+              title={!provider?.configured ? "还没设置模型：点右上角的「模型未配置」设置" : runningRunId ? "当前提示词的上一次运行尚未结束" : "调用真实 AI 模型，会产生费用"}
               data-testid="btn-run"
             >
               <Icon d={ICONS.play} />
@@ -930,6 +940,7 @@ export function Playground({ projectId }: { projectId: string }) {
           </div>
         )}
       </main>
+      {modelSettingsOpen && <ModelSettings onClose={() => setModelSettingsOpen(false)} onSaved={modelSettingsSaved} />}
     </div>
   );
 }

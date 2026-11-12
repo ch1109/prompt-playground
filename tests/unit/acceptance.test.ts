@@ -444,7 +444,7 @@ describe("模型错误的中文解释", () => {
     const { explainModelError } = await import("@/lib/models/error-hints");
     expect(explainModelError("MODEL_HTTP_401").title).toContain("密钥");
     expect(explainModelError("MODEL_HTTP_403").title).toContain("密钥");
-    expect(explainModelError("MODEL_HTTP_404").advice).toContain("MODEL_NAME");
+    expect(explainModelError("MODEL_HTTP_404").advice).toContain("模型名称");
     expect(explainModelError("MODEL_HTTP_429").title).toContain("频率");
     expect(explainModelError("MODEL_HTTP_503").title).toContain("服务商");
     expect(explainModelError("MODEL_TIMEOUT").advice).toContain("MODEL_TIMEOUT_MS");
@@ -502,6 +502,8 @@ describe("AT25 只读安全", () => {
         expect(/materialsDir\(|uploadedPath\(/.test(src), `${f} 写文件必须限定在 Studio 私有目录`).toBe(true);
         continue;
       }
+      // 网页「模型设置」保存的配置文件：只写 Studio 自己的数据目录，与九立源无关
+      if (f === join("lib", "models", "config-store.ts")) continue;
       expect(/writeFileSync|appendFileSync|createWriteStream|unlinkSync|rmSync|renameSync/.test(src), `${f} 写文件`).toBe(false);
     }
     const connectorSrc = readdirSync("lib/connectors").map((n) => readFileSync(join("lib/connectors", n), "utf8")).join("\n");

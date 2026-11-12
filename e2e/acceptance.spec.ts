@@ -387,7 +387,7 @@ test("模型调用失败时先给中文原因与建议，服务商原文收在�
   await page.reload();
   const banner = page.getByTestId("model-error");
   await expect(banner).toContainText("找不到模型或接口地址");
-  await expect(banner).toContainText("MODEL_NAME");
+  await expect(banner).toContainText("模型名称");
   await expect(banner.getByText("model Qwen-X not found")).toBeHidden();
   await banner.getByText(/^详情/).click();
   await expect(banner.getByText(/MODEL_HTTP_404 — .*model Qwen-X not found/)).toBeVisible();

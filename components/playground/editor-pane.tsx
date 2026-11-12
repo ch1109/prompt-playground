@@ -1031,7 +1031,15 @@ function ModelPicker({ provider }: { provider: ProviderInfoDTO | null }) {
   const [ws, patch] = useWorkspace();
   const [list, setList] = useState<ModelList | null>(null);
   useEffect(() => {
-    (modelListReq ??= api<ModelList>("/api/models/list")).then(setList).catch(() => (modelListReq = null));
+    const load = () => (modelListReq ??= api<ModelList>("/api/models/list")).then(setList).catch(() => (modelListReq = null));
+    // 保存模型设置后：丢掉旧列表重新读
+    const reload = () => {
+      modelListReq = null;
+      load();
+    };
+    load();
+    window.addEventListener("model-settings-changed", reload);
+    return () => window.removeEventListener("model-settings-changed", reload);
   }, []);
   const current = ws.model ?? list?.default ?? provider?.model ?? "";
   const groups = useMemo(() => {
@@ -1067,7 +1075,7 @@ function ModelPicker({ provider }: { provider: ProviderInfoDTO | null }) {
           {current && !list?.models.includes(current) && <option value={current}>{current}</option>}
         </select>
       </label>
-      {!provider?.configured && <p className="text-risk">模型未配置：在项目根目录 .env.local 填写 MODEL_BASE_URL / MODEL_NAME / MODEL_API_KEY 后重启。未配置时只能「仅渲染」。</p>}
+      {!provider?.configured && <p className="text-risk">还没设置模型，目前只能「仅渲染」。点右上角的「模型未配置」设置。</p>}
       {list?.error && <p className="text-risk">读不到服务商的模型列表（{list.error}），目前只能用默认模型。</p>}
       <details className="rounded-lg border border-ink-700 bg-ink-900" data-testid="model-settings">
         <summary className="cursor-pointer px-2.5 py-1.5 text-ink-400">

@@ -40,6 +40,12 @@ export interface FixtureSummary {
   stats?: { run_count: number; last_run_at: string | null; wrong_count: number } | null;
 }
 
+/** 「问题是否属实」标注：issue_type 的两个取值；assessment 留空，不会被当成字段标注（评判、冻结标准答案、「让 AI 修」都只看 assessment） */
+export const ISSUE_VERDICT_LABEL: Record<string, string> = { ISSUE_REAL: "属实", ISSUE_FALSE_POSITIVE: "误报" };
+/** 问题标注的 target 文本形如「问题 <id>（<type>）：<摘要前 30 字>」；用 id 对上同一次运行里的问题 */
+export const issueIdOfTarget = (target: string | null | undefined) => /^问题 (.+?)（/.exec(target ?? "")?.[1];
+export const issueSummaryOfTarget = (target: string | null | undefined) => (target ?? "").replace(/^问题 .+?（.*?）：/, "");
+
 export interface AnnotationDTO {
   annotation_id: string;
   run_id: string;
@@ -122,4 +128,13 @@ export interface CapabilityDTO {
   source: string;
   message: string;
   canPreviewFiles: boolean;
+}
+
+/** GET /api/settings/model：当前模型配置来源与脱敏信息（不含完整密钥） */
+export interface ModelSettingsDTO {
+  source: "settings" | "env" | "none";
+  baseUrl: string;
+  model: string;
+  hasKey: boolean;
+  keyTail: string | null;
 }

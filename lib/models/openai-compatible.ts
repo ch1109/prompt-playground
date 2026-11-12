@@ -1,8 +1,9 @@
 import { sha256 } from "@/lib/hash";
+import { effectiveModelConfig, readModelConfig } from "./config-store";
 import type { ModelRequest, ModelResult, ProviderAdapter, ProviderCapabilities, ProviderInfo } from "./provider-adapter";
 
 // OpenAI 兼容 /chat/completions（DashScope、OpenAI、OpenRouter 等）。
-// 只在服务端运行；API Key 只从环境变量读取，绝不返回给浏览器或写进 Run。
+// 只在服务端运行；API Key 来自网页「模型设置」保存的文件或环境变量，绝不返回给浏览器或写进 Run。
 
 // 1.1.0：能力声明（capabilities）
 // 1.2.0：返回实际请求的脱敏副本与完整响应元数据（usage、服务商回报的模型名、是否有思考内容）
@@ -28,27 +29,33 @@ const UNDECLARED_CAPABILITIES: ProviderCapabilities = { images: null, nativePdf:
 
 export function redactSecrets(text: string, extraSecrets: (string | undefined)[] = []): string {
   let out = text;
-  for (const key of [process.env.MODEL_API_KEY, process.env.JIULI_API_TOKEN, ...extraSecrets]) {
+  for (const key of [process.env.MODEL_API_KEY, readModelConfig()?.apiKey, process.env.JIULI_API_TOKEN, ...extraSecrets]) {
     if (key && key.length > 4) out = out.split(key).join("***");
   }
   return out.replace(/(Bearer\s+)[A-Za-z0-9._-]+/g, "$1***").replace(/sk-[A-Za-z0-9_-]{8,}/g, "sk-***");
 }
 
+/** 服务地址 / 模型 / 密钥取生效配置（网页设置优先，其次环境变量）；超时只来自环境变量 */
+function defaultEnv() {
+  const { baseUrl, model, apiKey } = effectiveModelConfig();
+  // 视觉模型附带多页图片时常超过 2 分钟
+  return { baseUrl, model, apiKey, timeoutMs: Number(process.env.MODEL_TIMEOUT_MS || 300000) };
+}
+
 export class OpenAICompatibleProvider implements ProviderAdapter {
   constructor(
-    private env: { baseUrl?: string; model?: string; apiKey?: string; timeoutMs?: number; capabilities?: ProviderCapabilities } = {
-      baseUrl: process.env.MODEL_BASE_URL,
-      model: process.env.MODEL_NAME,
-      apiKey: process.env.MODEL_API_KEY,
-      // 视觉模型附带多页图片时常超过 2 分钟
-      timeoutMs: Number(process.env.MODEL_TIMEOUT_MS || 300000),
-    },
+    private env: { baseUrl?: string; model?: string; apiKey?: string; timeoutMs?: number; capabilities?: ProviderCapabilities } = defaultEnv(),
     private fetchImpl: typeof fetch = fetch,
   ) {}
 
   /** 同一服务商、同一密钥，换一个模型名；能力声明只属于 .env.local 里的默认模型，换模型后一律「未声明」 */
   withModel(model: string): OpenAICompatibleProvider {
     return new OpenAICompatibleProvider({ ...this.env, model, capabilities: UNDECLARED_CAPABILITIES }, this.fetchImpl);
+  }
+
+  /** 服务地址 + 密钥的标识，换了就要丢掉旧的模型列表缓存；只在内存里比较，不输出 */
+  endpointKey(): string {
+    return `${this.env.baseUrl}\n${this.env.apiKey}`;
   }
 
   /** 服务商的 GET /models 模型列表（OpenAI 兼容）；只返回模型名 */
@@ -85,7 +92,7 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
   async complete(req: ModelRequest): Promise<ModelResult> {
     const started = Date.now();
     if (!this.info().configured) {
-      return { ok: false, code: "MODEL_NOT_CONFIGURED", message: "未配置 MODEL_BASE_URL / MODEL_NAME / MODEL_API_KEY（.env.local）", latencyMs: 0 };
+      return { ok: false, code: "MODEL_NOT_CONFIGURED", message: "还没设置模型（服务地址 / 模型名称 / 密钥）", latencyMs: 0 };
     }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(new Error("timeout")), this.env.timeoutMs ?? 300000);
@@ -176,13 +183,22 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
   }
 }
 
-let provider: ProviderAdapter | undefined;
-/** 不传模型或与默认模型相同 → 默认模型（.env.local 的 MODEL_NAME）；否则同一服务商换成该模型 */
+let injected: ProviderAdapter | undefined;
+let cached: { key: string; p: OpenAICompatibleProvider } | undefined;
+/** 每次按当前生效配置取 provider：配置（网页设置或环境变量）变了就重建，所以保存设置后立即生效，不用重启 */
+function currentProvider(): ProviderAdapter {
+  if (injected) return injected;
+  const env = defaultEnv();
+  const key = JSON.stringify(env);
+  if (cached?.key !== key) cached = { key, p: new OpenAICompatibleProvider(env) };
+  return cached.p;
+}
+/** 不传模型或与默认模型相同 → 默认模型（网页设置或 .env.local 的 MODEL_NAME）；否则同一服务商换成该模型 */
 export function getProvider(model?: string | null): ProviderAdapter {
-  provider ??= new OpenAICompatibleProvider();
-  return model && model !== provider.info().model && provider instanceof OpenAICompatibleProvider ? provider.withModel(model) : provider;
+  const p = currentProvider();
+  return model && model !== p.info().model && p instanceof OpenAICompatibleProvider ? p.withModel(model) : p;
 }
 /** 测试注入 */
 export function setProviderForTests(p: ProviderAdapter | undefined) {
-  provider = p;
+  injected = p;
 }

@@ -6,16 +6,22 @@ const NOT_CHAT = /embedding|rerank|wanx|wan2|cosyvoice|paraformer|sambert|speech
 const DATED = /-(\d{4}-\d{2}-\d{2}|\d{4})$/;
 const TTL_MS = 10 * 60_000;
 
-let list: { at: number; models: string[] } | null = null;
+let list: { at: number; key: string; models: string[] } | null = null;
 
-/** 可选模型：默认模型（.env.local 的 MODEL_NAME）排第一，其余按名字排序；读取失败时只有默认模型，并附上原因 */
+/** 保存或清除模型设置后调用，让下次重新读取模型列表 */
+export function resetModelListCache() {
+  list = null;
+}
+
+/** 可选模型：默认模型（.env.local 的 MODEL_NAME 或网页设置的模型）排第一，其余按名字排序；读取失败时只有默认模型，并附上原因 */
 export async function availableModels(): Promise<{ default: string; models: string[]; error: string | null }> {
   const p = getProvider();
   const def = p.info().model;
   let error: string | null = null;
-  if (p instanceof OpenAICompatibleProvider && (!list || Date.now() - list.at > TTL_MS)) {
+  const key = p instanceof OpenAICompatibleProvider ? p.endpointKey() : "";
+  if (p instanceof OpenAICompatibleProvider && (!list || list.key !== key || Date.now() - list.at > TTL_MS)) {
     try {
-      list = { at: Date.now(), models: (await p.listModels()).filter((m) => !NOT_CHAT.test(m) && !DATED.test(m)).sort() };
+      list = { at: Date.now(), key, models: (await p.listModels()).filter((m) => !NOT_CHAT.test(m) && !DATED.test(m)).sort() };
     } catch (e) {
       error = redactSecrets(e instanceof Error ? e.message : String(e));
     }
