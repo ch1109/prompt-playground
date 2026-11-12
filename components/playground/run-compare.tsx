@@ -45,8 +45,10 @@ export function Hunks({ title, hunks, labels = ["A", "B"] }: { title: string; hu
 /** 手动并排对比两次历史 Run 的 JSON（轻量对比，不是带准确率的正式评测） */
 /** 嵌在「版本对比」模式页面里显示。inline 已不再使用（组件只有内嵌形态），保留为可选仅为兼容调用方 */
 export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: () => void; inline?: boolean }) {
-  const [a, setA] = useState<RunDetail | null>(null);
-  const [b, setB] = useState<RunDetail | null>(null);
+  const [ra, setA] = useState<RunDetail | null>(null);
+  const [rb, setB] = useState<RunDetail | null>(null);
+  // 不管先勾选哪一条，较早的那次运行当 A（旧）、较晚的当 B（新），这样「修好 / 变差」的方向不会反
+  const [a, b] = ra && rb && ra.run.started_at > rb.run.started_at ? [rb, ra] : [ra, rb];
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     setFailed(false);
@@ -64,8 +66,8 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
       <div className="flex w-full flex-col overflow-hidden rounded-2xl border border-ink-700 bg-ink-900">
         <div className="flex items-center gap-2 border-b border-ink-700 px-4 py-3">
           <span className="font-semibold">运行对比</span>
-          <Badge>{ids[0]}</Badge>→<Badge>{ids[1]}</Badge>
-          <span className="text-[11px] text-ink-400">A=左 / B=右；仅展示差异，不代表准确率</span>
+          <Badge>{a?.run.run_id ?? ids[0]}</Badge>→<Badge>{b?.run.run_id ?? ids[1]}</Badge>
+          <span className="text-[11px] text-ink-400">A=较早的那次 / B=较晚的那次；仅展示差异，不代表准确率</span>
           <Btn className="ml-auto" onClick={onClose}>
             清除选择
           </Btn>
