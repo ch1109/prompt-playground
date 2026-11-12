@@ -84,3 +84,23 @@ test("版式和这次输出对不上时，提示之后仍显示 JSON 树", async
   await expect(page.getByTestId("layout-view")).toHaveAttribute("data-kind", "mismatch");
   await expect(page.getByTestId("result-json").locator('[data-pointer="/summary"]')).toBeVisible();
 });
+
+test("样例有两个列表时可在弹窗里换「数据」位置，预览跟着变", async ({ page }) => {
+  await setup(page, JSON.stringify({ fruits: [{ name: "苹果", price: 3 }], veggies: [{ title: "白菜", weight: 9 }] }));
+  await page.getByTestId("layout-generate").click();
+  const dialog = page.getByTestId("layout-editor");
+  await dialog.getByTestId("lk-table").check();
+  const preview = dialog.getByTestId("le-preview");
+  await expect(preview).toContainText("苹果");
+  await dialog.getByTestId("le-items").selectOption("/veggies");
+  await expect(preview).toContainText("白菜");
+  await expect(preview).not.toContainText("苹果");
+  await expect(dialog.getByTestId("le-rederived")).toBeVisible();
+});
+
+test("样例只有一个列表时不显示「数据」选择", async ({ page }) => {
+  await setup(page, DATA);
+  await page.getByTestId("layout-generate").click();
+  await expect(page.getByTestId("layout-editor")).toBeVisible();
+  await expect(page.getByTestId("le-items")).toHaveCount(0);
+});

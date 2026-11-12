@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { generateLayout, saveLayout } from "@/lib/client/api";
 import { withEgressConfirm } from "@/lib/client/egress-confirm";
 import { applyLayout } from "@/lib/layouts/apply";
+import { findArrays } from "@/lib/layouts/arrays";
 import { LAYOUT_KINDS, validateLayout, type Layout, type LayoutKind } from "@/lib/layouts/types";
 import { escapeToken, getByPointer } from "@/lib/pipeline/json-pointer";
 import { LayoutView } from "@/components/views/layout-view";
@@ -55,13 +56,13 @@ function firstItem(sample: unknown, itemsPath: string): unknown {
 }
 
 /** 按样例推导某种形态的初始版式 */
-function derive(kind: LayoutKind, sample: unknown): Layout {
+function derive(kind: LayoutKind, sample: unknown, forcedPath?: string): Layout {
   if (kind === "report") {
     const top = sample !== null && typeof sample === "object" && !Array.isArray(sample) ? Object.keys(sample) : [];
     const sections = top.length ? top.slice(0, 50).map((k) => ({ title: k.slice(0, 40), path: "/" + escapeToken(k) })) : [{ title: "全部内容", path: "" }];
     return { version: 1, kind: "report", sections };
   }
-  const itemsPath = findItemsPath(sample) ?? "";
+  const itemsPath = forcedPath ?? findItemsPath(sample) ?? "";
   const item = firstItem(sample, itemsPath);
   const direct = item !== null && typeof item === "object" && !Array.isArray(item) ? collect(item, "", 1, false).filter((o) => o.path !== "") : [];
   const leaves = direct.length ? direct : collect(item, "", 3, false);
@@ -113,8 +114,10 @@ export function LayoutEditor({ projectId, promptId, runId, sample, initial, onCl
   const [drafts, setDrafts] = useState<Partial<Record<LayoutKind, Layout>>>(initial ? { [initial.kind]: initial } : {});
   const [busy, setBusy] = useState<"" | "gen" | "save">("");
   const [error, setError] = useState("");
+  const [forcedPath, setForcedPath] = useState<string | undefined>();
+  const [rederived, setRederived] = useState(false);
 
-  const layout = useMemo(() => drafts[kind] ?? derive(kind, sample), [drafts, kind, sample]);
+  const layout = useMemo(() => drafts[kind] ?? derive(kind, sample, forcedPath), [drafts, kind, sample, forcedPath]);
   const update = (l: Layout) => setDrafts((d) => ({ ...d, [kind]: l }));
   const preview = useMemo(() => applyLayout(layout, sample), [layout, sample]);
 
@@ -126,6 +129,20 @@ export function LayoutEditor({ projectId, promptId, runId, sample, initial, onCl
   const sectionOpts = useMemo(() => collect(sample, "", 2, true).filter((o) => o.path !== ""), [sample]);
   const addOpts = layout.kind === "report" ? sectionOpts : itemOpts;
   const rows = getRows(layout);
+
+  const arrays = useMemo(() => findArrays(sample), [sample]);
+  const arrayLabel = (a: { path: string; count: number }) => `${a.path === "" ? "根" : a.path.slice(1).split("/").map((t) => t.replace(/~1/g, "/").replace(/~0/g, "~")).join(" › ")}（${a.count} 条）`;
+
+  /** 换数据位置：列/字段在新数组第一项里都找得到就保持不动，否则按新数组重新推导 */
+  function changeItemsPath(p: string) {
+    if (layout.kind === "report") return;
+    setForcedPath(p);
+    const item = firstItem(sample, p);
+    const paths = layout.kind === "table" ? layout.columns.map((c) => c.path) : layout.kind === "cards" ? [layout.titlePath, ...(layout.badgePath === undefined ? [] : [layout.badgePath]), ...layout.fields.map((f) => f.path)] : [layout.titlePath, ...[layout.statusPath, layout.severityPath, layout.detailPath].filter((x): x is string => x !== undefined)];
+    const ok = paths.every((x) => getByPointer(item, x).found);
+    setRederived(!ok);
+    update(ok ? { ...layout, itemsPath: p } : derive(layout.kind, sample, p));
+  }
 
   const patchRows = (next: Row[]) => update(setRows(layout, next));
   const move = (i: number, d: -1 | 1) => {
@@ -145,6 +162,7 @@ export function LayoutEditor({ projectId, promptId, runId, sample, initial, onCl
       if (!v.ok) return setError("AI 给出的版式不可用：" + v.errors.join("；"));
       setDrafts((d) => ({ ...d, [v.layout.kind]: v.layout }));
       setKind(v.layout.kind);
+      setRederived(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "生成失败");
     } finally {
@@ -179,16 +197,34 @@ export function LayoutEditor({ projectId, promptId, runId, sample, initial, onCl
           <div className="flex gap-3 text-[12.5px]" role="radiogroup" aria-label="版式形态">
             {LAYOUT_KINDS.map((k) => (
               <label key={k} className="flex cursor-pointer items-center gap-1">
-                <input type="radio" name="layout-kind" checked={kind === k} onChange={() => setKind(k)} data-testid={`lk-${k}`} />
+                <input type="radio" name="layout-kind" checked={kind === k} onChange={() => { setKind(k); setRederived(false); }} data-testid={`lk-${k}`} />
                 {KIND_LABEL[k]}
               </label>
             ))}
           </div>
+          {layout.kind !== "report" && arrays.length >= 2 && (
+            <label className="flex items-center gap-1 text-[12.5px]">
+              <span className="text-ink-300">数据：</span>
+              <select className={selectCls} value={layout.itemsPath} onChange={(e) => changeItemsPath(e.target.value)} data-testid="le-items">
+                {!arrays.some((a) => a.path === layout.itemsPath) && <option value={layout.itemsPath}>{layout.itemsPath === "" ? "根" : layout.itemsPath}</option>}
+                {arrays.map((a) => (
+                  <option key={a.path} value={a.path} title={a.path === "" ? "根" : a.path}>
+                    {arrayLabel(a)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <Btn tone="outline" onClick={generate} disabled={!!busy} className="ml-auto" data-testid="le-generate">
             {busy === "gen" ? "生成中…" : "让 AI 生成"}
           </Btn>
         </div>
 
+        {rederived && layout.kind !== "report" && (
+          <p className="text-[12px] text-ink-300" data-testid="le-rederived">
+            已按新位置重新推导列
+          </p>
+        )}
         <div className="grid min-h-0 flex-1 gap-3 overflow-auto md:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
           <div className="space-y-2" data-testid="le-form">
             {layout.kind === "cards" && (
