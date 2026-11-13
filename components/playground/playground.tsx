@@ -6,7 +6,7 @@ import { withEgressConfirm as confirmEgress } from "@/lib/client/egress-confirm"
 import type { CapabilityDTO, FixtureSummary, PromptDef, PromptVersionDTO, ProviderInfoDTO, RunDetail, RunListItem, SnapshotListItem } from "@/lib/client/types";
 import type { PromptKind } from "@/lib/contracts/run";
 import { emptyWorkspace, inputSignature, runSnapshotId, useStudio, type WorkMode } from "@/lib/state/studio-store";
-import { Badge, Btn, cx, Empty, runStatusView } from "@/components/ui";
+import { Badge, Btn, cx, Empty, runStatusView, SEG_TRACK, segItem } from "@/components/ui";
 import { EditorPane, InputTab } from "./editor-pane";
 import { ResultPane } from "./result-pane";
 import { ModelSettings } from "./model-settings";
@@ -502,7 +502,7 @@ export function Playground({ projectId }: { projectId: string }) {
                     </tr>
                   )}
                   {runs.map((r) => (
-                    <tr key={r.run_id} className={cx("border-b border-ink-800 hover:bg-ink-850", ws.runId === r.run_id && "bg-accent/[0.06]")}>
+                    <tr key={r.run_id} className={cx("border-b border-ink-800 hover:bg-ink-850", ws.runId === r.run_id && "bg-ink-800/70")}>
                       {mode === "compare" && (
                         <td className="px-3">
                           <input
@@ -549,7 +549,7 @@ export function Playground({ projectId }: { projectId: string }) {
     const snap = snapshots.find((x) => x.snapshot_id === runSnapshotId(ws));
     const name = fx?.title ?? (ws.inputMode === "paste" ? "粘贴的 JSON" : snap?.label) ?? "还没选输入";
     return (
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-ink-700 bg-ink-900 px-4 py-2 text-[12.5px]" data-testid="context-bar">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 bg-ink-900 px-5 pt-3 pb-1 text-[12.5px]" data-testid="context-bar">
         <span className="text-ink-400">当前输入</span>
         <span className="max-w-[360px] truncate font-semibold text-ink-100" title={name}>
           {name}
@@ -585,7 +585,7 @@ export function Playground({ projectId }: { projectId: string }) {
 
 
   const modeTabs = (
-    <div className={cx("flex gap-0.5 rounded-xl bg-ink-800 p-1 text-[12.5px]", narrow && "mx-3 mt-2")} role="tablist" aria-label="工作模式" data-testid="work-modes">
+    <div className={cx(SEG_TRACK, narrow && "mx-5 mt-3")} role="tablist" aria-label="工作模式" data-testid="work-modes">
       {MODES.map(([id, label, hint]) => (
         <button
           key={id}
@@ -593,7 +593,7 @@ export function Playground({ projectId }: { projectId: string }) {
           aria-selected={mode === id}
           title={hint}
           onClick={() => s.set("workMode", id)}
-          className={cx("whitespace-nowrap rounded-lg px-2.5 py-0.5 transition-colors", narrow && "flex-1 py-1.5", mode === id ? "bg-ink-900 font-medium text-ink-100 shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-ink-400 hover:text-ink-100")}
+          className={cx(segItem(mode === id), narrow && "flex-1 py-1.5")}
         >
           {label}
         </button>
@@ -604,12 +604,12 @@ export function Playground({ projectId }: { projectId: string }) {
   const field = "w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-1.5 text-[12.5px] outline-none focus:border-ink-400";
 
   return (
-    <div className="flex h-screen gap-2 overflow-hidden p-2">
+    <div className="flex h-screen overflow-hidden">
       {/* 侧栏 */}
       {!s.sidebarCollapsed && (
-        <nav className="flex w-[244px] shrink-0 flex-col" data-testid="sidebar">
-          <div className="flex items-center gap-2 px-2 pt-1.5 pb-4">
-            <span className="grid h-6 w-6 place-items-center rounded-md bg-ink-100 font-mono text-[11px] font-semibold text-white">P/</span>
+        <nav className="flex w-[244px] shrink-0 flex-col border-r border-ink-700 bg-ink-950 px-2.5 py-3" data-testid="sidebar">
+          <div className="flex items-center gap-2.5 px-1 pb-5">
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-ink-100 font-mono text-[12px] font-semibold text-white shadow-[0_2px_6px_rgb(0_0_0/0.18)]">P/</span>
             <span className="text-[14px] font-semibold tracking-tight">Prompt Studio</span>
             <button onClick={() => s.set("sidebarCollapsed", true)} className="ml-auto rounded-md p-1 text-ink-400 hover:bg-ink-800 hover:text-ink-100" aria-label="折叠侧栏" title="折叠侧栏">
               <Icon d={ICONS.sidebar} />
@@ -733,27 +733,27 @@ export function Playground({ projectId }: { projectId: string }) {
               const groupStart = p.prompt_kind !== "GENERIC_JSON" && (i === 0 || prompts[i - 1].prompt_kind === "GENERIC_JSON");
               return (
                 <li key={p.prompt_id} className="rise" style={{ animationDelay: `${i * 40}ms` }}>
-                  {groupStart && <div className="px-2 pb-0.5 pt-2 text-[11px] text-ink-400">九立预设</div>}
+                  {groupStart && <div className="px-1.5 pb-1 pt-3 text-[11px] text-ink-400">九立预设</div>}
                   <button
                     onClick={() => switchPrompt(p.prompt_id)}
                     data-prompt={p.prompt_id}
                     aria-current={active || undefined}
                     className={cx(
-                      "flex w-full items-center gap-2.5 rounded-lg px-2 py-[7px] text-left text-[13px] transition-colors",
-                      active ? "bg-ink-900 font-medium text-ink-100 shadow-[0_1px_2px_rgb(0_0_0/0.06),0_0_0_1px_var(--color-ink-700)]" : "text-ink-300 hover:bg-ink-800 hover:text-ink-100",
+                      "flex w-full items-center gap-2.5 rounded-lg px-2 py-[7px] text-left text-[12.5px] transition-colors",
+                      active ? "bg-ink-100 font-medium text-white shadow-[0_2px_8px_-2px_rgb(0_0_0/0.35)]" : "text-ink-300 hover:bg-ink-800 hover:text-ink-100",
                     )}
                   >
-                    <span className={cx("grid h-5 w-7 shrink-0 place-items-center rounded-md font-mono text-[10.5px]", active ? "bg-ink-100 text-white" : "bg-ink-800 text-ink-400")}>{SHORT[p.prompt_kind]}</span>
+                    <span className={cx("grid h-5 w-7 shrink-0 place-items-center rounded-md font-mono text-[10.5px]", active ? "bg-white/15 text-white" : "border border-ink-700 bg-ink-900 text-ink-400")}>{SHORT[p.prompt_kind]}</span>
                     <span className="truncate">{p.name.replace(/^P\d /, "")}</span>
-                    {s.workspaces[p.prompt_id]?.runId && <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-verify" title="有已打开的运行结果" />}
+                    {s.workspaces[p.prompt_id]?.runId && <span className={cx("ml-auto h-1.5 w-1.5 shrink-0 rounded-full", active ? "bg-emerald-400" : "bg-verify")} title="有已打开的运行结果" />}
                   </button>
                 </li>
               );
             })}
           </ul>
 
-          <div className="mt-auto space-y-1.5 px-1 pt-3">
-            <div className="rounded-xl border border-ink-700 bg-ink-900/70 px-2.5 py-2 text-[12px]">
+          <div className="mt-auto space-y-1.5 border-t border-ink-700 px-1 pt-3">
+            <div className="rounded-xl border border-ink-700 bg-ink-900 px-2.5 py-2 text-[12px] shadow-[0_1px_2px_rgb(0_0_0/0.03)]">
               <div className="flex items-center gap-1.5 font-medium">
                 <span className={cx("h-1.5 w-1.5 rounded-full", capability?.status === "CONNECTED_DEMO_FILES" ? "bg-verify" : "bg-risk")} />
                 九立 {capability?.status === "CONNECTED_DEMO_FILES" ? "Demo 文件（只读）" : "未接通"}
@@ -774,17 +774,17 @@ export function Playground({ projectId }: { projectId: string }) {
       )}
 
       {/* 主区：顶栏 + 编辑区 | 结果区 + 运行历史 */}
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-ink-700 bg-ink-900 shadow-[0_1px_3px_rgb(0_0_0/0.05),0_8px_24px_-12px_rgb(0_0_0/0.08)]">
-        <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-ink-700 px-4 py-2.5">
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-ink-900">
+        <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-ink-700 px-5 py-3">
           {s.sidebarCollapsed && (
             <button onClick={() => s.set("sidebarCollapsed", false)} className="rounded-md p-1 text-ink-400 hover:bg-ink-800 hover:text-ink-100" aria-label="展开侧栏" title="展开侧栏">
               <Icon d={ICONS.sidebar} />
             </button>
           )}
           <div className="flex min-w-0 items-center gap-1.5 text-[13.5px]">
-            <span className="truncate text-ink-400">{projects?.find((p) => p.project_id === projectId)?.name ?? "…"}</span>
+            <span className="truncate rounded-lg border border-ink-700 bg-ink-850 px-2 py-0.5 text-[12px] text-ink-400">{projects?.find((p) => p.project_id === projectId)?.name ?? "…"}</span>
             <span className="text-ink-600">/</span>
-            <span className="truncate font-semibold">{prompt?.name ?? "…"}</span>
+            <span className="truncate text-[14px] font-semibold tracking-tight">{prompt?.name ?? "…"}</span>
           </div>
           {currentVersion && (
             <span className="flex min-w-0 items-center gap-1" data-testid="header-version" title={`当前版本：${currentVersion.label}`}>
@@ -801,7 +801,7 @@ export function Playground({ projectId }: { projectId: string }) {
                 {error.message}
               </span>
             )}
-            <button onClick={() => setModelSettingsOpen(true)} className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full border border-ink-700 px-2.5 py-1 font-mono text-[11px] text-ink-300 hover:border-ink-600 hover:bg-ink-850 hover:text-ink-100" title="点这里设置模型" data-testid="btn-model-settings">
+            <button onClick={() => setModelSettingsOpen(true)} className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border border-ink-700 px-2.5 py-1.5 font-mono text-[11.5px] text-ink-300 hover:border-ink-600 hover:bg-ink-850 hover:text-ink-100" title="点这里设置模型" data-testid="btn-model-settings">
               <span className={cx("h-1.5 w-1.5 rounded-full", provider?.configured ? "bg-verify" : "bg-risk")} />
               {provider?.configured ? provider.model : "模型未配置"}
             </button>
@@ -824,17 +824,19 @@ export function Playground({ projectId }: { projectId: string }) {
 
         {narrow && modeTabs}
         {narrow && mode === "debug" && (
-          <div className="flex gap-1 border-b border-ink-700 px-3 py-1.5 text-[12.5px]" data-testid="narrow-tabs">
+          <div className="border-b border-ink-700 px-5 py-2.5" data-testid="narrow-tabs">
+          <div className={SEG_TRACK}>
             {(
               [
                 ["editor", "编辑"],
                 ["result", "结果"],
               ] as const
             ).map(([id, label]) => (
-              <button key={id} onClick={() => setNarrowPane(id)} aria-pressed={narrowPane === id} className={cx("flex-1 rounded-lg py-1.5", narrowPane === id ? "bg-ink-800 font-medium text-ink-100" : "text-ink-400 hover:text-ink-100")}>
+              <button key={id} onClick={() => setNarrowPane(id)} aria-pressed={narrowPane === id} className={cx(segItem(narrowPane === id), "flex-1")}>
                 {label}
               </button>
             ))}
+          </div>
           </div>
         )}
         <div ref={container} className="relative flex min-h-0 flex-1">
@@ -898,9 +900,9 @@ export function Playground({ projectId }: { projectId: string }) {
             </div>
           )}
           {mode === "compare" && (
-            <div className="min-h-0 min-w-0 flex-1 space-y-3 overflow-auto bg-ink-850 p-3" data-testid="compare-mode">
+            <div className="min-h-0 min-w-0 flex-1 space-y-3 overflow-auto bg-ink-850 p-5" data-testid="compare-mode">
               <section className="overflow-hidden rounded-xl border border-ink-700 bg-ink-900">
-                <header className="border-b border-ink-700/70 px-3.5 py-2 text-[12px] font-semibold">勾选两次运行进行对比（{compare.length}/2）</header>
+                <header className="border-b border-ink-800 px-4 py-2.5 text-[12.5px] font-semibold tracking-tight">勾选两次运行进行对比（{compare.length}/2）</header>
                 <div className="max-h-64 overflow-auto">{historyTable}</div>
               </section>
               {compare.length === 2 ? (
@@ -958,7 +960,7 @@ export function Playground({ projectId }: { projectId: string }) {
 
 function SideLabel({ children, right }: { children: ReactNode; right?: ReactNode }) {
   return (
-    <div className="flex items-center px-2 pb-1.5 text-[11.5px] font-medium text-ink-400">
+    <div className="flex items-center px-1.5 pb-1.5 text-[11px] text-ink-400">
       {children}
       {right && <span className="ml-auto">{right}</span>}
     </div>

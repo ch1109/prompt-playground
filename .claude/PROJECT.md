@@ -18,6 +18,7 @@
 ## 2. 关键约定
 
 - 界面规矩见项目根目录 `CLAUDE.md`。写 Next 相关代码前先读 `node_modules/next/dist/docs/`（见 `AGENTS.md`），这个版本的 API 和旧版不同。
+- 视觉风格（2026-11-13 按用户给的 Hearth 参考图定）：中性灰底 + 白卡片，选中项黑底白字，全站等宽字体（Geist Mono + 苹方）；颜色只改 `app/globals.css` 的 `@theme`。分段页签统一用 `components/ui.tsx` 的 `SEG_TRACK` / `segItem`。
 - 界面只显示中文。英文原值（枚举、错误码）放进悬停提示（`title`）。
 - 状态值的中文映射只有一份：`lib/adapters/helpers.ts` 的 `STATE_LABEL`。改映射只改这一处。
 - 以下数据只能新增，不能修改或覆盖：模型原始输出、Run、提示词版本、数据集版本、外发确认记录。修改要新建一条。

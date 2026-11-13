@@ -4,7 +4,7 @@ import { api, ApiError } from "@/lib/client/api";
 import type { CapabilityDTO, FixtureSummary, PromptVersionDTO, ProviderInfoDTO, SnapshotListItem } from "@/lib/client/types";
 import type { PromptKind } from "@/lib/contracts/run";
 import { runSnapshotId, useStudio, useWorkspace, type InputMode } from "@/lib/state/studio-store";
-import { Badge, Btn, cx, Empty } from "@/components/ui";
+import { Badge, Btn, cx, Empty, SEG_TRACK, segItem } from "@/components/ui";
 import type { InputManifest, ModelParams } from "@/lib/contracts/run";
 import { guessMaterialType, skipReason, UPLOAD_EXTS } from "@/lib/materials/guess-type";
 import { InputCoverage } from "./input-coverage";
@@ -42,7 +42,8 @@ export function EditorPane(props: {
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="editor-pane">
-      <div className="flex items-center gap-1 border-b border-ink-700 bg-ink-900 px-3 py-2">
+      <div className="flex items-center gap-1 border-b border-ink-700 bg-ink-900 px-5 py-2.5">
+        <div className={SEG_TRACK}>
         {(
           [
             ["input", "输入"],
@@ -51,13 +52,14 @@ export function EditorPane(props: {
             ["candidates", "修改建议"],
           ] as [EditorTab, string][]
         ).map(([id, label]) => (
-          <button key={id} onClick={() => setTab(id)} className={cx("rounded-lg px-3 py-1 text-[13px] transition-colors", tab === id ? "bg-ink-800 font-medium text-ink-100" : "text-ink-400 hover:bg-ink-850 hover:text-ink-100")}>
+          <button key={id} onClick={() => setTab(id)} className={segItem(tab === id)}>
             {label}
             {id === "prompt" && isDraft && <span className="ml-1 text-risk">●</span>}
           </button>
         ))}
+        </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto p-3">
+      <div className="min-h-0 flex-1 overflow-auto p-5">
         {tab === "prompt" && <PromptTab versions={props.versions} isDraft={isDraft} onSave={props.onSaveVersion} provider={props.provider} />}
         {tab === "input" && (
           <InputTab
@@ -106,7 +108,7 @@ function PromptTab({ versions, isDraft, onSave, provider }: { versions: PromptVe
           }}
           aria-label="Prompt 版本"
           title="带【正式】的是正式版本：只有在「修改建议」里人工采纳才会改变，保存新版本不会改变它"
-          className="flex-1 rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-[12px]"
+          className="min-w-0 flex-1 rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-[12px]"
         >
           {versions.map((v) => (
             <option key={v.version_id} value={v.version_id}>

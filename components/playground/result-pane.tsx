@@ -16,7 +16,7 @@ import { fieldInputCoverage } from "@/lib/runs/run-evidence";
 import { diagnosisPrompt } from "@/lib/mcp/task-template";
 import { BusinessView } from "@/components/views/business-view";
 import { RuleCheck } from "@/components/views/rule-check";
-import { Badge, Btn, cx, Empty, RUN_STATUS_LABEL, runStatusView } from "@/components/ui";
+import { Badge, Btn, cx, Empty, RUN_STATUS_LABEL, runStatusView, SEG_TRACK, segItem } from "@/components/ui";
 import { JsonTree, RawText } from "./json-tree";
 import { InputCoverage } from "./input-coverage";
 import { RunEvidencePanel } from "./run-evidence-panel";
@@ -99,18 +99,20 @@ export function ResultPane({
 
   return (
     <div className="relative flex h-full min-h-0 flex-col" data-testid="result-pane">
-      <div className="flex items-center gap-1 border-b border-ink-700 bg-ink-900 px-3 py-2">
+      <div className="flex items-center gap-1 border-b border-ink-700 bg-ink-900 px-5 py-2.5">
+        <div className={SEG_TRACK}>
         {TABS.map((t) => (
           <button
             key={t.id}
             role="tab"
             aria-selected={tab === t.id}
             onClick={() => setStore("resultTab", t.id)}
-            className={cx("rounded-lg px-3 py-1 text-[13px] transition-colors", tab === t.id ? "bg-ink-800 font-medium text-ink-100" : "text-ink-400 hover:bg-ink-850 hover:text-ink-100")}
+            className={segItem(tab === t.id)}
           >
             {t.label}
           </button>
         ))}
+        </div>
         <div className="ml-auto flex items-center gap-2">
           {/* 有业务视图时，结果头部第一句已说明是哪种结果，这里不再重复 */}
           {run && !(run.view_model && detail?.renderer) && (
@@ -197,7 +199,7 @@ export function ResultPane({
       {run?.rerender_note && <Banner tone="info">{run.rerender_note}（模型原始输出没有改动）</Banner>}
 
       <div className="flex min-h-0 flex-1">
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3" data-testid={`tab-${tab}`}>
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto p-5" data-testid={`tab-${tab}`}>
         {loading && <p className="text-ink-400">处理中…</p>}
         {!run && !loading && (
           <div className="rise mx-auto mt-[14vh] max-w-md px-6 text-center">

@@ -12,14 +12,23 @@ export function Btn({ tone = "ghost", className, ...p }: ButtonHTMLAttributes<HT
     <button
       {...p}
       className={cx(
-        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition-[background-color,border-color,color,transform] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100",
-        tone === "primary" && "bg-ink-100 text-white shadow-sm hover:bg-ink-300",
+        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-[12px] font-medium transition-[background-color,border-color,color,transform] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100",
+        tone === "primary" && "bg-ink-100 text-white shadow-[0_2px_8px_-2px_rgb(0_0_0/0.4)] hover:bg-ink-300",
         tone === "ghost" && "text-ink-300 hover:bg-ink-800 hover:text-ink-100",
-        tone === "outline" && "border border-ink-700 bg-ink-900 text-ink-100 shadow-[0_1px_0_rgb(0_0_0/0.03)] hover:border-ink-600 hover:bg-ink-850",
+        tone === "outline" && "border border-ink-700 bg-ink-900 text-ink-100 shadow-[0_1px_2px_rgb(0_0_0/0.04)] hover:border-ink-600 hover:bg-ink-850",
         tone === "danger" && "border border-stamp/40 text-stamp hover:bg-stamp-soft",
         className,
       )}
     />
+  );
+}
+
+/** 分段页签：灰色轨道 + 选中项白色胶囊 */
+export const SEG_TRACK = "flex gap-0.5 rounded-[10px] bg-ink-800 p-[3px]";
+export function segItem(active: boolean) {
+  return cx(
+    "whitespace-nowrap rounded-[7px] px-3 py-1 text-[12.5px] transition-colors",
+    active ? "bg-ink-900 font-medium text-ink-100 shadow-[0_1px_2px_rgb(0_0_0/0.08),0_0_0_1px_rgb(0_0_0/0.03)]" : "text-ink-400 hover:text-ink-100",
   );
 }
 
@@ -105,9 +114,9 @@ export function CellValue({ value, state, kind }: { value: unknown; state?: Cell
 
 export function Section({ title, right, children, className }: { title: ReactNode; right?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <section className={cx("rise overflow-hidden rounded-xl border border-ink-700 bg-ink-900 shadow-[0_1px_2px_rgb(0_0_0/0.04)]", className)}>
-      <header className="flex items-center justify-between gap-2 border-b border-ink-700/70 px-3.5 py-2">
-        <h3 className="text-[12px] font-semibold text-ink-100">{title}</h3>
+    <section className={cx("rise overflow-hidden rounded-xl border border-ink-700 bg-ink-900", className)}>
+      <header className="flex items-center justify-between gap-2 border-b border-ink-800 px-4 py-2.5">
+        <h3 className="text-[12.5px] font-semibold tracking-tight text-ink-100">{title}</h3>
         {right}
       </header>
       {children}
@@ -116,5 +125,5 @@ export function Section({ title, right, children, className }: { title: ReactNod
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <div className="px-3.5 py-5 text-[12.5px] text-ink-400">{children}</div>;
+  return <div className="px-4 py-5 text-[12.5px] text-ink-400">{children}</div>;
 }
