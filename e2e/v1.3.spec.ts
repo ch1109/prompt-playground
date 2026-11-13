@@ -549,3 +549,28 @@ test("问题标注：点一条问题 → 标「误报」→ 列表里出现标�
   await expect(page.getByTestId("issue-verdict")).toHaveText("误报");
   await expect(page.getByTestId("issue-verdict")).toHaveCount(1);
 });
+
+test("打开历史运行：还没选输入时，把那次运行用的输入设为当前输入；已选的输入不覆盖", async ({ page }) => {
+  await pickInDrawer(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
+  await expect(page.getByTestId("context-bar")).toContainText("P1 冲突");
+  // 清掉本地记住的选择，模拟还没选输入（在页面脚本运行前清，避免页面卸载前把状态写回去；只清一次）
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem("e2e-cleared")) return;
+    localStorage.clear();
+    sessionStorage.setItem("e2e-cleared", "1");
+  });
+  await page.reload();
+  await page.click('[data-prompt="jiuli-p1"]');
+  await expect(page.getByTestId("context-bar")).toContainText("还没选输入");
+  await page.getByTestId("open-recent-run").click();
+  await expect(page.getByTestId("context-bar")).toContainText("P1 冲突");
+  await expect(page.getByTestId("context-bar")).toContainText("有标准答案");
+  // 换成另一个示例后回放刚才那次运行：当前输入保持不变
+  await page.getByTestId("btn-change-input").click();
+  await page.getByTestId("input-drawer").getByTestId("btn-change-fixture").click();
+  await page.getByTestId("input-drawer").locator('[data-fixture-id="constructed/p1-v3-xss.json"]').click();
+  await expect(page.getByTestId("context-bar")).toContainText("恶意 HTML");
+  await page.getByRole("button", { name: /运行历史/ }).click();
+  await page.getByTestId("history").locator("tr", { hasText: "P1 冲突" }).first().getByRole("button", { name: "回放" }).click();
+  await expect(page.getByTestId("context-bar")).toContainText("恶意 HTML");
+});

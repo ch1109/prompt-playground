@@ -289,6 +289,7 @@ export function Playground({ projectId }: { projectId: string }) {
       if (opts?.mode) s.set("lastMode", { ...useStudio.getState().lastMode, [target]: opts.mode });
       s.set("selection", { runId });
       setNarrowPane("result");
+      return d;
     },
     [s],
   );
@@ -474,10 +475,24 @@ export function Playground({ projectId }: { projectId: string }) {
   async function replay(runId: string) {
     setError(null);
     try {
-      await openRun(runId);
+      adoptRunInput(await openRun(runId));
     } catch (e) {
       report(e);
     }
+  }
+
+  /**
+   * 打开历史运行时，若该提示词还没选输入，就把那次运行用的输入设为当前输入（示例 → 示例；其他 → 历史输入），
+   * 这样再点「运行模型」就是同一份输入；已有选择的不覆盖。
+   */
+  function adoptRunInput(d: RunDetail) {
+    const pid = d.run.prompt_id;
+    const w = useStudio.getState().workspaces[pid] ?? emptyWorkspace();
+    const hasInput = w.inputMode === "paste" ? !!w.pasteRaw.trim() : w.inputMode === "fixture" ? !!w.fixtureId : !!runSnapshotId(w);
+    if (hasInput || !d.snapshot) return;
+    const fixtureId = d.snapshot.source_type === "FIXTURE" ? d.snapshot.source_ids.fixture_id : undefined;
+    if (typeof fixtureId === "string") s.patchWorkspace(pid, { inputMode: "fixture", fixtureId, fixtureSnapshotId: d.snapshot.snapshot_id });
+    else s.patchWorkspace(pid, { inputMode: "snapshot", snapshotId: d.snapshot.snapshot_id });
   }
 
   /** 运行历史表（底部面板与「版本对比」模式共用） */
@@ -546,8 +561,10 @@ export function Playground({ projectId }: { projectId: string }) {
   /** 结果检查模式顶部：当前输入，与「更换输入」「编辑提示词」两个动作；版本与模型已在顶栏显示 */
   function contextBar() {
     const fx = ws.inputMode === "fixture" ? fixtures.find((f) => f.id === ws.fixtureId) : undefined;
-    const snap = snapshots.find((x) => x.snapshot_id === runSnapshotId(ws));
-    const name = fx?.title ?? (ws.inputMode === "paste" ? "粘贴的 JSON" : snap?.label) ?? "还没选输入";
+    const sid = runSnapshotId(ws);
+    // 历史输入列表是分页加载的，当前结果用的快照可能不在已加载的列表里，就用结果自带的名称
+    const snapLabel = snapshots.find((x) => x.snapshot_id === sid)?.label ?? (sid && detail?.snapshot?.snapshot_id === sid ? detail.snapshot.label : undefined);
+    const name = fx?.title ?? (ws.inputMode === "paste" ? "粘贴的 JSON" : snapLabel) ?? "还没选输入";
     return (
       <div className="flex min-w-0 items-center gap-2 border-l border-ink-700 pl-4 text-[12.5px]" data-testid="context-bar">
         <span className="shrink-0 text-ink-400">当前输入</span>
