@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { api, getLayout } from "@/lib/client/api";
 import { applyLayout } from "@/lib/layouts/apply";
 import type { StoredLayout } from "@/lib/layouts/types";
@@ -39,7 +39,7 @@ function Banner({ tone, children }: { tone: "warn" | "bad" | "info"; children: R
   return (
     <div
       className={cx(
-        "rise mx-3 mt-2 rounded-lg border px-3 py-2 text-[12px]",
+        "rise mx-5 mt-3 rounded-xl border px-4 py-2.5 text-[12px]",
         tone === "warn" && "border-risk/30 bg-risk/10 text-risk",
         tone === "bad" && "border-stamp/40 bg-stamp/10 text-stamp",
         tone === "info" && "border-info/30 bg-info/10 text-info",
@@ -73,6 +73,7 @@ export function ResultPane({
   onOpenRun,
   example,
   onOpenExample,
+  toolbar,
 }: {
   projectId: string;
   detail?: RunDetail;
@@ -90,6 +91,8 @@ export function ResultPane({
   /** 空状态示例样本（明确标为 Fixture） */
   example?: FixtureSummary;
   onOpenExample?: (fixtureId: string) => void;
+  /** 放在结果页签同一行的额外内容（结果检查模式的「当前输入」） */
+  toolbar?: ReactNode;
 }) {
   const tab = useStudio((s) => s.resultTab);
   const setStore = useStudio((s) => s.set);
@@ -99,8 +102,8 @@ export function ResultPane({
 
   return (
     <div className="relative flex h-full min-h-0 flex-col" data-testid="result-pane">
-      <div className="flex items-center gap-1 border-b border-ink-700 bg-ink-900 px-5 py-2.5">
-        <div className={SEG_TRACK}>
+      <div className="flex items-center gap-4 border-b border-ink-700 bg-ink-900 px-5 py-2.5">
+        <div className={cx(SEG_TRACK, "shrink-0")}>
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -113,7 +116,8 @@ export function ResultPane({
           </button>
         ))}
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        {toolbar}
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           {/* 有业务视图时，结果头部第一句已说明是哪种结果，这里不再重复 */}
           {run && !(run.view_model && detail?.renderer) && (
             <Badge tone={runStatusView(run.status, run.schema_id, run.prompt_kind, run.mode).tone} title={run.status}>
@@ -178,7 +182,7 @@ export function ResultPane({
       )}
       {run?.status === "CANCELLED" && <Banner tone="warn">这次运行已取消，没有取得模型结果（服务商可能已开始处理并计费）。</Banner>}
       {run && onRetry && run.mode === "MODEL_RUN" && (run.status === "MODEL_ERROR" || run.status === "CANCELLED") && (
-        <div className="mx-3 mt-1 flex items-center gap-2 text-[11.5px] text-ink-400">
+        <div className="mx-5 mt-1 flex items-center gap-2 text-[11.5px] text-ink-400">
           <Btn tone="outline" onClick={() => onRetry(run.run_id)} disabled={!run.prompt_source} data-testid="btn-retry" title={run.prompt_source ? "用同一输入、同一提示词和参数再运行一次，原记录不变" : "这条记录较早，当时没有保存提示词原文，无法原样重试"}>
             原样重试
           </Btn>

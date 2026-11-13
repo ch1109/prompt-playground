@@ -549,16 +549,16 @@ export function Playground({ projectId }: { projectId: string }) {
     const snap = snapshots.find((x) => x.snapshot_id === runSnapshotId(ws));
     const name = fx?.title ?? (ws.inputMode === "paste" ? "粘贴的 JSON" : snap?.label) ?? "还没选输入";
     return (
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 bg-ink-900 px-5 pt-3 pb-1 text-[12.5px]" data-testid="context-bar">
-        <span className="text-ink-400">当前输入</span>
-        <span className="max-w-[360px] truncate font-semibold text-ink-100" title={name}>
+      <div className="flex min-w-0 items-center gap-2 border-l border-ink-700 pl-4 text-[12.5px]" data-testid="context-bar">
+        <span className="shrink-0 text-ink-400">当前输入</span>
+        <span className="min-w-0 max-w-[280px] truncate font-semibold text-ink-100" title={name}>
           {name}
         </span>
         {fx?.hasGold && <Badge tone="ok">有标准答案</Badge>}
         <Btn onClick={() => setInputDrawer(true)} data-testid="btn-change-input">
           更换输入
         </Btn>
-        <Btn onClick={() => s.set("workMode", "debug")} data-testid="btn-edit-prompt" className="ml-auto">
+        <Btn onClick={() => s.set("workMode", "debug")} data-testid="btn-edit-prompt">
           编辑提示词
         </Btn>
       </div>
@@ -878,7 +878,6 @@ export function Playground({ projectId }: { projectId: string }) {
                 </p>
               ) : (
                 <>
-                  {mode === "check" && prompt && contextBar()}
                   <div className="min-h-0 flex-1">
                     <ResultPane
                       projectId={projectId}
@@ -893,6 +892,7 @@ export function Playground({ projectId }: { projectId: string }) {
                       onOpenRun={replay}
                       example={exampleFixture}
                       onOpenExample={openExample}
+                      toolbar={mode === "check" && prompt ? contextBar() : undefined}
                     />
                   </div>
                 </>
