@@ -235,7 +235,7 @@ export function InputTab({
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <div className="flex flex-1 gap-0.5 rounded-xl bg-ink-800 p-1 text-[12.5px]">
+        <div className={cx(SEG_TRACK, "flex-1")}>
           {modes.map(([m, l]) => (
             <button
               key={m}
@@ -243,7 +243,7 @@ export function InputTab({
                 patch({ inputMode: m });
                 if (m === "fixture") setFixtureOpen(true);
               }}
-              className={cx("flex-1 whitespace-nowrap rounded-lg px-2 py-1 transition-colors", ws.inputMode === m ? "bg-ink-900 font-medium text-ink-100 shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-ink-400 hover:text-ink-100")}>
+              className={cx(segItem(ws.inputMode === m), "flex-1")}>
               {l}
             </button>
           ))}

@@ -110,6 +110,9 @@ test("版本对比模式：在页面里勾选两次运行，直接显示对比�
   await boxes.nth(0).check();
   await boxes.nth(1).check();
   const region = page.getByRole("region", { name: "对比两次运行" });
+  // 运行参数（状态、指纹、token 等）默认收起，点开才显示
+  await expect(region.getByTestId("compare-metrics")).toBeHidden();
+  await region.getByText("运行参数对比").click();
   await expect(region.getByTestId("compare-metrics")).toBeVisible();
   await expect(page.getByRole("dialog", { name: "对比两次运行" })).toHaveCount(0);
 });

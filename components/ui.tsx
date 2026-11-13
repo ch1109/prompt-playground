@@ -32,6 +32,17 @@ export function segItem(active: boolean) {
   );
 }
 
+/** 抽屉、弹窗右上角的关闭按钮 */
+export function CloseBtn({ onClick, label }: { onClick: () => void; label: string }) {
+  return (
+    <button onClick={onClick} aria-label={label} title="关闭" className="grid h-7 w-7 place-items-center rounded-lg text-ink-400 transition-colors hover:bg-ink-800 hover:text-ink-100">
+      <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+        <path d="M5 5l10 10M15 5L5 15" />
+      </svg>
+    </button>
+  );
+}
+
 const TONES: Record<string, string> = {
   ok: "border-verify/20 bg-verify/[0.08] text-verify",
   warn: "border-risk/25 bg-risk/[0.08] text-risk",

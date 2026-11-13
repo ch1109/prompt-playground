@@ -74,20 +74,21 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
   const verdict = useMemo(() => (a && b ? compareVerdict(a.run, b.run, a.annotations as unknown as Annotation[]) : null), [a, b]);
   return (
     <div role="region" aria-label="对比两次运行">
-      <div className="flex w-full flex-col overflow-hidden rounded-2xl border border-ink-700 bg-ink-900">
-        <div className="flex items-center gap-2 border-b border-ink-700 px-4 py-3">
-          <span className="font-semibold">运行对比</span>
-          <Badge>{a?.run.run_id ?? ids[0]}</Badge>→<Badge>{b?.run.run_id ?? ids[1]}</Badge>
-          <span className="text-[11px] text-ink-400">A=较早的那次 / B=较晚的那次；仅展示差异，不代表准确率</span>
+      <div className="flex w-full flex-col overflow-hidden rounded-xl border border-ink-700 bg-ink-900">
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-ink-800 px-4 py-2.5">
+          <span className="text-[12.5px] font-semibold tracking-tight">运行对比</span>
+          <RunTag side="A" d={a} id={ids[0]} />
+          <span className="text-ink-600">→</span>
+          <RunTag side="B" d={b} id={ids[1]} />
           <Btn className="ml-auto" onClick={onClose}>
             清除选择
           </Btn>
         </div>
-        <div className="overflow-auto px-5 py-4">
+        <div className="space-y-4 overflow-auto px-5 py-4">
           {cmp && (
             <>
               {verdict && (
-                <div className="mb-3" data-testid="compare-verdict">
+                <div data-testid="compare-verdict">
                   <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
                     <Badge tone="ok">修好 {verdict.fixed}</Badge>
                     <Badge tone="bad">变差 {verdict.regressed}</Badge>
@@ -127,7 +128,7 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
                 </div>
               )}
               {!cmp.input.comparable && (
-                <div className="mb-3 rounded-lg border border-stamp/40 bg-stamp/[0.07] px-3 py-2 text-[12px] text-stamp" data-testid="input-not-comparable">
+                <div className="rounded-xl border border-stamp/30 bg-stamp/[0.06] px-4 py-2.5 text-[12px] text-stamp" data-testid="input-not-comparable">
                   <div className="font-semibold">输入不可直接比较：只能看技术差异，不能作为提示词改进的依据</div>
                   {cmp.input.reasons.map((r) => (
                     <div key={r}>· {r}</div>
@@ -136,7 +137,7 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
               )}
               <div
                 data-testid="strict-verdict"
-                className={cx("mb-3 rounded-lg border px-3 py-2 text-[12px]", !cmp.strict.applicable ? "border-ink-700 text-ink-300" : cmp.strict.strict ? "border-verify/40 bg-verify/[0.06] text-verify" : "border-risk/40 bg-risk/[0.07] text-risk")}
+                className={cx("rounded-xl border px-4 py-2.5 text-[12px]", !cmp.strict.applicable ? "border-ink-700 text-ink-300" : cmp.strict.strict ? "border-verify/25 bg-verify/[0.05] text-verify" : "border-risk/30 bg-risk/[0.06] text-risk")}
               >
                 <div className="font-semibold">
                   {!cmp.strict.applicable ? "不适用严格同条件对比" : cmp.strict.strict ? "✓ 满足严格同条件：同一输入、图片、预处理、构造器、模型与参数" : "✗ 不满足严格同条件对比：输出差异不能只归因于提示词"}
@@ -146,28 +147,8 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
                 ))}
                 <div className="mt-1 text-[11px] text-ink-400">差异数 ≠ 错误数。没有标准答案时只展示差异，不计算正确率、修复或退化。</div>
               </div>
-              <table className="mb-5 w-full text-[12px]" data-testid="compare-metrics">
-                <thead className="text-ink-400">
-                  <tr>
-                    <th className="w-36 px-2 py-1 text-left font-medium">指标</th>
-                    <th className="px-2 py-1 text-left font-medium">A</th>
-                    <th className="px-2 py-1 text-left font-medium">B</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cmp.metrics.map((m) => (
-                    <tr key={m.key} className={cx("border-b border-ink-800", m.differs && "bg-risk/[0.07]")}>
-                      <td className="px-2 py-1 text-ink-400">{m.label}</td>
-                      <td className="px-2 py-1 font-mono break-all">{m.a}</td>
-                      <td className="px-2 py-1 font-mono break-all">{m.b}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <Hunks title="System 提示词差异" hunks={cmp.system} />
-              <Hunks title="User 消息差异（含构造输入）" hunks={cmp.user} />
               {sideBySide && (
-                <div className="mb-5" data-testid="compare-layout">
+                <div data-testid="compare-layout">
                   <h4 className="mb-1.5 text-[12.5px] font-semibold text-ink-100">两次结果（按版式）</h4>
                   <div className="grid gap-3 lg:grid-cols-2">
                     {sideBySide.map((r, i) => (
@@ -179,9 +160,23 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
                   </div>
                 </div>
               )}
-              <h4 className="mb-1.5 text-[12.5px] font-semibold text-ink-100">输出 JSON 差异</h4>
-              <p className="mb-1 text-[11px] text-ink-400">行按业务键对齐（委托行 ID、字段名、原文位置等，路径中显示为 [键=值]）；对象数组找不到可靠的键时标为「无法对齐」，不按行号硬配。</p>
-              <div className="mb-2 flex flex-wrap gap-1.5 text-[11.5px]" data-testid="diff-counts">
+              {cmp.system?.length === 0 && cmp.user?.length === 0 ? (
+                <p className="text-[12px] text-ink-400">
+                  提示词：<span className="text-verify">两次完全相同</span>（System 提示词与 User 消息）
+                </p>
+              ) : (
+                <div>
+                  <Hunks title="System 提示词差异" hunks={cmp.system} />
+                  <Hunks title="User 消息差异（含构造输入）" hunks={cmp.user} />
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-1.5 text-[11.5px]" data-testid="diff-counts">
+                <h4
+                  className="mr-1 text-[12.5px] font-semibold text-ink-100"
+                  title="行按业务键对齐（委托行 ID、字段名、原文位置等，路径中显示为 [键=值]）；对象数组找不到可靠的键时标为「无法对齐」，不按行号硬配。"
+                >
+                  输出 JSON 差异
+                </h4>
                 <Badge tone="ok">新增 {count("ADDED")}</Badge>
                 <Badge tone="bad">删除 {count("REMOVED")}</Badge>
                 <Badge tone="warn">变化 {count("CHANGED")}</Badge>
@@ -212,8 +207,47 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
               </tbody>
             </table>
           )}
+          {cmp && (
+            <details className="rounded-xl border border-ink-700 text-[12px]">
+              <summary className="cursor-pointer px-4 py-2.5 font-semibold text-ink-100">
+                运行参数对比
+                <span className="ml-2 font-normal text-ink-400">{cmp.metrics.filter((m) => m.differs).length} 项不同 · 状态、模型、指纹、token、耗时等</span>
+              </summary>
+              <table className="w-full border-t border-ink-800 text-[12px]" data-testid="compare-metrics">
+                <thead className="text-ink-400">
+                  <tr>
+                    <th className="w-36 px-4 py-1.5 text-left font-medium">指标</th>
+                    <th className="px-2 py-1.5 text-left font-medium">A</th>
+                    <th className="px-2 py-1.5 text-left font-medium">B</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cmp.metrics.map((m) => (
+                    <tr key={m.key} className={cx("border-t border-ink-800", m.differs && "bg-risk/[0.06]")}>
+                      <td className="px-4 py-1 text-ink-400">{m.label}</td>
+                      <td className="px-2 py-1 font-mono break-all">{m.a}</td>
+                      <td className="px-2 py-1 font-mono break-all">{m.b}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </details>
+          )}
         </div>
       </div>
     </div>
+  );
+}
+
+/** 对比头部的一侧：运行时间 + 提示词版本；Run ID 只放在悬停提示里 */
+function RunTag({ side, d, id }: { side: "A" | "B"; d: RunDetail | null; id: string }) {
+  return (
+    <span
+      title={`${side === "A" ? "A：较早的那次" : "B：较晚的那次"}\n${d?.run.label ?? ""}\n${id}`}
+      className="inline-flex max-w-[360px] items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-850 px-2 py-0.5 text-[11.5px]"
+    >
+      <span className="font-semibold">{side}</span>
+      <span className="truncate text-ink-300">{d ? `${d.run.started_at.slice(5, 16).replace("T", " ")} · ${d.prompt_version_label ?? "未记录版本"}` : "加载中…"}</span>
+    </span>
   );
 }

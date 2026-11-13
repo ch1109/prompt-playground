@@ -27,7 +27,8 @@ test("AT16 JSON 解析失败：显示原文与错误位置，没有虚构表格"
   await expect(page.getByText("模型回答不是合法 JSON")).toBeVisible();
   await expect(page.locator("[data-table-id]")).toHaveCount(0);
   await page.getByRole("tab", { name: "原始输出" }).click();
-  await expect(page.getByText(/INVALID_JSON/)).toBeVisible();
+  // 诊断说明用中文显示，英文错误码放在悬停提示里
+  await expect(page.locator('[title="INVALID_JSON"]')).toBeVisible();
   await expect(page.locator("[data-error-line]")).toHaveCount(1);
 });
 

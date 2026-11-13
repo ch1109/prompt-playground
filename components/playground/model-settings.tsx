@@ -4,8 +4,8 @@ import { api } from "@/lib/client/api";
 import type { ModelSettingsDTO } from "@/lib/client/types";
 import { Btn } from "@/components/ui";
 
-const field = "w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-1.5 text-[12.5px] outline-none focus:border-ink-400";
-const hint = "mt-0.5 text-[11px] text-ink-400";
+const field = "w-full rounded-lg border border-ink-700 bg-ink-900 px-2.5 py-2 text-[12.5px] outline-none focus:border-ink-400";
+const hint = "mt-1 block text-[11px] text-ink-400";
 
 /** 模型设置弹窗：填服务地址、模型名称、密钥；保存前先测试连接。密钥只放在这个组件的 state 里 */
 export function ModelSettings({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
@@ -61,21 +61,23 @@ export function ModelSettings({ onClose, onSaved }: { onClose: () => void; onSav
 
   return (
     <>
-      <div className="fixed inset-0 z-50 bg-ink-100/25" onClick={onClose} aria-hidden="true" />
-      <div role="dialog" aria-label="模型设置" data-testid="model-settings-dialog" className="fixed left-1/2 top-1/2 z-50 w-[460px] max-w-[calc(100%-32px)] -translate-x-1/2 -translate-y-1/2 space-y-3 rounded-xl border border-ink-700 bg-ink-900 p-4 shadow-2xl">
-        <h2 className="text-[14px] font-semibold">模型设置</h2>
-        {cur?.source === "env" && <p className="text-[11.5px] text-ink-400">当前使用安装时的配置。在这里保存后，以这里为准。</p>}
-        <label className="block text-[12px]">
+      <div className="fixed inset-0 z-50 bg-ink-100/20 backdrop-blur-[2px]" onClick={onClose} aria-hidden="true" />
+      <div role="dialog" aria-label="模型设置" data-testid="model-settings-dialog" className="rise fixed left-1/2 top-1/2 z-50 w-[480px] max-w-[calc(100%-32px)] -translate-x-1/2 -translate-y-1/2 space-y-4 rounded-2xl border border-ink-700 bg-ink-900 p-6 shadow-[0_24px_60px_-12px_rgb(0_0_0/0.25)]">
+        <div>
+          <h2 className="text-[15px] font-semibold tracking-tight">模型设置</h2>
+          {cur?.source === "env" && <p className="mt-1 text-[11.5px] text-ink-400">当前使用安装时的配置。在这里保存后，以这里为准。</p>}
+        </div>
+        <label className="block text-[12px] font-medium">
           服务地址
           <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1" className={`${field} mt-1`} disabled={!cur} data-testid="ms-base-url" />
           <span className={hint}>OpenAI 兼容接口的地址，由模型服务商提供</span>
         </label>
-        <label className="block text-[12px]">
+        <label className="block text-[12px] font-medium">
           模型名称
           <input value={model} onChange={(e) => setModel(e.target.value)} className={`${field} mt-1`} disabled={!cur} data-testid="ms-model" />
           <span className={hint}>默认使用的模型，例如 qwen-plus</span>
         </label>
-        <label className="block text-[12px]">
+        <label className="block text-[12px] font-medium">
           密钥
           <input type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={keyPlaceholder} className={`${field} mt-1`} disabled={!cur} data-testid="ms-api-key" />
           <span className={hint}>在服务商的控制台创建，只保存在本机</span>
@@ -85,21 +87,21 @@ export function ModelSettings({ onClose, onSaved }: { onClose: () => void; onSav
             {result.text}
           </p>
         )}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 border-t border-ink-800 pt-4">
+          {cur?.source === "settings" && (
+            <button onClick={restore} disabled={busy} className="text-[11.5px] text-ink-400 hover:text-ink-100 disabled:opacity-40" data-testid="ms-restore">
+              恢复安装时的配置
+            </button>
+          )}
+          <Btn onClick={onClose} disabled={busy} className="ml-auto">
+            取消
+          </Btn>
           <Btn tone="outline" onClick={test} disabled={busy} data-testid="ms-test">
             测试连接
           </Btn>
           <Btn tone="primary" onClick={save} disabled={busy} data-testid="ms-save">
             保存
           </Btn>
-          <Btn onClick={onClose} disabled={busy}>
-            取消
-          </Btn>
-          {cur?.source === "settings" && (
-            <button onClick={restore} disabled={busy} className="ml-auto text-[11.5px] text-ink-400 hover:text-ink-100 disabled:opacity-40" data-testid="ms-restore">
-              恢复安装时的配置
-            </button>
-          )}
         </div>
       </div>
     </>

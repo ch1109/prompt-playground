@@ -6,7 +6,7 @@ import { withEgressConfirm as confirmEgress } from "@/lib/client/egress-confirm"
 import type { CapabilityDTO, FixtureSummary, PromptDef, PromptVersionDTO, ProviderInfoDTO, RunDetail, RunListItem, SnapshotListItem } from "@/lib/client/types";
 import type { PromptKind } from "@/lib/contracts/run";
 import { emptyWorkspace, inputSignature, runSnapshotId, useStudio, type WorkMode } from "@/lib/state/studio-store";
-import { Badge, Btn, cx, Empty, runStatusView, SEG_TRACK, segItem } from "@/components/ui";
+import { Badge, Btn, CloseBtn, cx, Empty, runStatusView, SEG_TRACK, segItem } from "@/components/ui";
 import { EditorPane, InputTab } from "./editor-pane";
 import { ResultPane } from "./result-pane";
 import { ModelSettings } from "./model-settings";
@@ -914,15 +914,13 @@ export function Playground({ projectId }: { projectId: string }) {
           )}
           {inputDrawer && mode === "check" && prompt && (
             <>
-              <div className="absolute inset-0 z-30 bg-ink-100/15" onClick={() => setInputDrawer(false)} aria-hidden="true" />
-              <aside className="absolute inset-y-0 left-0 z-40 flex w-[480px] max-w-full flex-col border-r border-ink-700 bg-ink-900 shadow-2xl" role="dialog" aria-label="更换输入" data-testid="input-drawer">
-                <div className="flex items-center justify-between border-b border-ink-700 px-3 py-2">
-                  <span className="text-[13px] font-semibold">更换输入</span>
-                  <button onClick={() => setInputDrawer(false)} className="text-ink-400 hover:text-ink-100" aria-label="关闭输入抽屉">
-                    ✕
-                  </button>
+              <div className="absolute inset-0 z-30 bg-ink-100/10 backdrop-blur-[1px]" onClick={() => setInputDrawer(false)} aria-hidden="true" />
+              <aside className="absolute inset-y-0 left-0 z-40 flex w-[500px] max-w-full flex-col border-r border-ink-700 bg-ink-900 shadow-[12px_0_40px_-12px_rgb(0_0_0/0.18)]" role="dialog" aria-label="更换输入" data-testid="input-drawer">
+                <div className="flex items-center justify-between border-b border-ink-700 py-2.5 pr-3 pl-5">
+                  <span className="text-[13.5px] font-semibold tracking-tight">更换输入</span>
+                  <CloseBtn onClick={() => setInputDrawer(false)} label="关闭输入抽屉" />
                 </div>
-                <div className="min-h-0 flex-1 overflow-auto p-3">
+                <div className="min-h-0 flex-1 overflow-auto p-5">
                   <InputTab
                     projectId={projectId}
                     kind={prompt.prompt_kind}

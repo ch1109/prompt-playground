@@ -22,8 +22,8 @@ function thinkingText(run: Run): string {
 export function RunEvidencePanel({ run, evidence }: { run: Run; evidence: RunEvidence }) {
   const q = QUALITY[evidence.capture.quality];
   return (
-    <div className={cx("rounded-lg border p-2 text-[12px]", evidence.capture.quality === "PARTIAL" ? "border-risk/40 bg-risk/5" : "border-ink-700")} data-testid="run-evidence">
-      <div className="mb-1 flex flex-wrap items-center gap-2">
+    <div className={cx("space-y-1 rounded-xl border border-ink-700 bg-ink-900 px-4 py-3 text-[12px] leading-5", evidence.capture.quality === "PARTIAL" && "border-l-[3px] border-l-risk")} data-testid="run-evidence">
+      <div className="mb-1.5 flex flex-wrap items-center gap-2">
         <span className="font-semibold text-ink-100">运行证据</span>
         <span data-testid="capture-quality">
           <Badge tone={q.tone}>{q.label}</Badge>
@@ -42,8 +42,8 @@ export function RunEvidencePanel({ run, evidence }: { run: Run; evidence: RunEvi
           </p>
         ))}
       {evidence.capture.not_captured.length > 0 && (
-        <div className="mt-1" data-testid="not-captured">
-          <p className="text-risk">这条运行当时没有保存以下证据（不会事后补造）：</p>
+        <div className="pt-1" data-testid="not-captured">
+          <p className="font-medium text-risk">这条运行当时没有保存以下证据（不会事后补造）：</p>
           <ul className="ml-3">
             {evidence.capture.not_captured.map((n) => (
               <li key={n.key} className="text-ink-300">
@@ -54,7 +54,7 @@ export function RunEvidencePanel({ run, evidence }: { run: Run; evidence: RunEvi
         </div>
       )}
       {run.mode === "MODEL_RUN" && (
-        <dl className="mt-1 grid grid-cols-[140px_1fr] gap-x-2 text-[11.5px]">
+        <dl className="grid grid-cols-[140px_1fr] gap-x-2 gap-y-0.5 pt-1 text-[11.5px]">
           <dt className="text-ink-400">服务商回报的模型</dt>
           <dd className="font-mono">{typeof run.response_meta?.model === "string" ? run.response_meta.model : "未记录"}</dd>
           <dt className="text-ink-400">思考模式</dt>

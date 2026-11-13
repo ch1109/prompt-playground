@@ -16,7 +16,10 @@ import { fieldInputCoverage } from "@/lib/runs/run-evidence";
 import { diagnosisPrompt } from "@/lib/mcp/task-template";
 import { BusinessView } from "@/components/views/business-view";
 import { RuleCheck } from "@/components/views/rule-check";
-import { Badge, Btn, cx, Empty, RUN_STATUS_LABEL, runStatusView, SEG_TRACK, segItem } from "@/components/ui";
+import { Badge, Btn, CloseBtn, cx, Empty, RUN_STATUS_LABEL, runStatusView, SEG_TRACK, segItem } from "@/components/ui";
+import Markdown from "react-markdown";
+import remarkBreaks from "remark-breaks";
+import remarkGfm from "remark-gfm";
 import { JsonTree, RawText } from "./json-tree";
 import { InputCoverage } from "./input-coverage";
 import { RunEvidencePanel } from "./run-evidence-panel";
@@ -241,14 +244,12 @@ export function ResultPane({
       </div>
 
       {evidenceOpen && run && (
-        <aside className="flex w-[320px] shrink-0 flex-col border-l border-ink-700 bg-ink-900/95" data-testid="evidence-drawer">
-          <div className="flex items-center justify-between border-b border-ink-700 px-3 py-1.5">
-            <span className="text-[12px] font-semibold">来源与标注</span>
-            <button onClick={() => setStore("evidenceOpen", false)} className="text-ink-400 hover:text-ink-100" aria-label="关闭来源抽屉">
-              ✕
-            </button>
+        <aside className="flex w-[340px] shrink-0 flex-col border-l border-ink-700 bg-ink-900" data-testid="evidence-drawer">
+          <div className="flex items-center justify-between border-b border-ink-700 py-2.5 pr-3 pl-4">
+            <span className="text-[13px] font-semibold tracking-tight">来源与标注</span>
+            <CloseBtn onClick={() => setStore("evidenceOpen", false)} label="关闭来源抽屉" />
           </div>
-          <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3">
+          <div className="min-h-0 flex-1 space-y-3 overflow-auto p-4">
             <SelectionInfo />
             <IssueVerdict detail={detail!} />
             <FieldVerdict detail={detail!} />
@@ -273,8 +274,8 @@ function ResultTab({ projectId, detail, canPreview }: { projectId: string; detai
     return <JsonResult value={run.parsed_json} />;
   }
   return (
-    <div className="max-w-3xl rounded-lg border border-ink-700 bg-ink-900 p-4 text-[13px] leading-7 whitespace-pre-wrap" data-testid="result-text">
-      {run.raw_response}
+    <div className="prompt-md max-w-3xl rounded-xl border border-ink-700 bg-ink-900 px-6 py-5" data-testid="result-text">
+      <Markdown remarkPlugins={[remarkGfm, remarkBreaks]}>{run.raw_response}</Markdown>
     </div>
   );
 }
@@ -395,25 +396,26 @@ function JsonTab({ detail }: { detail: RunDetail }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <div className="flex gap-0.5 rounded-lg bg-ink-800 p-0.5 text-[11.5px]">
-          <button onClick={() => setDoc("response")} className={cx("px-2.5 py-0.5", doc === "response" ? "rounded-md bg-ink-900 text-ink-100 shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-ink-400 hover:text-ink-100")}>
+        <div className={SEG_TRACK}>
+          <button onClick={() => setDoc("response")} className={segItem(doc === "response")}>
             模型原始响应
           </button>
-          <button onClick={() => setDoc("request")} disabled={!detail.request} className={cx("px-2.5 py-0.5 disabled:opacity-40", doc === "request" ? "rounded-md bg-ink-900 text-ink-100 shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-ink-400 hover:text-ink-100")}>
+          <button onClick={() => setDoc("request")} disabled={!detail.request} className={cx(segItem(doc === "request"), "disabled:opacity-40")}>
             发给模型的输入
           </button>
         </div>
-        <Btn onClick={() => navigator.clipboard?.writeText(run.raw_response)}>复制原文</Btn>
-        <span className="font-mono text-[11px] text-ink-400">sha256 {run.raw_response_hash.slice(0, 16)}…</span>
+        <Btn onClick={() => navigator.clipboard?.writeText(run.raw_response)} title={`原文 sha256：${run.raw_response_hash}`}>
+          复制原文
+        </Btn>
       </div>
       {!found && <p className="rounded-lg border border-risk/40 bg-risk/10 px-2 py-1 text-[12px] text-risk">无法定位：{pointer} 在当前文档中不存在。</p>}
       {sel.jsonPointer !== undefined && pointer === undefined && <p className="text-[12px] text-ink-400">所选对象位于{isReq ? "请求上下文" : "模型响应"}，请切换文档查看。</p>}
-      <div className="rounded-lg border border-ink-700 bg-ink-950/70 p-2">
+      <div className="rounded-xl border border-ink-700 bg-ink-900 p-3">
         {doc === "response" && run.parsed_json === undefined ? (
           <>
             {run.parse_diagnostics.map((d, i) => (
-              <p key={i} className="mb-1 text-[12px] text-stamp">
-                [{d.code}] {d.message}
+              <p key={i} title={d.code} className={cx("mb-2 text-[12px]", d.level === "INFO" ? "text-ink-400" : "text-stamp")}>
+                {d.message}
               </p>
             ))}
             {run.raw_response ? <RawText text={run.raw_response} errorLine={Number(/第 (\d+) 行/.exec(run.parse_diagnostics.map((d) => d.message).join(" "))?.[1]) || undefined} /> : <Empty>原始回复为空</Empty>}
