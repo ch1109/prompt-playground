@@ -15,12 +15,15 @@ function vsText(vs: unknown): string {
     .join("；");
 }
 
-/** 单元格显示值：数组 / 对象转成可读文字，标量原样 */
+/** 单元格显示值：数组 / 对象转成可读文字（对象写成「标签：值」，如辅助信息 x），标量原样 */
 function flat(v: unknown): unknown {
   if (Array.isArray(v)) return v.map((x) => (x && typeof x === "object" ? JSON.stringify(x) : String(x))).join("、");
-  if (v && typeof v === "object") return JSON.stringify(v);
+  if (v && typeof v === "object") return Object.entries(v).map(([k, x]) => `${k}：${x && typeof x === "object" ? JSON.stringify(x) : String(x)}`).join("；");
   return v;
 }
+
+/** 业务字段表之外、提示词里有正式名称的键 */
+const EXTRA_LABEL: Record<string, string> = { x: "辅助信息" };
 
 /** 已知业务字段之外、模型多给的标量键，原样加列（只在真的出现时） */
 function extraKeys(items: Obj[], skip: string[]): string[] {
@@ -30,7 +33,7 @@ function extraKeys(items: Obj[], skip: string[]): string[] {
 }
 
 function fieldColumns(first: TableColumn[], extra: string[]): TableColumn[] {
-  return [...first, ...V15_FIELDS.map(([k, t]) => ({ key: k, title: t, core: V15_CORE.has(k), fixed: k === "md" })), ...extra.map((k) => ({ key: k, title: k }))];
+  return [...first, ...V15_FIELDS.map(([k, t]) => ({ key: k, title: t, core: V15_CORE.has(k), fixed: k === "md" })), ...extra.map((k) => ({ key: k, title: EXTRA_LABEL[k] ?? k }))];
 }
 
 /** 只显示至少有一行有值的列，避免 26 列大多为空 */
@@ -78,7 +81,7 @@ const ALL_KEYS = V15_FIELDS.map(([k]) => k);
 // ---------------- P1：委托商品宽表 + 共享值 + 整票合计 ----------------
 export const jiuliP1V15: BusinessAdapter = {
   adapterId: "jiuli-p1-v15",
-  adapterVersion: "1.0.0",
+  adapterVersion: "1.0.1",
   promptKind: "JIULI_P1",
   schemaVersion: V15_SCHEMA_VERSION,
   rendererId: "jiuli-p1-v15",
@@ -139,7 +142,7 @@ export const jiuliP1V15: BusinessAdapter = {
 // ---------------- P2：入仓号 → 合并商品 → 原始行 ----------------
 export const jiuliP2V15: BusinessAdapter = {
   adapterId: "jiuli-p2-v15",
-  adapterVersion: "1.0.1",
+  adapterVersion: "1.0.2",
   promptKind: "JIULI_P2",
   schemaVersion: V15_SCHEMA_VERSION,
   rendererId: "jiuli-p2-v15",
@@ -286,7 +289,7 @@ function indexRequest(request: unknown) {
 // ---------------- P3：委托行 | 选中 / 候选 ----------------
 export const jiuliP3V15: BusinessAdapter = {
   adapterId: "jiuli-p3-v15",
-  adapterVersion: "1.0.2",
+  adapterVersion: "1.0.3",
   promptKind: "JIULI_P3",
   schemaVersion: V15_SCHEMA_VERSION,
   rendererId: "jiuli-p3-v15",
@@ -399,7 +402,7 @@ export const jiuliP3V15: BusinessAdapter = {
 // ---------------- P4：一条委托行的逐字段结果 + 合计更新 + 建议 ----------------
 export const jiuliP4V15: BusinessAdapter = {
   adapterId: "jiuli-p4-v15",
-  adapterVersion: "1.0.2",
+  adapterVersion: "1.0.3",
   promptKind: "JIULI_P4",
   schemaVersion: V15_SCHEMA_VERSION,
   rendererId: "jiuli-p4-v15",

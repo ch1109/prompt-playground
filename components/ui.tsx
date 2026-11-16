@@ -105,7 +105,8 @@ export function stateTone(raw: string): keyof typeof TONES {
 
 /** 单元格取值显示：区分 明确无牌 / 空字符串 / null / 0（AT03），所有业务字符串按纯文本渲染 */
 export function CellValue({ value, state, kind }: { value: unknown; state?: CellState; kind?: string }) {
-  if (value === undefined) return <span className="text-ink-600 italic">缺失键</span>;
+  // 模型没写这一项（v15 约定原件没有就不写）；与空字符串「（空）」、null 区分开
+  if (value === undefined) return <span className="text-ink-700" title="模型没有输出这一项">—</span>;
   if (value === null) return <span className="font-mono text-ink-600">null</span>;
   if (value === "") return <span className="text-ink-600" title="模型输出空字符串（未识别/缺失）">（空）</span>;
   if (typeof value === "boolean") return <Badge tone={value ? "warn" : "mute"}>{String(value)}</Badge>;

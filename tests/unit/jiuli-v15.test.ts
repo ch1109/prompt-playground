@@ -14,7 +14,7 @@ describe("二阶段 demo v15 输出按业务表格渲染", () => {
       h: { cus: "某客户", issues: [] },
       r: [
         { id: 1, br: "HIROSE", md: "ABC-1", q: "20", u: "个", pr: "1.25", cur: "USD", og: "日本", issues: [{ f: "u", t: "推断", vs: [{ s: "委托书第1页", v: "个" }], note: "单位按品名推断" }] },
-        { id: 2, br: "HIROSE", md: "DEF-2", q: "12", u: "个", issues: [] },
+        { id: 2, br: "HIROSE", md: "DEF-2", q: "12", u: "个", x: { LOT: "2542、2523", "C/N": "3" }, issues: [] },
       ],
       g: [{ f: "gw", v: "1.1", r: [1, 2], wu: "千克", group: "共用外箱" }],
       tot: { q: "32", u: "个", issues: [] },
@@ -27,6 +27,9 @@ describe("二阶段 demo v15 输出按业务表格渲染", () => {
     expect(rows.rows.map((r) => r.cells.md.value)).toEqual(["ABC-1", "DEF-2"]);
     // 全空的列不显示
     expect(rows.columns.some((c) => c.key === "hs")).toBe(false);
+    // 辅助信息 x：列名用提示词里的正式名称，对象写成「标签：值」
+    expect(rows.columns.find((c) => c.key === "x")?.title).toBe("辅助信息");
+    expect(rows.rows[1].cells.x.value).toBe("LOT：2542、2523；C/N：3");
     expect(vm.tables.find((t) => t.id === "shareRecords")!.rows[0].cells.r.value).toBe("1、2");
     expect(vm.tables.find((t) => t.id === "totals")!.rows[0].cells.q.value).toBe("32");
     expect(vm.issues[0].target).toMatchObject({ tableId: "orderRows", rowId: "row-1", fieldKey: "u" });
