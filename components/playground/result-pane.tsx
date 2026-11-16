@@ -443,7 +443,7 @@ function JsonTab({ detail }: { detail: RunDetail }) {
 const SCHEMA_STATUS_LABEL: Record<string, string> = { VALID: "符合约定", INVALID: "不符合约定", NOT_RUN: "没有校验", UNKNOWN_SCHEMA: "没有对应的结构定义" };
 const PHASE_LABEL = { PARSE: "解析回答", SCHEMA: "结构校验", ADAPTER: "整理成表格", RENDER: "显示" } as const;
 const LEVEL_LABEL: Record<string, string> = { ERROR: "错误", WARNING: "提醒", INFO: "提示" };
-const MODE_LABEL: Record<string, string> = { MODEL_RUN: "模型运行", RENDER_ONLY: "仅渲染", REPLAY: "回放" };
+const MODE_LABEL: Record<string, string> = { MODEL_RUN: "模型运行", RENDER_ONLY: "仅渲染", REPLAY: "重新整理" };
 
 function SchemaTab({ detail }: { detail: RunDetail }) {
   const run = detail.run;
@@ -562,7 +562,7 @@ function MetaTab({ detail }: { detail: RunDetail }) {
         <Row k="结束原因" v={r.finish_reason ? `${r.finish_reason}${r.finish_reason === "length" ? "（达到 max_tokens 被截断）" : ""}` : null} />
         <Row k="费用" v={r.estimated_cost ? `${r.estimated_cost.value} ${r.estimated_cost.currency}（${r.estimated_cost.basis}）` : "未知（服务商未返回价格，Studio 不估算）"} />
         <Row k="原始响应 sha256" v={r.raw_response_hash} />
-        <Row k="回放来源" v={r.replay_of_run_id} />
+        <Row k="整理自" v={r.replay_of_run_id} />
         <Row k="错误" v={r.error ? `${r.error.code}: ${r.error.message}` : "无"} />
       </dl>
       {r.input_manifest ? <InputCoverage manifest={r.input_manifest} /> : r.mode === "MODEL_RUN" && <p className="text-[11.5px] text-ink-400">这条运行记录较早，当时没有保存输入覆盖清单。</p>}

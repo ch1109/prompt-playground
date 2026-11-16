@@ -154,7 +154,7 @@ const preprocessText = (r: Run) => (r.input_manifest ? [...new Set(r.input_manif
  * 只有两边都是真实模型运行才适用；判不出（缺记录）的项也算不满足，不默认相同。
  */
 export function strictConditions(a: Run, b: Run): { applicable: boolean; strict: boolean; reasons: string[] } {
-  if (a.mode !== "MODEL_RUN" || b.mode !== "MODEL_RUN") return { applicable: false, strict: false, reasons: ["至少一方不是真实模型运行（仅渲染 / 回放没有请求），只能比较输出"] };
+  if (a.mode !== "MODEL_RUN" || b.mode !== "MODEL_RUN") return { applicable: false, strict: false, reasons: ["至少一方不是真实模型运行（仅渲染 / 重新整理没有请求），只能比较输出"] };
   const reasons: string[] = [];
   const same = (name: string, x: unknown, y: unknown) => {
     if (x === undefined || x === null || y === undefined || y === null) reasons.push(`${name}：至少一方未记录`);

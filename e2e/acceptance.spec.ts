@@ -489,7 +489,7 @@ test("快照可设置保留期限、可删除；历史 Run 保留并标明快照
   await page.getByRole("button", { name: `删除输入 ${id}` }).click();
   await expect(page.locator(`[data-snapshot-id="${id}"]`)).toHaveCount(0);
   await page.getByRole("button", { name: /运行历史/ }).click();
-  await page.getByTestId("history").getByRole("button", { name: "回放" }).first().click();
+  await page.getByTestId("history").getByRole("button", { name: "查看" }).first().click();
   await page.getByRole("tab", { name: "详情" }).click();
   await expect(page.getByTestId("tab-details")).toContainText("已删除或到期");
 });
@@ -564,17 +564,17 @@ test("运行对比：显示关键指标、提示词差异区与输出差异", as
   await expect(dialog.getByText("/output/row_relations/[order_row_id=OR_001]/match_status")).toBeVisible();
 });
 
-test("重渲染 / 回放 / 保存版本失败时显示错误，不静默", async ({ page }) => {
+test("重新整理 / 查看 / 保存版本失败时显示错误，不静默", async ({ page }) => {
   await renderFixture(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
   const boom = (code: string) => (route: import("@playwright/test").Route) =>
     route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ ok: false, error: { code, message: "模拟失败" }, request_id: "x" }) });
   await page.getByRole("button", { name: /运行历史/ }).click();
   await page.route("**/api/runs/*/re-render", boom("RERENDER_BOOM"));
-  await page.getByTestId("history").getByRole("button", { name: "重渲染" }).first().click();
+  await page.getByTestId("history").getByRole("button", { name: "重新整理" }).first().click();
   await expect(page.getByTestId("error-message")).toContainText("模拟失败");
   await expect(page.getByTestId("error-message")).toHaveAttribute("title", /RERENDER_BOOM/);
   await page.route(/\/api\/runs\/run_[^/]+$/, boom("REPLAY_BOOM"));
-  await page.getByTestId("history").getByRole("button", { name: "回放" }).first().click();
+  await page.getByTestId("history").getByRole("button", { name: "查看" }).first().click();
   await expect(page.getByTestId("error-message")).toContainText("模拟失败");
   await expect(page.getByTestId("error-message")).toHaveAttribute("title", /REPLAY_BOOM/);
   await page.route("**/api/prompts/*/versions", boom("SAVE_BOOM"));

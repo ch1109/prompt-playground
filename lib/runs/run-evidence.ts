@@ -25,7 +25,7 @@ const NO_RESPONSE = new Set(["MODEL_ERROR", "CANCELLED", "RUNNING"]);
 /** 采集完整度：真实模型运行才评估；缺哪一项、缺了有什么限制逐条列出 */
 export function captureQuality(run: Run): CaptureReport {
   const notes = ["费用：服务商不返回价格，Studio 不估算", "规则集版本：本系统没有独立的规则集，规则写在提示词里"];
-  if (run.mode !== "MODEL_RUN") return { quality: "NOT_APPLICABLE", not_captured: [], notes: ["没有调用模型（仅渲染 / 回放），不存在请求与预处理证据"] };
+  if (run.mode !== "MODEL_RUN") return { quality: "NOT_APPLICABLE", not_captured: [], notes: ["没有调用模型（仅渲染 / 重新整理），不存在请求与预处理证据"] };
   const gotResponse = !NO_RESPONSE.has(run.status);
   const checks: [boolean, NotCaptured][] = [
     [!!run.actual_prompt, { key: "actual_prompt", label: "实际发送的提示词文本", limitation: "无法确认当时发给模型的内容" }],

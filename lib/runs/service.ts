@@ -482,7 +482,7 @@ export function rerender(runId: string): Run {
     parsed_json: pr.parse.value,
     ...diagByPhase(pr),
     view_model: orig.status === "MODEL_ERROR" ? null : pr.viewModel ?? null,
-    label: `重渲染 · ${(orig as Run & { label?: string }).label ?? orig.run_id}`,
+    label: `重新整理 · ${((orig as Run & { label?: string }).label ?? orig.run_id).replace(/^(重新整理|重渲染) · /, "")}`,
   };
   return saveRun(run);
 }

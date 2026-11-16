@@ -59,7 +59,7 @@ function errorInfo(e: unknown): ErrorInfo {
 }
 
 /** 运行历史「模式」列的中文显示；英文原值放在悬停提示里 */
-const RUN_MODE_LABEL: Record<string, string> = { MODEL_RUN: "模型运行", RENDER_ONLY: "仅渲染", REPLAY: "回放" };
+const RUN_MODE_LABEL: Record<string, string> = { MODEL_RUN: "模型运行", RENDER_ONLY: "仅渲染", REPLAY: "重新整理" };
 
 export function Playground({ projectId }: { projectId: string }) {
   const s = useStudio();
@@ -414,6 +414,7 @@ export function Playground({ projectId }: { projectId: string }) {
     try {
       const r = await api<{ run_id: string }>(`/api/runs/${runId}/re-render`, { method: "POST" });
       await openRun(r.run_id);
+      showResult();
       loadRuns();
     } catch (e) {
       report(e);
@@ -474,10 +475,16 @@ export function Playground({ projectId }: { projectId: string }) {
     }
   }
 
+  /** 版本对比页不显示单次结果：打开某次运行后切到「结果检查」，否则点了像没反应 */
+  function showResult() {
+    if (useStudio.getState().workMode === "compare") s.set("workMode", "check");
+  }
+
   async function replay(runId: string) {
     setError(null);
     try {
       adoptRunInput(await openRun(runId));
+      showResult();
     } catch (e) {
       report(e);
     }
@@ -499,7 +506,7 @@ export function Playground({ projectId }: { projectId: string }) {
 
   /** 运行用的提示词版本名：只认当前提示词已加载的版本列表 */
   const versionLabel = (r: RunListItem) => versions[promptId]?.find((v) => v.version_id === r.prompt_version_id)?.label ?? "";
-  // 同一次运行的原始记录和历次「重渲染」默认只留最新一条（列表按时间倒序，先出现的就是最新）
+  // 同一次运行的原始记录和历次「重新整理」默认只留最新一条（列表按时间倒序，先出现的就是最新）
   const runById = new Map(runs.map((r) => [r.run_id, r]));
   const rootOf = (r: RunListItem) => {
     let cur: RunListItem | undefined = r;
@@ -591,9 +598,11 @@ export function Playground({ projectId }: { projectId: string }) {
                       <td className="max-w-[320px] truncate px-3">{r.label}</td>
                       <td className="px-3 text-ink-400">{r.model_name ?? "—"}</td>
                       <td className="space-x-1 px-3 py-1 whitespace-nowrap">
-                        <Btn onClick={() => replay(r.run_id)}>回放</Btn>
-                        <Btn onClick={() => rerender(r.run_id)} title="用当前的显示规则重新整理这次结果（另存为新记录，不改历史）">
-                          重渲染
+                        <Btn onClick={() => replay(r.run_id)} title="打开这次运行的结果">
+                          查看
+                        </Btn>
+                        <Btn onClick={() => rerender(r.run_id)} title="不调用模型、不花钱：用最新的显示规则把这次结果重新整理成表格，另存为一条新记录（原记录不变）。以前显示不出表格的结果可以用它">
+                          重新整理
                         </Btn>
                       </td>
                     </tr>

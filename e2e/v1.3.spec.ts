@@ -571,6 +571,6 @@ test("打开历史运行：还没选输入时，把那次运行用的输入设�
   await page.getByTestId("input-drawer").locator('[data-fixture-id="constructed/p1-v3-xss.json"]').click();
   await expect(page.getByTestId("context-bar")).toContainText("恶意 HTML");
   await page.getByRole("button", { name: /运行历史/ }).click();
-  await page.getByTestId("history").locator("tr", { hasText: "P1 冲突" }).first().getByRole("button", { name: "回放" }).click();
+  await page.getByTestId("history").locator("tr", { hasText: "P1 冲突" }).first().getByRole("button", { name: "查看" }).click();
   await expect(page.getByTestId("context-bar")).toContainText("恶意 HTML");
 });

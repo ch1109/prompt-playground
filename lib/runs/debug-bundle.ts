@@ -479,7 +479,7 @@ export function promptSnapshot(src: { run?: Run; version?: PromptVersion }, incl
       is_unsaved_draft: r.is_unsaved_draft,
       actual_prompt_hash: r.actual_prompt_hash ?? null,
       available: !!r.actual_prompt,
-      reason: r.actual_prompt ? null : r.mode === "MODEL_RUN" ? "这条 Run 没有保存实际提示词" : "没有调用模型（仅渲染 / 回放），没有实际提示词",
+      reason: r.actual_prompt ? null : r.mode === "MODEL_RUN" ? "这条 Run 没有保存实际提示词" : "没有调用模型（仅渲染 / 重新整理），没有实际提示词",
       system_template_differs_from_actual: r.prompt_source && r.actual_prompt ? r.prompt_source.system !== r.actual_prompt.system : null,
       lengths: Object.fromEntries(Object.entries(texts).map(([k, v]) => [k, v?.length ?? null])),
       system_sections: r.actual_prompt ? sections(r.actual_prompt.system) : [],
