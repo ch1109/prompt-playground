@@ -156,7 +156,7 @@ export function effectiveAttachImages(explicit: boolean | undefined, caps: Provi
   return referencedFileIds(request).some((id) => media.get(id) === "application/pdf" || !!media.get(id)?.startsWith("image/"));
 }
 
-const PARAM_KEYS = new Set(["temperature", "max_tokens", "top_p"]);
+const PARAM_KEYS = new Set(["temperature", "max_tokens", "top_p", "thinking_budget"]);
 
 /** 运行前就能确定的阻断原因（R-03 / R-04）：悬空变量、参数不合法、模型能力不满足 */
 export function runBlockers(input: { system: string; userTemplate: string; params: ModelParams; attachImages?: boolean }, caps: ProviderCapabilities): { code: string; message: string }[] {
@@ -164,9 +164,10 @@ export function runBlockers(input: { system: string; userTemplate: string; param
   const vars = unresolvedVariables(input.system, input.userTemplate);
   if (vars.length) out.push({ code: "UNRESOLVED_TEMPLATE_VARIABLE", message: `提示词中有未登记的变量 ${vars.join("、")}，展开后会原样发给模型。只支持 {{input_json}}，请删除或改正后再运行。` });
   const p = input.params ?? {};
-  for (const k of Object.keys(p)) if (!PARAM_KEYS.has(k)) out.push({ code: "MODEL_PARAM_UNSUPPORTED", message: `参数 ${k} 不在本适配器支持的范围（temperature / max_tokens / top_p），不会被当作生效` });
+  for (const k of Object.keys(p)) if (!PARAM_KEYS.has(k)) out.push({ code: "MODEL_PARAM_UNSUPPORTED", message: `参数 ${k} 不在本适配器支持的范围（temperature / max_tokens / top_p / thinking_budget），不会被当作生效` });
   if (p.temperature !== undefined && !(typeof p.temperature === "number" && p.temperature >= 0 && p.temperature <= 2)) out.push({ code: "MODEL_PARAM_INVALID", message: `temperature=${String(p.temperature)} 不合法（应为 0~2）` });
   if (p.top_p !== undefined && !(typeof p.top_p === "number" && p.top_p > 0 && p.top_p <= 1)) out.push({ code: "MODEL_PARAM_INVALID", message: `top_p=${String(p.top_p)} 不合法（应为 0~1）` });
+  if (p.thinking_budget !== undefined && !(Number.isInteger(p.thinking_budget) && (p.thinking_budget as number) > 0)) out.push({ code: "MODEL_PARAM_INVALID", message: `思考上限 thinking_budget=${String(p.thinking_budget)} 不合法（应为正整数，或留空表示不限制）` });
   if (p.max_tokens !== undefined && !(Number.isInteger(p.max_tokens) && (p.max_tokens as number) > 0)) out.push({ code: "MODEL_PARAM_INVALID", message: `max_tokens=${String(p.max_tokens)} 不合法（应为正整数）` });
   else if (p.max_tokens !== undefined && caps.maxOutputTokens !== null && (p.max_tokens as number) > caps.maxOutputTokens)
     out.push({ code: "MODEL_PARAM_INVALID", message: `max_tokens=${p.max_tokens} 超过模型声明的上限 ${caps.maxOutputTokens}（MODEL_MAX_OUTPUT_TOKENS）` });

@@ -6,7 +6,11 @@ import { FIELD_LABELS } from "@/lib/schemas/common";
 // 构造是纯函数，只使用快照中的数据，不隐式拉取业务数据。
 
 // 1.1.0：P1 按单证分段纳入发票 / 箱单辅助材料；1.2.0：支持上传文件快照（P1/P2）
-export const INPUT_BUILDER_VERSION = "1.3.0";
+// 1.4.0：上传文件的 P1 输入注明 material_type 只是文件主类型、仅供参考（与二阶段 demo 一致）
+export const INPUT_BUILDER_VERSION = "1.4.0";
+
+/** 上传时的材料类型是按文件名猜的或人工选的，可能不准；照二阶段 demo 的说法告诉模型以原件为准 */
+export const MATERIAL_TYPE_NOTE = "material_type 是上传时按文件名判断或人工选择的文件主类型，仅描述文件主体，可能不准；页／工作表的实际类型及字段来源以原件内容为准。";
 
 export type BuildResult =
   | { ok: true; request: Record<string, unknown>; builderId: string; warnings: string[]; requiresFiles: string[] }
@@ -209,7 +213,7 @@ function buildFromUpload(kind: PromptKind, snapshot: InputSnapshot): BuildResult
         kind,
         snapshot,
         { customer_directory: fi.customer_name ? [{ customer_id: customerId, customer_name: fi.customer_name, aliases: [] }] : [], normalization: {} },
-        { materials: ms.map((m) => ({ file_id: m.file_id, material_type: m.material_type, segments: m.segments, content: extracted[m.file_id] ?? null })) },
+        { material_type_note: MATERIAL_TYPE_NOTE, materials: ms.map((m) => ({ file_id: m.file_id, material_type: m.material_type, segments: m.segments, content: extracted[m.file_id] ?? null })) },
       ),
     };
   }

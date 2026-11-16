@@ -62,6 +62,8 @@ export interface ModelParams {
   temperature?: number;
   max_tokens?: number;
   top_p?: number;
+  /** 思考上限（token）：思考写到这么多就停下、开始回答；不填 = 不限制。原样发给服务商（DashScope 的 thinking_budget） */
+  thinking_budget?: number;
   [k: string]: unknown;
 }
 

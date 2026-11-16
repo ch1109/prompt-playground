@@ -812,7 +812,7 @@ describe.skipIf(!hasDemo)("九立导入 P1 带辅助材料", () => {
     expect(inv.content!.pages!.map((p) => p.page)).toEqual([1]);
     expect(pl.content!.pages!.map((p) => p.page)).toEqual([2, 3]);
     expect(built.warnings.join()).not.toContain("未标明");
-    expect(INPUT_BUILDER_VERSION).toBe("1.3.0");
+    expect(INPUT_BUILDER_VERSION).toBe("1.4.0");
   });
 
   it("导入前列出将带上的文件；排除的辅助材料不进快照、不进 P1 请求；主委托文件不能排除", async () => {
@@ -1012,6 +1012,8 @@ describe("文件导入（PDF / Excel / 图片）", () => {
     if (!p1.ok) return;
     const m = (p1.request.input as { materials: { file_id: string; material_type: string; segments: string[] }[] }).materials;
     expect(m).toEqual([expect.objectContaining({ material_type: "ORDER", segments: ["sheet:委托"] })]);
+    // 材料类型只是上传时按文件名 / 人工选的主类型：照二阶段 demo 注明仅供参考，以原件为准
+    expect((p1.request.input as { material_type_note: string }).material_type_note).toContain("以原件内容为准");
     expect((p1.request.context as { customer_directory: { customer_name: string }[] }).customer_directory[0].customer_name).toBe("测试客户");
     const p2 = buildInput("JIULI_P2", snap);
     expect(p2.ok && (p2.request.input as { files: unknown[] }).files).toHaveLength(1);

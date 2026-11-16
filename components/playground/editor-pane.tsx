@@ -1087,6 +1087,7 @@ function ModelPicker({ provider }: { provider: ProviderInfoDTO | null }) {
       <details className="rounded-lg border border-ink-700 bg-ink-900" data-testid="model-settings">
         <summary className="cursor-pointer px-2.5 py-1.5 text-ink-400">
           运行参数：temperature {ws.params.temperature} · max_tokens {ws.params.max_tokens}
+          {ws.params.thinking_budget ? ` · 思考上限 ${ws.params.thinking_budget}` : ""}
         </summary>
         <div className="space-y-3 border-t border-ink-700/70 p-2.5">
           {provider?.configured && (
@@ -1119,6 +1120,26 @@ function ModelPicker({ provider }: { provider: ProviderInfoDTO | null }) {
             <span className="w-28 text-ink-400">max_tokens</span>
             <input type="number" step="1000" min={1} value={ws.params.max_tokens} onChange={(e) => patch({ params: { ...ws.params, max_tokens: Number(e.target.value) } })} aria-label="max_tokens" className="w-24 rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5" />
           </label>
+          <label
+            className="flex items-center gap-2"
+            title="模型思考最多写多少 token，写到就停止思考、直接开始回答；留空 = 不限制。用来防止模型在思考里兜圈子。P1 平时约 5000，可以先试 16000。只对会思考的模型（如 qwen3 系列）生效，其他服务商可能不认这个参数而报错。"
+          >
+            <span className="w-28 text-ink-400">思考上限</span>
+            <input
+              type="number"
+              step="1000"
+              min={1}
+              placeholder="不限制"
+              value={ws.params.thinking_budget ?? ""}
+              onChange={(e) => {
+                const { thinking_budget: _old, ...rest } = ws.params;
+                patch({ params: e.target.value ? { ...rest, thinking_budget: Number(e.target.value) } : rest });
+              }}
+              aria-label="思考上限"
+              className="w-24 rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5"
+            />
+            <span className="text-ink-400">token</span>
+          </label>
         </div>
       </details>
     </div>
@@ -1133,8 +1154,8 @@ function CapabilityTable({ caps }: { caps: NonNullable<ProviderInfoDTO["capabili
     ["图片输入", capText(caps.images), "MODEL_SUPPORTS_IMAGES；声明不支持时勾选「附带原件图片」会被阻断"],
     ["原生 PDF", "不支持", "本适配器不直传 PDF，PDF 只能转文本或转页图"],
     ["JSON 模式", capText(caps.jsonMode), "MODEL_SUPPORTS_JSON_MODE；只作说明，请求中不发送 response_format"],
-    ["Thinking", capText(caps.thinking), "MODEL_SUPPORTS_THINKING；只作说明，不发送 thinking 参数"],
-    ["流式输出", "不使用", "本适配器只用非流式请求"],
+    ["Thinking", capText(caps.thinking), "MODEL_SUPPORTS_THINKING；只作说明。要限制思考长度，填下方「思考上限」"],
+    ["流式输出", "使用", "运行时边生成边显示；服务商不支持流式时按一次性返回处理"],
     ["输出 token 上限", caps.maxOutputTokens ? String(caps.maxOutputTokens) : "未声明", "MODEL_MAX_OUTPUT_TOKENS；max_tokens 超过上限会被阻断"],
   ];
   return (

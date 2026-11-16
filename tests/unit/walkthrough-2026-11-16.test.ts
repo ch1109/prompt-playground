@@ -36,3 +36,26 @@ describe("上传：材料类型", () => {
     expect(typeFromName("1769762094319.pdf")).toBe(false);
   });
 });
+
+describe("思考上限", () => {
+  it("thinking_budget 是认可的参数，必须是正整数；不填不限制", async () => {
+    const { runBlockers } = await import("@/lib/runs/service");
+    const caps = { images: null, nativePdf: false as const, jsonMode: null, thinking: null, streaming: true, maxOutputTokens: null };
+    const base = { system: "S", userTemplate: "{{input_json}}" };
+    expect(runBlockers({ ...base, params: { thinking_budget: 16000 } }, caps)).toEqual([]);
+    expect(runBlockers({ ...base, params: {} }, caps)).toEqual([]);
+    expect(runBlockers({ ...base, params: { thinking_budget: 0 } }, caps).map((b) => b.code)).toEqual(["MODEL_PARAM_INVALID"]);
+  });
+
+  it("填了就原样发给服务商（DashScope 的 thinking_budget）", async () => {
+    const { OpenAICompatibleProvider } = await import("@/lib/models/openai-compatible");
+    let sent: Record<string, unknown> = {};
+    const fetchImpl = (async (_u: string, init?: RequestInit) => {
+      sent = JSON.parse(String(init?.body));
+      return Response.json({ choices: [{ message: { content: "{}" }, finish_reason: "stop" }] });
+    }) as unknown as typeof fetch;
+    const p = new OpenAICompatibleProvider({ baseUrl: "https://model.invalid/v1", model: "m", apiKey: "sk-test-thinking-0001", timeoutMs: 2000 }, fetchImpl);
+    await p.complete({ system: "S", user: "U", params: { temperature: 0, thinking_budget: 16000 } });
+    expect(sent).toMatchObject({ temperature: 0, thinking_budget: 16000 });
+  });
+});

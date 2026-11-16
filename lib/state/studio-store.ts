@@ -26,7 +26,8 @@ export interface Workspace {
   snapshotId: string | null;
   /** 「上传文件」创建的快照 */
   uploadSnapshotId: string | null;
-  params: { temperature: number; max_tokens: number };
+  /** thinking_budget：思考上限（token），不填 = 不限制 */
+  params: { temperature: number; max_tokens: number; thinking_budget?: number };
   /** 是否随请求附带原件页面图片；null = 跟随模型能力（支持看图且输入有 PDF / 图片时自动附带） */
   attachImages: boolean | null;
   /** 选用的模型；null = 默认模型（.env.local 的 MODEL_NAME） */
