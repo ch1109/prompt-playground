@@ -49,7 +49,12 @@
 - **弹窗覆盖用户输入。** 现象：设置弹窗里，用户刚填的内容被晚到的当前值覆盖。原因：弹窗先显示空表单，再异步读取当前值。做法：读取完成前禁用输入框。
 - **「只读安全」单测拦住了新的写文件。** 现象：`tests/unit/acceptance.test.ts` 的「只读安全」用例失败。原因：`lib/` 下禁止随便写文件，这是为了保护九立原件。做法：确实要写文件的模块，加进该测试的白名单，并写清楚理由。不要为了过测试删掉检查。
 - **`pnpm dev --webpack` 下服务偶发卡死。** 现象：2026-11-12 走查时出现过一次，开发服务器 CPU 一直 100%，所有接口无响应（页面点「打开最近一次运行」没反应）。原因：没查明，之后在同一份代码上重启再试没有复现；默认的 Turbopack 开发模式和生产构建都正常。做法：遇到就重启 `pnpm dev`；反复出现就去掉 `package.json` 里的 `--webpack` 对比。
-- **二阶段 demo 的 v15 提示词在 Studio 里只显示 JSON 树。** 现象：2026-11-16 导入 P1/P2 v5.3、P3 v1.0、P4 最终版（报告见 `docs/v5.3提示词真实材料测试_2026-11-16.md`）后，结果页提示「不符合九立预设结构」。原因：输出没有 `schema_version`，注册表只认 `jiuli-ai-v2/v3`，状态是 `UNKNOWN_SCHEMA`，不算失败。做法：要看业务表格，需在 `lib/schemas/registry.ts`、`lib/adapters/registry.ts`、`renderers/` 新增 v15 支持。
+- **二阶段 demo 的 v15 输出曾经只显示 JSON 树。** 现象：2026-11-16 导入 P1/P2 v5.3、P3 v1.0、P4 最终版（报告见 `docs/v5.3提示词真实材料测试_2026-11-16.md`）后，结果页提示「不符合九立预设结构」。原因：v15 输出没有 `schema_version`，只有顶层 `"v": 15`。做法（已完成）：
+  - 注册表遇到 `v: 15` 时按 `jiuli-v15` 识别，见 `lib/schemas/jiuli-v15.ts`、`lib/adapters/jiuli-v15.ts`、`renderers/v15/`。
+  - jiuli-p1~p4 登记的输出版本（`prompts.active_schema_version`）已改为 `jiuli-v15`。
+  - 按 v3 结构写的九立硬规则（`lib/experiments/business-rules.ts`）不检查 v15 输出。
+  - 已保存的旧运行需要点「重渲染」才会按新规则显示。
+- **运行历史里同一次运行会重复出现。** 原因：每次「重渲染」都另存一条新记录。做法：历史默认只显示每次运行最新的整理结果，勾选「含旧的整理记录」可看全部；版本对比模式不合并。历史可以按标签、版本、日期搜索，切换提示词时搜索词保留。
 - **Studio 给模型的输入和二阶段 demo 不一样。** 现象：同一提示词在 Studio 和 demo 里结果可能不同。原因有三：
   - Excel 写法不同：Studio 是行号、列号数字加 `merged` 数组；demo 是 `cell:Sheet1:A1 = 文字` 加 `spreadsheet_merges`。
   - Studio 没有 demo 在提示词后追加的技术附录。

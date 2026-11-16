@@ -3,6 +3,7 @@ import type { PromptKind, SchemaValidation, SchemaValidationError } from "@/lib/
 import { getByPointer } from "@/lib/pipeline/json-pointer";
 import { P1_V2, P2_V2, P3_V2, P4_V2 } from "./jiuli-v2";
 import { P1_V3, P2_V3, P3_V3, P4_V3 } from "./jiuli-v3";
+import { P1_V15, P2_V15, P3_V15, P4_V15, V15_SCHEMA_VERSION } from "./jiuli-v15";
 
 export const SCHEMA_REGISTRY_VERSION = "1.0.0";
 
@@ -18,6 +19,7 @@ export interface SchemaEntry {
 
 const V2_ORIGIN = "Studio 依据规格包 v2.0 示例推导（非九立官方 Schema）";
 const V3_ORIGIN = "Studio 依据九立 v3.0 提示词输出章节推导（非九立官方 Schema）";
+const V15_ORIGIN = "Studio 依据九立二阶段 demo v15 提示词输出章节推导（只校验骨架，非九立官方 Schema）";
 
 export const SCHEMAS: SchemaEntry[] = [
   { schemaId: "jiuli-p1-v2", promptKind: "JIULI_P1", schemaVersion: "jiuli-ai-v2", revision: "1.0.0", origin: V2_ORIGIN, schema: P1_V2 },
@@ -28,6 +30,10 @@ export const SCHEMAS: SchemaEntry[] = [
   { schemaId: "jiuli-p2-v3", promptKind: "JIULI_P2", schemaVersion: "jiuli-ai-v3", revision: "1.0.0", origin: V3_ORIGIN, schema: P2_V3 },
   { schemaId: "jiuli-p3-v3", promptKind: "JIULI_P3", schemaVersion: "jiuli-ai-v3", revision: "1.0.0", origin: V3_ORIGIN, schema: P3_V3 },
   { schemaId: "jiuli-p4-v3", promptKind: "JIULI_P4", schemaVersion: "jiuli-ai-v3", revision: "1.0.0", origin: V3_ORIGIN, schema: P4_V3 },
+  { schemaId: "jiuli-p1-v15", promptKind: "JIULI_P1", schemaVersion: V15_SCHEMA_VERSION, revision: "1.0.0", origin: V15_ORIGIN, schema: P1_V15 },
+  { schemaId: "jiuli-p2-v15", promptKind: "JIULI_P2", schemaVersion: V15_SCHEMA_VERSION, revision: "1.0.0", origin: V15_ORIGIN, schema: P2_V15 },
+  { schemaId: "jiuli-p3-v15", promptKind: "JIULI_P3", schemaVersion: V15_SCHEMA_VERSION, revision: "1.0.0", origin: V15_ORIGIN, schema: P3_V15 },
+  { schemaId: "jiuli-p4-v15", promptKind: "JIULI_P4", schemaVersion: V15_SCHEMA_VERSION, revision: "1.0.0", origin: V15_ORIGIN, schema: P4_V15 },
 ];
 
 const PROMPT_CODE: Record<string, PromptKind> = { P1: "JIULI_P1", P2: "JIULI_P2", P3: "JIULI_P3", P4: "JIULI_P4" };
@@ -99,7 +105,8 @@ function toError(doc: unknown, e: ErrorObject): SchemaValidationError | null {
  */
 export function validateAgainstRegistry(doc: unknown, promptKind: PromptKind): SchemaValidation {
   const obj = (doc && typeof doc === "object" ? doc : {}) as Record<string, unknown>;
-  const schemaVersion = typeof obj.schema_version === "string" ? obj.schema_version : undefined;
+  // 二阶段 demo 的 v15 输出不带 schema_version，只有顶层 "v": 15
+  const schemaVersion = typeof obj.schema_version === "string" ? obj.schema_version : obj.v === 15 ? V15_SCHEMA_VERSION : undefined;
 
   if (promptKind === "GENERIC_JSON") {
     return { status: "UNKNOWN_SCHEMA", promptKind, schemaVersion, errors: [] };

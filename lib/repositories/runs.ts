@@ -59,6 +59,8 @@ export interface RunListItem {
   status: string;
   started_at: string;
   input_snapshot_id: string | null;
+  /** 运行时用的提示词版本；未保存的草稿运行为当时所在版本 */
+  prompt_version_id: string | null;
   label: string;
   model_name: string | null;
   is_unsaved_draft: boolean;
@@ -86,6 +88,7 @@ function toListItem(body: string): RunListItem {
     status: b.status,
     started_at: b.started_at,
     input_snapshot_id: b.input_snapshot_id ?? null,
+    prompt_version_id: b.prompt_version_id ?? null,
     label: b.label ?? "",
     model_name: b.model_name ?? null,
     is_unsaved_draft: b.is_unsaved_draft,

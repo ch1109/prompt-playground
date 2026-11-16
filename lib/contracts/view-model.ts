@@ -148,6 +148,8 @@ export interface Headline {
   entity: string;
   customerName?: string;
   customerId?: string;
+  /** 输出本身不含客户信息（如 v15 的 P2~P4）：不显示「客户 未识别」 */
+  noCustomer?: boolean;
   /** 快照里有独立 Gold 标注，才能谈准确性 */
   gold: boolean;
 }

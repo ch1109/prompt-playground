@@ -203,7 +203,11 @@ export function ResultPane({
           <span data-testid="schema-version-mismatch">{w.label}：{w.reason}</span>
         </Banner>
       ))}
-      {run?.rerender_note && <Banner tone="info">{run.rerender_note}（模型原始输出没有改动）</Banner>}
+      {run?.rerender_note && (
+        <Banner tone="info">
+          <span title={run.rerender_note}>这是按当前显示规则重新整理的结果，模型原始输出没有改动。</span>
+        </Banner>
+      )}
 
       <div className="flex min-h-0 flex-1">
       <div className="min-h-0 min-w-0 flex-1 overflow-auto p-5" data-testid={`tab-${tab}`}>

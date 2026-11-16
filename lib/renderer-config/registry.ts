@@ -10,6 +10,11 @@ import p1v3 from "@/renderers/v3/jiuli-p1-v3.renderer.json";
 import p2v3 from "@/renderers/v3/jiuli-p2-v3.renderer.json";
 import p3v3 from "@/renderers/v3/jiuli-p3-v3.renderer.json";
 import p4v3 from "@/renderers/v3/jiuli-p4-v3.renderer.json";
+// 九立二阶段 demo v15 输出
+import p1v15 from "@/renderers/v15/jiuli-p1-v15.renderer.json";
+import p2v15 from "@/renderers/v15/jiuli-p2-v15.renderer.json";
+import p3v15 from "@/renderers/v15/jiuli-p3-v15.renderer.json";
+import p4v15 from "@/renderers/v15/jiuli-p4-v15.renderer.json";
 
 const CONFIG_SCHEMA = {
   type: "object",
@@ -52,7 +57,7 @@ export function validateRendererConfig(config: unknown): { ok: boolean; errors: 
   return { ok: ok && errors.length === 0, errors };
 }
 
-const ALL = [p1v2, p2v2, p3v2, p4v2, p1v3, p2v3, p3v3, p4v3] as unknown[];
+const ALL = [p1v2, p2v2, p3v2, p4v2, p1v3, p2v3, p3v3, p4v3, p1v15, p2v15, p3v15, p4v15] as unknown[];
 
 export const RENDERER_CONFIGS: RendererConfig[] = [];
 export const RENDERER_CONFIG_ERRORS: { id: string; errors: string[] }[] = [];

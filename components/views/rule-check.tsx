@@ -1,7 +1,7 @@
 "use client";
 import { useMemo } from "react";
 import type { RunDetail } from "@/lib/client/types";
-import { businessViolations, RULESET_VERSION, rulesFor, type RuleViolation } from "@/lib/experiments/business-rules";
+import { businessViolations, RULESET_VERSION, rulesApplyTo, rulesFor, type RuleViolation } from "@/lib/experiments/business-rules";
 import { isWithin } from "@/lib/pipeline/json-pointer";
 import { useStudio } from "@/lib/state/studio-store";
 
@@ -14,7 +14,7 @@ export function RuleCheck({ detail }: { detail: RunDetail }) {
   const setStore = useStudio((s) => s.set);
   const rules = rulesFor(run.prompt_kind);
   const violations = useMemo(() => businessViolations(run.prompt_kind, request, run.parsed_json), [run.prompt_kind, request, run.parsed_json]);
-  if (!rules.length || run.parsed_json === undefined) return null;
+  if (!rules.length || run.parsed_json === undefined || !rulesApplyTo(run.parsed_json)) return null;
   if (!violations)
     return (
       <p className="px-1 text-[12px] text-ink-400" data-testid="rule-check" data-state="unavailable">

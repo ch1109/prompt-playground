@@ -197,6 +197,8 @@ export function Playground({ projectId }: { projectId: string }) {
   // 历史只查当前 Prompt，分批加载（每批 100 条），避免旧记录被截断后看不到
   const RUN_PAGE = 100;
   const [runLimit, setRunLimit] = useState(RUN_PAGE);
+  const [runQuery, setRunQuery] = useState("");
+  const [showOlderRuns, setShowOlderRuns] = useState(false);
   useEffect(() => setRunLimit(RUN_PAGE), [promptId]);
   // 切换提示词后，较慢返回的旧请求不能覆盖当前提示词的历史：只采用最新一次请求的结果
   const runsRequest = useRef("");
@@ -495,13 +497,58 @@ export function Playground({ projectId }: { projectId: string }) {
     else s.patchWorkspace(pid, { inputMode: "snapshot", snapshotId: d.snapshot.snapshot_id });
   }
 
+  /** 运行用的提示词版本名：只认当前提示词已加载的版本列表 */
+  const versionLabel = (r: RunListItem) => versions[promptId]?.find((v) => v.version_id === r.prompt_version_id)?.label ?? "";
+  // 同一次运行的原始记录和历次「重渲染」默认只留最新一条（列表按时间倒序，先出现的就是最新）
+  const runById = new Map(runs.map((r) => [r.run_id, r]));
+  const rootOf = (r: RunListItem) => {
+    let cur: RunListItem | undefined = r;
+    let id = r.run_id;
+    while (cur?.replay_of_run_id) {
+      id = cur.replay_of_run_id;
+      cur = runById.get(id);
+    }
+    return id;
+  };
+  const seenRoots = new Set<string>();
+  const latestRuns = runs.filter((r) => {
+    const root = rootOf(r);
+    if (seenRoots.has(root)) return false;
+    seenRoots.add(root);
+    return true;
+  });
+  // 版本对比时可能要拿原始记录和整理结果对比：不合并
+  const olderCount = mode === "compare" ? 0 : runs.length - latestRuns.length;
+  const q = runQuery.trim().toLowerCase();
+  const baseRuns = showOlderRuns || mode === "compare" ? runs : latestRuns;
+  const shownRuns = q
+    ? baseRuns.filter((r) => [r.label, versionLabel(r), r.started_at.replace("T", " "), runStatusView(r.status, r.schema_id, r.prompt_kind, r.mode).label, RUN_MODE_LABEL[r.mode] ?? r.mode].some((t) => t.toLowerCase().includes(q)))
+    : baseRuns;
+
   /** 运行历史表（底部面板与「版本对比」模式共用） */
   const historyTable = (
     <>
+      <div className="sticky top-0 z-20 border-b border-ink-700 bg-ink-900 px-3 py-1.5">
+        <input
+          value={runQuery}
+          onChange={(e) => setRunQuery(e.target.value)}
+          placeholder="搜索标签、版本、日期…"
+          aria-label="搜索运行历史"
+          data-testid="history-search"
+          className="w-72 rounded-lg border border-ink-700 bg-ink-900 px-2 py-0.5 text-[12px] outline-none"
+        />
+        {q && <span className="ml-2 text-[11.5px] text-ink-400">{shownRuns.length} / {baseRuns.length} 条</span>}
+        {olderCount > 0 && (
+          <label className="ml-3 inline-flex items-center gap-1 text-[11.5px] text-ink-400" title="同一次运行重新整理过的，默认只显示最新一次整理结果">
+            <input type="checkbox" checked={showOlderRuns} onChange={(e) => setShowOlderRuns(e.target.checked)} data-testid="history-show-older" />
+            含旧的整理记录（{olderCount}）
+          </label>
+        )}
+      </div>
       <table className="w-full text-[12.5px]">
-                <thead className="sticky top-0 z-10 bg-ink-900/95 text-[11.5px] text-ink-400 backdrop-blur">
+                <thead className="sticky top-[33px] z-10 bg-ink-900/95 text-[11.5px] text-ink-400 backdrop-blur">
                   <tr className="border-b border-ink-700">
-                    {[...(mode === "compare" ? ["对比"] : []), "时间", "提示词", "模式", "状态", "标签", "模型", ""].map((h) => (
+                    {[...(mode === "compare" ? ["对比"] : []), "时间", "提示词", "版本", "模式", "状态", "标签", "模型", ""].map((h) => (
                       <th key={h} className="px-3 py-2 text-left font-medium">
                         {h}
                       </th>
@@ -509,14 +556,14 @@ export function Playground({ projectId }: { projectId: string }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {!runs.length && (
+                  {!shownRuns.length && (
                     <tr>
-                      <td colSpan={8} className="px-3 py-5 text-ink-400">
-                        当前提示词还没有运行记录。
+                      <td colSpan={9} className="px-3 py-5 text-ink-400">
+                        {runs.length ? "没有符合搜索的运行记录。" : "当前提示词还没有运行记录。"}
                       </td>
                     </tr>
                   )}
-                  {runs.map((r) => (
+                  {shownRuns.map((r) => (
                     <tr key={r.run_id} className={cx("border-b border-ink-800 hover:bg-ink-850", ws.runId === r.run_id && "bg-ink-800/70")}>
                       {mode === "compare" && (
                         <td className="px-3">
@@ -531,6 +578,10 @@ export function Playground({ projectId }: { projectId: string }) {
                       )}
                       <td className="px-3 font-mono text-[11.5px] text-ink-400">{r.started_at.slice(5, 19).replace("T", " ")}</td>
                       <td className="px-3 font-mono text-[11.5px]">{SHORT[r.prompt_kind]}</td>
+                      <td className="max-w-[200px] truncate px-3 text-ink-300" title={r.is_unsaved_draft ? `${versionLabel(r)}（运行时有未保存的改动）` : versionLabel(r)}>
+                        {versionLabel(r) || "—"}
+                        {r.is_unsaved_draft && "*"}
+                      </td>
                       <td className="px-3">
                         <Badge title={r.mode}>{RUN_MODE_LABEL[r.mode] ?? r.mode}</Badge>
                       </td>

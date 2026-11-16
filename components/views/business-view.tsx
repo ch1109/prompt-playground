@@ -393,7 +393,7 @@ export function ResultHeadline({ vm, cfg, status, mode, onlyIssues, setOnlyIssue
           准确性未评测
         </Badge>
       )}
-      {h && (
+      {h && !h.noCustomer && (
         <span className="text-ink-300">
           客户 <b className="text-ink-100">{h.customerName || "未识别"}</b>
           {h.customerId && <span className="ml-1 font-mono text-[11px] text-ink-400">{h.customerId}</span>}

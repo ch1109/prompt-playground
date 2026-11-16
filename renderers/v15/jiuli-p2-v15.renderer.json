@@ -1,0 +1,16 @@
+{
+  "renderer_id": "jiuli-p2-v15",
+  "renderer_config_version": "1.0.0",
+  "adapter_id": "jiuli-p2-v15",
+  "supported_prompt_kinds": ["JIULI_P2"],
+  "layout": "hierarchy-with-issues",
+  "regions": [
+    { "id": "summary", "component": "summary-strip", "binding": "metadata.summary" },
+    { "id": "raw-rows", "component": "data-table", "binding": "tables.inspectionRawRows" },
+    { "id": "warehouses", "component": "data-table", "binding": "tables.logicalInspections" },
+    { "id": "merged", "component": "data-table", "binding": "tables.mergedProducts" },
+    { "id": "scopes", "component": "data-table", "binding": "tables.scopeRecords" },
+    { "id": "precheck", "component": "issue-list", "binding": "issues" },
+    { "id": "evidence", "component": "evidence-viewer", "binding": "evidence", "mode": "drawer" }
+  ]
+}

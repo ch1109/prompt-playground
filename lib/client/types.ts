@@ -91,6 +91,7 @@ export interface RunListItem {
   status: string;
   started_at: string;
   input_snapshot_id: string | null;
+  prompt_version_id: string | null;
   label: string;
   model_name: string | null;
   is_unsaved_draft: boolean;

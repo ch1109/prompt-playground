@@ -214,8 +214,13 @@ export function rulesFor(kind: string): string[] {
   return prefix ? Object.entries(RULE_LABELS).filter(([k]) => k.startsWith(prefix)).map(([, label]) => label) : [];
 }
 
+/** 这些规则按 v3.0 输出结构编写；二阶段 demo 的 v15 输出（顶层 "v": 15）结构不同，不适用 */
+export function rulesApplyTo(parsed: unknown): boolean {
+  return !(parsed && typeof parsed === "object" && (parsed as { v?: unknown }).v === 15);
+}
+
 export function businessViolations(kind: string, request: unknown, parsed: unknown): RuleViolation[] | null {
-  if (parsed === undefined || request === null || request === undefined) return null;
+  if (parsed === undefined || request === null || request === undefined || !rulesApplyTo(parsed)) return null;
   if (kind === "JIULI_P2") return p2Violations(request, parsed);
   if (kind === "JIULI_P3") return p3Violations(request, parsed);
   if (kind === "JIULI_P4") return p4Violations(request, parsed);
