@@ -49,6 +49,15 @@
 - **弹窗覆盖用户输入。** 现象：设置弹窗里，用户刚填的内容被晚到的当前值覆盖。原因：弹窗先显示空表单，再异步读取当前值。做法：读取完成前禁用输入框。
 - **「只读安全」单测拦住了新的写文件。** 现象：`tests/unit/acceptance.test.ts` 的「只读安全」用例失败。原因：`lib/` 下禁止随便写文件，这是为了保护九立原件。做法：确实要写文件的模块，加进该测试的白名单，并写清楚理由。不要为了过测试删掉检查。
 - **`pnpm dev --webpack` 下服务偶发卡死。** 现象：2026-11-12 走查时出现过一次，开发服务器 CPU 一直 100%，所有接口无响应（页面点「打开最近一次运行」没反应）。原因：没查明，之后在同一份代码上重启再试没有复现；默认的 Turbopack 开发模式和生产构建都正常。做法：遇到就重启 `pnpm dev`；反复出现就去掉 `package.json` 里的 `--webpack` 对比。
+- **二阶段 demo 的 v15 提示词在 Studio 里只显示 JSON 树。** 现象：2026-11-16 导入 P1/P2 v5.3、P3 v1.0、P4 最终版（报告见 `docs/v5.3提示词真实材料测试_2026-11-16.md`）后，结果页提示「不符合九立预设结构」。原因：输出没有 `schema_version`，注册表只认 `jiuli-ai-v2/v3`，状态是 `UNKNOWN_SCHEMA`，不算失败。做法：要看业务表格，需在 `lib/schemas/registry.ts`、`lib/adapters/registry.ts`、`renderers/` 新增 v15 支持。
+- **Studio 给模型的输入和二阶段 demo 不一样。** 现象：同一提示词在 Studio 和 demo 里结果可能不同。原因有三：
+  - Excel 写法不同：Studio 是行号、列号数字加 `merged` 数组；demo 是 `cell:Sheet1:A1 = 文字` 加 `spreadsheet_merges`。
+  - Studio 没有 demo 在提示词后追加的技术附录。
+  - Studio 不传 `enable_thinking`。
+
+  做法：比较结果时先排除这些差异。
+- **P3/P4 不能直接用原件跑。** 原因：`buildFromUpload` 只能构造 P1/P2 的输入。做法：用 P1/P2 的输出拼 JSON，通过 `POST /api/snapshots/import`（`promptKind` + `requestText`）导入后再运行。P1 上传时至少要有一份材料类型是 `ORDER`，只有发票、箱单的批次跑不了 P1。
+- **真实运行前要先确认外发。** 现象：`POST /api/runs` 返回 409 `EGRESS_NOT_CONFIRMED`。做法：先 `POST /api/egress`，并带本机 Origin。jiuli 项目对 `dashscope.aliyuncs.com` 已于 2026-11-16 确认。
 
 ## 5. 待办与已知限制
 
