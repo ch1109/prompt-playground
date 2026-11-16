@@ -6,7 +6,7 @@ import type { PromptKind } from "@/lib/contracts/run";
 import { runSnapshotId, useStudio, useWorkspace, type InputMode } from "@/lib/state/studio-store";
 import { Badge, Btn, cx, Empty, SEG_TRACK, segItem } from "@/components/ui";
 import type { InputManifest, ModelParams } from "@/lib/contracts/run";
-import { guessMaterialType, skipReason, UPLOAD_EXTS } from "@/lib/materials/guess-type";
+import { guessMaterialType, skipReason, typeFromName, UPLOAD_EXTS } from "@/lib/materials/guess-type";
 import { InputCoverage } from "./input-coverage";
 import { PromptEditor } from "./prompt-editor";
 import { CandidatesTab } from "./candidates-tab";
@@ -782,6 +782,11 @@ function UploadInput({ projectId, kind, onCreated }: { projectId: string; kind: 
               <span className="min-w-0 flex-1 truncate" title={f.path}>
                 {f.path}
               </span>
+              {jiuli && !typeFromName(f.path) && (
+                <span className="shrink-0 text-[11px] text-risk" title="文件名里看不出是委托单、发票、箱单还是查货文件，先按默认填了，请确认">
+                  请确认类型
+                </span>
+              )}
               {jiuli && (
                 <select
                   value={f.type}

@@ -945,3 +945,20 @@ test("9.1 性能：100 行 × 25 字段（记录实测，不预设达标）", as
   console.log(`PERF 100x25: 渲染(含服务端流水线)=${renderMs}ms 筛选=${filterMs}ms 滚动到末尾并点击=${scrollClickMs}ms`);
   test.info().annotations.push({ type: "perf", description: `render=${renderMs}ms filter=${filterMs}ms scroll+click=${scrollClickMs}ms` });
 });
+
+test("走查 2026-11-16：没选输入时「运行模型」不能点并说明原因；上传的输入不能「仅渲染」；选了示例两者都能用", async ({ page }) => {
+  await page.route("**/api/models", (r) =>
+    r.fulfill({ json: { ok: true, data: { provider: "openai-compatible@fake", model: "fake", configured: true, supportsFileInput: false, adapterVersion: "1.0.0" }, request_id: "x" } }),
+  );
+  await page.goto("/projects/jiuli/playground");
+  await page.click('[data-prompt="jiuli-p1"]');
+  await expect(page.getByTestId("btn-run")).toBeDisabled();
+  await expect(page.getByTestId("btn-run")).toHaveAttribute("title", /还没选输入/);
+  await expect(page.getByTestId("btn-render")).toBeDisabled();
+  await expect(page.getByTestId("btn-render")).toHaveAttribute("title", /上传的文件请用「运行模型」/);
+  await page.getByRole("button", { name: "示例", exact: true }).click();
+  await page.click('[data-fixture-id="v3/SC-08-audit/P1"]');
+  await expect(page.getByTestId("btn-run")).toBeEnabled();
+  await expect(page.getByTestId("btn-render")).toBeEnabled();
+  await expect(page.getByTestId("result-pane")).toContainText("已选好输入");
+});

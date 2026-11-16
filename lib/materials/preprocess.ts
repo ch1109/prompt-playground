@@ -107,7 +107,7 @@ async function pdf(buf: Buffer): Promise<Omit<Preprocessed, "ext" | "media_type"
     const pages = parts.map((text, i) => ({ page: i + 1, text: text.replace(/\s+$/, "") }));
     const empty = pages.filter((p) => !p.text.trim()).map((p) => p.page);
     const warnings: string[] = [];
-    if (empty.length === pages.length) warnings.push("PDF 没有文字层（可能是扫描件）：已保存原件，但没有可发送的文本。请在「提示词」页「运行参数」里勾选「附带原件图片」并使用视觉模型。");
+    if (empty.length === pages.length) warnings.push("PDF 没有文字层（可能是扫描件）：只能靠模型看图。模型支持看图时运行会自动附带页面图片；不支持时请在「提示词」页「运行参数」里勾选「附带原件图片」并换用视觉模型。");
     else if (empty.length) warnings.push(`PDF 第 ${empty.join("、")} 页没有文字层（可能是扫描页），这些页只能通过附带原件图片读取`);
     return {
       content: { pages },
@@ -134,7 +134,7 @@ export async function preprocessFile(buf: Buffer, fileName: string): Promise<Pre
     content: null,
     has_text: false,
     segments: ["page:1"],
-    warnings: ["图片没有文本：请在「提示词」页「运行参数」里勾选「附带原件图片」并使用视觉模型"],
+    warnings: ["图片没有文字：只能靠模型看图。模型支持看图时运行会自动附带；不支持时请在「提示词」页「运行参数」里勾选「附带原件图片」并换用视觉模型"],
     preprocessor_version: `${FILE_IMPORT_VERSION}; image`,
   };
 }

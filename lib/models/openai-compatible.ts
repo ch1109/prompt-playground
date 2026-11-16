@@ -122,7 +122,15 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
       ...req.params,
       ...streamParams,
     };
-    const failed = (code: string, message: string, partialRaw?: string): ModelResult => ({ ok: false, code, message, latencyMs: Date.now() - started, ...(partialRaw ? { partialRaw: this.redact(partialRaw) } : {}), request });
+    const failed = (code: string, message: string, partialRaw?: string, partialReasoning?: string): ModelResult => ({
+      ok: false,
+      code,
+      message,
+      latencyMs: Date.now() - started,
+      ...(partialRaw ? { partialRaw: this.redact(partialRaw) } : {}),
+      ...(partialReasoning ? { partialReasoning: this.redact(partialReasoning) } : {}),
+      request,
+    });
     try {
       const res = await this.fetchImpl(url, {
         method: "POST",
@@ -200,7 +208,7 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
   /** 读 SSE 流（data: {...} 行，以 data: [DONE] 结束）：累计思考与回答，每段回调一次；中途失败时带上已收到的回答 */
   private async readStream(
     body: ReadableStream<Uint8Array>,
-    o: { started: number; request: Record<string, unknown>; arm: () => void; onProgress: NonNullable<ModelRequest["onProgress"]>; aborted: () => boolean; timeoutMessage: string; failed: (code: string, message: string, partialRaw?: string) => ModelResult },
+    o: { started: number; request: Record<string, unknown>; arm: () => void; onProgress: NonNullable<ModelRequest["onProgress"]>; aborted: () => boolean; timeoutMessage: string; failed: (code: string, message: string, partialRaw?: string, partialReasoning?: string) => ModelResult },
   ): Promise<ModelResult> {
     type Chunk = { id?: unknown; model?: unknown; created?: unknown; error?: unknown; usage?: Record<string, number> | null; choices?: { delta?: { content?: unknown; reasoning_content?: unknown }; finish_reason?: string | null }[] };
     const reader = body.getReader();
@@ -226,9 +234,9 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
       try {
         chunk = JSON.parse(data);
       } catch {
-        return o.failed("MODEL_BAD_ENVELOPE", "服务商返回的流式数据有一段不是 JSON（可能被截断）", content);
+        return o.failed("MODEL_BAD_ENVELOPE", "服务商返回的流式数据有一段不是 JSON（可能被截断）", content, reasoning);
       }
-      if (chunk.error) return o.failed("MODEL_STREAM_BROKEN", `服务商在输出途中报错：${this.redact(JSON.stringify(chunk.error).slice(0, 2000))}`, content);
+      if (chunk.error) return o.failed("MODEL_STREAM_BROKEN", `服务商在输出途中报错：${this.redact(JSON.stringify(chunk.error).slice(0, 2000))}`, content, reasoning);
       meta.id ??= chunk.id;
       meta.model ??= chunk.model;
       meta.created ??= chunk.created;
@@ -260,9 +268,9 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
       const bad = line(buf + decoder.decode());
       if (bad) return bad;
     } catch (e) {
-      return o.aborted() ? o.failed("MODEL_TIMEOUT", o.timeoutMessage, content) : o.failed("MODEL_STREAM_BROKEN", `读取响应失败（可能断流）：${this.redact(String(e))}`, content);
+      return o.aborted() ? o.failed("MODEL_TIMEOUT", o.timeoutMessage, content, reasoning) : o.failed("MODEL_STREAM_BROKEN", `读取响应失败（可能断流）：${this.redact(String(e))}`, content, reasoning);
     }
-    if (!finish && !ended) return o.failed("MODEL_STREAM_BROKEN", "模型输出到一半连接断开，没有收到结束标记", content);
+    if (!finish && !ended) return o.failed("MODEL_STREAM_BROKEN", "模型输出到一半连接断开，没有收到结束标记", content, reasoning);
     if (!sawChoice) return o.failed("MODEL_EMPTY_CONTENT", "流式响应中没有 choices 内容");
     const u = got.usage;
     return {

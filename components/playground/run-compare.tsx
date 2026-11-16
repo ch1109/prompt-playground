@@ -10,6 +10,7 @@ import type { Annotation } from "@/lib/repositories/runs";
 import { applyLayout } from "@/lib/layouts/apply";
 import type { Layout } from "@/lib/layouts/types";
 import { LayoutView } from "@/components/views/layout-view";
+import { V15_LABEL } from "@/lib/schemas/jiuli-v15";
 
 export { compareRuns, diffJson, diffSummary, flatten, inputComparability, strictConditions, textHunks } from "@/lib/runs/compare";
 
@@ -17,6 +18,64 @@ const OUTCOME_LABEL: Record<VerdictField["outcome"], string> = { FIXED: "修好�
 const ASSESSMENT_LABEL: Record<string, string> = { CORRECT: "对", WRONG: "错" };
 
 const KIND_LABEL: Record<DiffRow["kind"], string> = { ADDED: "新增", REMOVED: "删除", CHANGED: "变化", UNALIGNED: "无法对齐" };
+
+/** v15 输出里结构性键的中文名；r / h 只是容器，不显示 */
+const V15_SEG: Record<string, string> = {
+  ...V15_LABEL,
+  v: "版本",
+  r: "",
+  h: "",
+  cus: "客户",
+  tot: "整票合计",
+  g: "多行共用的值",
+  issues: "问题",
+  changes: "本轮更新",
+  tot_updates: "合计更新",
+  suggestions: "建议",
+  vs: "依据",
+  note: "说明",
+  t: "类型",
+  why: "理由",
+  old: "原值",
+  new: "新值",
+  st: "匹配状态",
+  m: "选中",
+  c: "候选",
+  review: "需人工看",
+  qc: "数量核对",
+  parts: "原始明细",
+  merge_note: "合并说明",
+  x: "辅助信息",
+};
+
+/** 差异位置的中文说法（只处理 v15）：/r/[id=3]/og → 「第 3 行 · 产地」；其他格式原样 */
+function placeOf(pointer: string, v15: boolean): string {
+  if (!v15) return pointer;
+  return (
+    pointer
+      .split("/")
+      .filter(Boolean)
+      .map((seg) => {
+        const m = /^\[(\w+)=(.*)\]$/.exec(seg);
+        if (m) return m[1] === "id" ? `第 ${m[2]} 行` : m[1] === "wh" ? `入仓号 ${m[2]}` : m[1] === "f" ? (V15_LABEL[m[2]] ?? m[2]) : m[2];
+        if (/^\d+$/.test(seg)) return `第 ${Number(seg) + 1} 项`;
+        return V15_SEG[seg] ?? seg;
+      })
+      .filter(Boolean)
+      .join(" · ") || pointer
+  );
+}
+
+/** 差异里的值是 JSON 文本：字符串去掉引号显示 */
+function plainDiffValue(v: string | undefined): string {
+  if (v === undefined) return "";
+  try {
+    const x: unknown = JSON.parse(v);
+    return typeof x === "string" ? x || "（空）" : v;
+  } catch {
+    return v;
+  }
+}
 
 /** labels：差异两侧的叫法（默认 A / B） */
 export function Hunks({ title, hunks, labels = ["A", "B"] }: { title: string; hunks: StructuredPatchHunk[] | null; labels?: [string, string] }) {
@@ -69,6 +128,7 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
   const sideBySide = layout && a?.run.parsed_json !== undefined && b?.run.parsed_json !== undefined ? ([a, b] as const).map((d) => applyLayout(layout, d.run.parsed_json)) : null;
   const diff = useMemo(() => (a && b ? diffSummary(a.run.parsed_json ?? a.run.raw_response, b.run.parsed_json ?? b.run.raw_response) : { rows: [], same: 0 }), [a, b]);
   const rows = diff.rows;
+  const v15 = [a, b].every((d) => (d?.run.parsed_json as { v?: unknown } | undefined)?.v === 15);
   const count = (k: DiffRow["kind"]) => rows.filter((r) => r.kind === k).length;
   const cmp = useMemo(() => (a && b ? compareRuns(a.run, b.run, [a.prompt_version_label, b.prompt_version_label]) : null), [a, b]);
   const verdict = useMemo(() => (a && b ? compareVerdict(a.run, b.run, a.annotations as unknown as Annotation[]) : null), [a, b]);
@@ -160,16 +220,6 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
                   </div>
                 </div>
               )}
-              {cmp.system?.length === 0 && cmp.user?.length === 0 ? (
-                <p className="text-[12px] text-ink-400">
-                  提示词：<span className="text-verify">两次完全相同</span>（System 提示词与 User 消息）
-                </p>
-              ) : (
-                <div>
-                  <Hunks title="System 提示词差异" hunks={cmp.system} />
-                  <Hunks title="User 消息差异（含构造输入）" hunks={cmp.user} />
-                </div>
-              )}
               <div className="flex flex-wrap items-center gap-1.5 text-[11.5px]" data-testid="diff-counts">
                 <h4
                   className="mr-1 text-[12.5px] font-semibold text-ink-100"
@@ -199,14 +249,28 @@ export function RunCompare({ ids, onClose }: { ids: [string, string]; onClose: (
                     <td className="w-20 py-1">
                       <Badge tone={r.kind === "ADDED" ? "ok" : r.kind === "REMOVED" ? "bad" : r.kind === "UNALIGNED" ? "info" : "warn"}>{KIND_LABEL[r.kind]}</Badge>
                     </td>
-                    <td className="w-[38%] py-1 pr-3 break-all text-ink-300">{r.pointer}</td>
-                    <td className={cx("py-1 pr-3 break-all", r.a !== undefined && "text-stamp")}>{r.a ?? ""}</td>
-                    <td className={cx("py-1 break-all", r.b !== undefined && "text-verify")}>{r.b ?? ""}</td>
+                    <td className="w-[38%] py-1 pr-3 break-all text-ink-300" title={r.pointer}>
+                      {placeOf(r.pointer, v15)}
+                    </td>
+                    <td className={cx("py-1 pr-3 break-all", r.a !== undefined && "text-stamp")}>{plainDiffValue(r.a)}</td>
+                    <td className={cx("py-1 break-all", r.b !== undefined && "text-verify")}>{plainDiffValue(r.b)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
+          {/* 先看结果差在哪，再看提示词和输入差在哪 */}
+          {cmp &&
+            (cmp.system?.length === 0 && cmp.user?.length === 0 ? (
+              <p className="text-[12px] text-ink-400">
+                提示词：<span className="text-verify">两次完全相同</span>（System 提示词与 User 消息）
+              </p>
+            ) : (
+              <div>
+                <Hunks title="System 提示词差异" hunks={cmp.system} />
+                <Hunks title="User 消息差异（含构造输入）" hunks={cmp.user} />
+              </div>
+            ))}
           {cmp && (
             <details className="rounded-xl border border-ink-700 text-[12px]">
               <summary className="cursor-pointer px-4 py-2.5 font-semibold text-ink-100">

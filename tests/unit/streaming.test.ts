@@ -5,7 +5,7 @@ import { snapshotForFixture } from "@/lib/fixtures/snapshot";
 import { OpenAICompatibleProvider, setProviderForTests } from "@/lib/models/openai-compatible";
 import { resetDbForTests } from "@/lib/repositories/db";
 import { getRun } from "@/lib/repositories/runs";
-import { liveRun, startModelRun } from "@/lib/runs/service";
+import { cancelRun, liveRun, startModelRun } from "@/lib/runs/service";
 
 const cfg = (timeoutMs = 2000) => ({ baseUrl: "https://model.invalid/v1", model: "fake-model", apiKey: "sk-test-stream-123456", timeoutMs });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -66,6 +66,12 @@ describe("OpenAI 兼容适配器：流式接收", () => {
     if (!r.ok) expect(r.message).toContain("秒没有收到模型的新内容");
   });
 
+  it("中途卡住超时：已收到的思考也一并带回", async () => {
+    const { fetchImpl } = sse([delta({ reasoning_content: "先看表头" }), delta({ content: "{" })], { hang: true });
+    const r = await new OpenAICompatibleProvider(cfg(100), fetchImpl).complete({ system: "S", user: "U", params: {}, onProgress: () => {} });
+    expect(r).toMatchObject({ ok: false, code: "MODEL_TIMEOUT", partialRaw: "{", partialReasoning: "先看表头" });
+  });
+
   it("没有结束标记就断开 → 断流，保留已收到的回答；途中报错 → 断流并带服务商原文", async () => {
     const cut = await new OpenAICompatibleProvider(cfg(), sse([delta({ content: "半截" })]).fetchImpl).complete({ system: "S", user: "U", params: {}, onProgress: () => {} });
     expect(cut).toMatchObject({ ok: false, code: "MODEL_STREAM_BROKEN", partialRaw: "半截" });
@@ -110,5 +116,30 @@ describe("运行服务：实时进度", () => {
     expect(liveRun(runId)).toBeUndefined();
     expect(run.status).toBe("SUCCEEDED");
     expect(getRun(runId)).toMatchObject({ raw_response: raw, reasoning_content: "想一想", response_meta: { streamed: true } });
+  });
+
+  const snap = () => snapshotForFixture("jiuli", getFixture("v3/SC-08/P1")!)!;
+
+  it("没传标签时用输入名做标签，历史里能按输入搜到", async () => {
+    setProviderForTests(new OpenAICompatibleProvider(cfg(), sse([delta({ content: "{}" }, "stop"), "[DONE]"]).fetchImpl));
+    const { done } = startModelRun({ projectId: "jiuli", promptId: "jiuli-p1", snapshotId: snap().snapshot_id, system: "S", userTemplate: "{{input_json}}", params: {} });
+    expect((await done) as { label?: string }).toMatchObject({ label: snap().label });
+  });
+
+  it("取消时保留已收到的思考和回答，方便看模型卡在哪", async () => {
+    const { fetchImpl } = sse([delta({ reasoning_content: "反复核对第 3 行" }), delta({ content: '{"v":15' })], { hang: true });
+    setProviderForTests(new OpenAICompatibleProvider(cfg(), fetchImpl));
+    const { runId, done } = startModelRun({ projectId: "jiuli", promptId: "jiuli-p1", snapshotId: snap().snapshot_id, system: "S", userTemplate: "{{input_json}}", params: {} });
+    while (!liveRun(runId)?.content) await sleep(10);
+    cancelRun(runId);
+    const run = await done;
+    expect(run.status).toBe("CANCELLED");
+    expect(getRun(runId)).toMatchObject({ raw_response: '{"v":15', reasoning_content: "反复核对第 3 行" });
+  });
+
+  it("超时失败的 Run 也保存已收到的思考", async () => {
+    setProviderForTests(new OpenAICompatibleProvider(cfg(100), sse([delta({ reasoning_content: "想到一半" })], { hang: true }).fetchImpl));
+    const { done } = startModelRun({ projectId: "jiuli", promptId: "jiuli-p1", snapshotId: snap().snapshot_id, system: "S", userTemplate: "{{input_json}}", params: {} });
+    expect(await done).toMatchObject({ status: "MODEL_ERROR", error: { code: "MODEL_TIMEOUT" }, reasoning_content: "想到一半" });
   });
 });

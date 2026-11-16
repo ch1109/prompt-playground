@@ -11,6 +11,11 @@ const RULES: [RegExp, "ORDER" | "INVOICE" | "PACKING_LIST" | "INSPECTION"][] = [
   [/委托|订单|order|(^|[^a-z])po([^a-z]|$)/i, "ORDER"],
 ];
 
+/** 文件名（含子文件夹路径）里有没有能判断材料类型的词；没有时类型是按默认填的，需要用户确认 */
+export function typeFromName(path: string): boolean {
+  return RULES.some(([re]) => re.test(path));
+}
+
 /** 按文件名（含子文件夹路径）猜材料类型；猜不出时 P2 记为查货文件，其余记为委托单 */
 export function guessMaterialType(path: string, kind?: GuessKind): "ORDER" | "INVOICE" | "PACKING_LIST" | "INSPECTION" {
   const name = path.split("/").pop() ?? path;

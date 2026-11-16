@@ -97,8 +97,12 @@ export function Playground({ projectId }: { projectId: string }) {
   // 空状态示例：优先带请求上下文的人工构造样本（覆盖异常场景），其次录制样本
   const kindFixtures = prompt ? fixtures.filter((f) => f.promptKind === prompt.prompt_kind) : [];
   const exampleFixture = kindFixtures.find((f) => f.origin === "CONSTRUCTED" && f.hasRequest && f.schemaVersion) ?? kindFixtures.find((f) => f.origin === "RECORDED_MODEL_OUTPUT") ?? kindFixtures[0];
+  /** 还没有能真实运行的输入（示例在运行时才补建快照，选了就算有；粘贴的是模型输出，只能仅渲染） */
+  const noRunInput = ws.inputMode === "fixture" ? !ws.fixtureId : !runSnapshotId(ws);
   const emptyHint =
-    (mode === "check"
+    (!noRunInput
+      ? `已选好输入，点右上角「运行模型」开始识别${ws.inputMode === "fixture" ? "；也可以点「仅渲染」直接看示例结果" : ""}。`
+      : mode === "check"
       ? hasFixtures
         ? "点上方「更换输入」上传文件或选一个示例，再点右上角「运行模型」；选了示例也可以点「仅渲染」直接看结果。"
         : "点上方「更换输入」上传文件（可以是整个文件夹），再点右上角「运行模型」。"
@@ -412,7 +416,34 @@ export function Playground({ projectId }: { projectId: string }) {
   }
 
   /** 现在不能真实运行的原因（与顶栏「运行模型」按钮的禁用条件一致）；null = 可以运行 */
-  const runBlocked = busy ? "正在处理上一个操作" : !provider?.configured ? "还没设置模型：点右上角的「模型未配置」设置" : runningRunId ? "当前提示词的上一次运行尚未结束" : null;
+  const runBlocked = busy
+    ? "正在处理上一个操作"
+    : !provider?.configured
+      ? "还没设置模型：点右上角的「模型未配置」设置"
+      : runningRunId
+        ? "当前提示词的上一次运行尚未结束"
+        : noRunInput
+          ? ws.inputMode === "paste"
+            ? "粘贴的是模型输出，只能「仅渲染」；要真实运行，请上传文件或选一个示例"
+            : `还没选输入：${mode === "check" ? "点「更换输入」" : "在左边「输入」"}上传文件或选一个示例`
+          : null;
+
+  /** 现在不能「仅渲染」的原因；null = 可以。仅渲染只整理已有的模型输出（示例里录好的，或粘贴的） */
+  const renderBlocked = busy
+    ? "正在处理上一个操作"
+    : ws.inputMode === "fixture"
+      ? ws.fixtureId
+        ? null
+        : "还没选示例"
+      : ws.inputMode === "paste"
+        ? ws.pasteRaw.trim()
+          ? null
+          : "还没粘贴模型输出"
+        : "「仅渲染」只用于示例或粘贴的模型输出；上传的文件请用「运行模型」";
+
+  // 换了提示词或输入后，之前的报错多半已经不相关，清掉，免得一直挂在顶上
+  const inputKey = `${promptId}|${ws.inputMode}|${ws.inputMode === "fixture" ? ws.fixtureId : runSnapshotId(ws)}`;
+  useEffect(() => setError(null), [inputKey]);
 
   const report = (e: unknown) => setError(errorInfo(e));
 
@@ -513,13 +544,13 @@ export function Playground({ projectId }: { projectId: string }) {
 
   /**
    * 打开历史运行时，若该提示词还没选输入，就把那次运行用的输入设为当前输入（示例 → 示例；其他 → 历史输入），
-   * 这样再点「运行模型」就是同一份输入；已有选择的不覆盖。
+   * 这样再点「运行模型」就是同一份输入；已有选择的不覆盖。force：用户点「改用它」时覆盖已有选择。
    */
-  function adoptRunInput(d: RunDetail) {
+  function adoptRunInput(d: RunDetail, force = false) {
     const pid = d.run.prompt_id;
     const w = useStudio.getState().workspaces[pid] ?? emptyWorkspace();
     const hasInput = w.inputMode === "paste" ? !!w.pasteRaw.trim() : w.inputMode === "fixture" ? !!w.fixtureId : !!runSnapshotId(w);
-    if (hasInput || !d.snapshot) return;
+    if ((hasInput && !force) || !d.snapshot) return;
     const fixtureId = d.snapshot.source_type === "FIXTURE" ? d.snapshot.source_ids.fixture_id : undefined;
     if (typeof fixtureId === "string") s.patchWorkspace(pid, { inputMode: "fixture", fixtureId, fixtureSnapshotId: d.snapshot.snapshot_id });
     else s.patchWorkspace(pid, { inputMode: "snapshot", snapshotId: d.snapshot.snapshot_id });
@@ -550,7 +581,7 @@ export function Playground({ projectId }: { projectId: string }) {
   const q = runQuery.trim().toLowerCase();
   const baseRuns = showOlderRuns || mode === "compare" ? runs : latestRuns;
   const shownRuns = q
-    ? baseRuns.filter((r) => [r.label, versionLabel(r), r.started_at.replace("T", " "), runStatusView(r.status, r.schema_id, r.prompt_kind, r.mode).label, RUN_MODE_LABEL[r.mode] ?? r.mode].some((t) => t.toLowerCase().includes(q)))
+    ? baseRuns.filter((r) => [r.label, versionLabel(r), r.started_at.replace("T", " "), runStatusView(r.status, r.schema_id, r.prompt_kind, r.mode, !!r.model_name).label, RUN_MODE_LABEL[r.mode] ?? r.mode].some((t) => t.toLowerCase().includes(q)))
     : baseRuns;
 
   /** 运行历史表（底部面板与「版本对比」模式共用） */
@@ -614,7 +645,7 @@ export function Playground({ projectId }: { projectId: string }) {
                         <Badge title={r.mode}>{RUN_MODE_LABEL[r.mode] ?? r.mode}</Badge>
                       </td>
                       <td className="px-3">
-                        <Badge tone={runStatusView(r.status, r.schema_id, r.prompt_kind, r.mode).tone}>{runStatusView(r.status, r.schema_id, r.prompt_kind, r.mode).label}</Badge>
+                        <Badge tone={runStatusView(r.status, r.schema_id, r.prompt_kind, r.mode, !!r.model_name).tone}>{runStatusView(r.status, r.schema_id, r.prompt_kind, r.mode, !!r.model_name).label}</Badge>
                       </td>
                       <td className="max-w-[320px] truncate px-3">{r.label}</td>
                       <td className="px-3 text-ink-400">{r.model_name ?? "—"}</td>
@@ -644,8 +675,14 @@ export function Playground({ projectId }: { projectId: string }) {
     const fx = ws.inputMode === "fixture" ? fixtures.find((f) => f.id === ws.fixtureId) : undefined;
     const sid = runSnapshotId(ws);
     // 历史输入列表是分页加载的，当前结果用的快照可能不在已加载的列表里，就用结果自带的名称
-    const snapLabel = snapshots.find((x) => x.snapshot_id === sid)?.label ?? (sid && detail?.snapshot?.snapshot_id === sid ? detail.snapshot.label : undefined);
+    const snap = snapshots.find((x) => x.snapshot_id === sid);
+    const snapLabel = snap?.label ?? (sid && detail?.snapshot?.snapshot_id === sid ? detail.snapshot.label : undefined);
     const name = fx?.title ?? (ws.inputMode === "paste" ? "粘贴的 JSON" : snapLabel) ?? "还没选输入";
+    // 上传时的提醒（如扫描件没有文字层）：上传抽屉会自动收起，所以在这里留个入口
+    const notes = snap?.source_type === "FILE_IMPORT" ? (snap.warnings ?? []) : [];
+    // 打开的历史结果用的是另一份输入：说清楚，免得以为结果对应上面这份输入
+    const runSnap = detail?.run.input_snapshot_id ?? null;
+    const otherInput = detail?.snapshot && runSnap && runSnap !== sid && !(ws.inputMode === "fixture" && detail.snapshot.source_ids.fixture_id === ws.fixtureId) ? detail : null;
     return (
       <div className="flex min-w-0 items-center gap-2 border-l border-ink-700 pl-4 text-[12.5px]" data-testid="context-bar">
         <span className="shrink-0 text-ink-400">当前输入</span>
@@ -653,6 +690,21 @@ export function Playground({ projectId }: { projectId: string }) {
           {name}
         </span>
         {fx?.hasGold && <Badge tone="ok">有标准答案</Badge>}
+        {notes.length > 0 && (
+          <span className="shrink-0" title={notes.join("\n")} data-testid="input-warnings">
+            <Badge tone="warn">{notes.length} 条提醒</Badge>
+          </span>
+        )}
+        {otherInput && (
+          <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] text-risk" data-testid="result-input-differs">
+            <span className="min-w-0 max-w-[260px] truncate" title={`下面显示的结果用的是「${otherInput.snapshot!.label}」，不是当前输入`}>
+              下面的结果用的是「{otherInput.snapshot!.label}」
+            </span>
+            <button onClick={() => adoptRunInput(otherInput, true)} className="shrink-0 underline underline-offset-2 hover:text-ink-100" title="把当前输入换成这条结果用的输入">
+              改用它
+            </button>
+          </span>
+        )}
         <Btn onClick={() => setInputDrawer(true)} data-testid="btn-change-input">
           更换输入
         </Btn>
@@ -894,24 +946,19 @@ export function Playground({ projectId }: { projectId: string }) {
           )}
           {!narrow && modeTabs}
           <div className="ml-auto flex items-center gap-2">
-            {error && (
-              <span className="max-w-[420px] truncate rounded-lg bg-stamp-soft px-2 py-1 text-[12px] text-stamp" title={error.code ? `${error.message}（错误码 ${error.code}）` : error.message} data-testid="error-message">
-                {error.message}
-              </span>
-            )}
             <button onClick={() => setModelSettingsOpen(true)} className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border border-ink-700 px-2.5 py-1.5 font-mono text-[11.5px] text-ink-300 hover:border-ink-600 hover:bg-ink-850 hover:text-ink-100" title="点这里设置模型" data-testid="btn-model-settings">
               <span className={cx("h-1.5 w-1.5 rounded-full", provider?.configured ? "bg-verify" : "bg-risk")} />
               {provider?.configured ? provider.model : "模型未配置"}
             </button>
-            <Btn tone="outline" onClick={renderOnly} disabled={busy} data-testid="btn-render" title="离线整理已有输出为表格，不调用模型，不花钱">
+            <Btn tone="outline" onClick={renderOnly} disabled={!!renderBlocked} data-testid="btn-render" title={renderBlocked ?? "离线整理已有输出为表格，不调用模型，不花钱"}>
               <Icon d={ICONS.layers} />
               仅渲染
             </Btn>
             <Btn
               tone="primary"
               onClick={modelRun}
-              disabled={busy || !provider?.configured || runningRunId !== null}
-              title={!provider?.configured ? "还没设置模型：点右上角的「模型未配置」设置" : runningRunId ? "当前提示词的上一次运行尚未结束" : "调用真实 AI 模型，会产生费用"}
+              disabled={!!runBlocked}
+              title={runBlocked ?? "调用真实 AI 模型，会产生费用"}
               data-testid="btn-run"
             >
               <Icon d={ICONS.play} />
@@ -919,6 +966,15 @@ export function Playground({ projectId }: { projectId: string }) {
             </Btn>
           </div>
         </header>
+        {/* 报错放在顶栏下方整行显示：不截断、不把顶栏挤成两行，可手动关掉 */}
+        {error && (
+          <div role="alert" className="flex items-start gap-2 border-b border-stamp/30 bg-stamp-soft px-5 py-2 text-[12.5px] text-stamp">
+            <span className="min-w-0 flex-1 break-words" title={error.code ? `${error.message}（错误码 ${error.code}）` : error.message} data-testid="error-message">
+              {error.message}
+            </span>
+            <CloseBtn onClick={() => setError(null)} label="关闭错误提示" />
+          </div>
+        )}
 
         {narrow && modeTabs}
         {narrow && mode === "debug" && (

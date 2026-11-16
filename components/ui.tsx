@@ -86,10 +86,11 @@ export const RUN_STATUS_LABEL: Record<string, string> = {
  * 九立预设成功但结构没对上时不显示"运行成功"，避免误以为已通过校验；
  * 没调用模型的结果（仅渲染 / 回放）不说「模型运行成功」。
  */
-export function runStatusView(status: string, schemaId: string | null | undefined, kind?: string, mode?: string): { label: string; tone: keyof typeof TONES } {
+/** fromModel：输出来自真实模型调用（对模型运行「重新整理」的记录也算），这时不说「未调用模型」 */
+export function runStatusView(status: string, schemaId: string | null | undefined, kind?: string, mode?: string, fromModel?: boolean): { label: string; tone: keyof typeof TONES } {
   if (status === "SUCCEEDED" && kind === "GENERIC_JSON") return { label: "完成", tone: "ok" };
   if (status === "SUCCEEDED" && !schemaId) return { label: "未校验（不符合预设结构）", tone: "mute" };
-  if (status === "SUCCEEDED" && mode && mode !== "MODEL_RUN") return { label: "已整理（未调用模型）", tone: "ok" };
+  if (status === "SUCCEEDED" && mode && mode !== "MODEL_RUN" && !fromModel) return { label: "已整理（未调用模型）", tone: "ok" };
   return { label: RUN_STATUS_LABEL[status] ?? status, tone: RUN_STATUS_TONE[status] ?? "mute" };
 }
 

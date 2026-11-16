@@ -47,6 +47,11 @@ const ROW_KEYS: [string, (o: Obj) => string | null][] = [
   ],
   ["record_no", (o) => str(o.record_no)],
   ["row_no", (o) => str(o.row_no)],
+  // 二阶段 demo v15：商品行 / 委托行用 id，P3 候选用查货商品 ref，入仓号分组用 wh，逐字段的变更与合计更新用 f
+  ["id", (o) => str(o.id)],
+  ["ref", (o) => str(o.ref)],
+  ["wh", (o) => str(o.wh)],
+  ["f", (o) => str(o.f)],
 ];
 
 const isObj = (v: unknown): v is Obj => !!v && typeof v === "object" && !Array.isArray(v);
@@ -149,12 +154,15 @@ function versionText(r: Run, label?: string | null) {
 const imagesText = (r: Run) => (r.attached_images === null || r.attached_images === undefined ? "未开启" : `${r.attached_images.length} 张 ${r.attached_images.map((i) => i.sha256.slice(0, 6)).join(",")}`);
 const preprocessText = (r: Run) => (r.input_manifest ? [...new Set(r.input_manifest.files.map((f) => f.preprocessor_version ?? "未知"))].join("；") || "无原件" : "未记录（v1.1 之前）");
 
+/** 输出来自真实模型调用：模型运行本身，或对模型运行的「重新整理」（只改显示，原始输出和请求记录都是那次运行的） */
+export const fromModel = (r: Run) => r.mode === "MODEL_RUN" || (r.mode === "REPLAY" && !!r.model_name);
+
 /**
  * 严格同条件判定（R-07）：同一构造输入、同一附带图片、同一预处理版本、同一输入构造器、同一模型与参数。
- * 只有两边都是真实模型运行才适用；判不出（缺记录）的项也算不满足，不默认相同。
+ * 只有两边的输出都来自真实模型调用才适用；判不出（缺记录）的项也算不满足，不默认相同。
  */
 export function strictConditions(a: Run, b: Run): { applicable: boolean; strict: boolean; reasons: string[] } {
-  if (a.mode !== "MODEL_RUN" || b.mode !== "MODEL_RUN") return { applicable: false, strict: false, reasons: ["至少一方不是真实模型运行（仅渲染 / 重新整理没有请求），只能比较输出"] };
+  if (!fromModel(a) || !fromModel(b)) return { applicable: false, strict: false, reasons: ["至少一方不是真实模型运行（仅渲染没有请求），只能比较输出"] };
   const reasons: string[] = [];
   const same = (name: string, x: unknown, y: unknown) => {
     if (x === undefined || x === null || y === undefined || y === null) reasons.push(`${name}：至少一方未记录`);
@@ -181,7 +189,7 @@ export function inputComparability(a: Run, b: Run): { comparable: boolean; reaso
     if ((!a.input_snapshot_id && !a.built_input_hash) || (!b.input_snapshot_id && !b.built_input_hash)) reasons.push("至少一方没有输入记录（例如粘贴的输出）");
     else reasons.push("两次运行用的输入不同（样本或输入快照不同）");
   }
-  if (a.mode === "MODEL_RUN" && b.mode === "MODEL_RUN") {
+  if (fromModel(a) && fromModel(b)) {
     if (!a.input_manifest || !b.input_manifest) reasons.push("至少一方没有预处理记录（v1.1 之前的运行）");
     else if (preprocessText(a) !== preprocessText(b)) reasons.push("预处理版本不同");
   }

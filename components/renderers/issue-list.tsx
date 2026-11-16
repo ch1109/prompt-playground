@@ -53,11 +53,15 @@ export function IssueList({ issues }: { issues: IssueView[] }) {
               <button
                 data-issue-id={i.id}
                 onClick={() => pick(i)}
+                title={i.target?.rowId ? `定位：${i.target.rowId}${i.target.fieldKey ? " / " + i.target.fieldKey : ""}` : "没有具体位置（一般提醒）"}
                 className={cx("flex w-full items-start gap-2 px-3 py-1.5 text-left hover:bg-ink-800/60", sel.issueId === i.id && "bg-accent/[0.07]")}
               >
-                <Badge tone={SEV_TONE[i.severity ?? "UNKNOWN"]} title={`严重度：${i.severity ?? "UNKNOWN"}（模型没给出时为未分级）`}>
-                  {SEV_LABEL[i.severity ?? "UNKNOWN"]}
-                </Badge>
+                {/* 模型没给严重度时不贴「未分级」，避免每条都挂同一个标签 */}
+                {i.severity && i.severity !== "UNKNOWN" && (
+                  <Badge tone={SEV_TONE[i.severity]} title={`严重度：${i.severity}`}>
+                    {SEV_LABEL[i.severity]}
+                  </Badge>
+                )}
                 {verdict && (
                   <span data-testid="issue-verdict">
                     <Badge tone={verdict === "ISSUE_FALSE_POSITIVE" ? "mute" : "ok"}>{ISSUE_VERDICT_LABEL[verdict]}</Badge>
@@ -67,7 +71,8 @@ export function IssueList({ issues }: { issues: IssueView[] }) {
                   <span className="break-words" title={`类型：${i.type}`}>{i.summary}</span>
                   {i.detail && <span className="block text-[11px] text-ink-400">{i.detail}</span>}
                   <span className="block text-[10.5px] text-ink-600">
-                    {ORIGIN_LABEL[i.origin]} · {i.target?.rowId ? `定位 ${i.target.rowId}${i.target.fieldKey ? " / " + i.target.fieldKey : ""}` : "无具体位置（一般警告）"} · {i.sourceRefIds.length ? `${i.sourceRefIds.length} 个来源` : "未提供来源"}
+                    {ORIGIN_LABEL[i.origin]}
+                    {i.sourceRefIds.length ? ` · ${i.sourceRefIds.length} 个来源` : ""}
                   </span>
                 </span>
               </button>

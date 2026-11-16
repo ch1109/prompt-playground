@@ -325,7 +325,8 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
     actual_prompt: { system: redactSecrets(input.system), user: redactSecrets(user) },
     started_at: started,
     estimated_cost: null,
-    label: input.label ?? `${info.model} 运行`,
+    // 默认用输入名做标签：历史里能按输入搜到；模型名另有一列
+    label: input.label ?? (snapshot.label || `${info.model} 运行`),
     input_builder_id: `${built.builderId}@${INPUT_BUILDER_VERSION}`,
     input_builder_warnings: built.warnings,
     prompt_source: { system: input.system, user_template: input.userTemplate },
@@ -353,18 +354,23 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
   const providerHost = info.baseUrlHost ?? info.provider;
   let egress: Run["egress"];
   const egressField = () => (egress ? { egress } : {});
-  const cancelled = () =>
-    finishRun({
+  // 取消时保留已收到的回答和思考：用户常常是因为模型兜圈子才取消，正需要看它卡在哪
+  const cancelled = () => {
+    const got = live.get(runId);
+    const raw = redactSecrets(got?.content ?? "");
+    return finishRun({
       ...common,
       ...noResult,
       ended_at: new Date().toISOString(),
       latency_ms: Date.now() - Date.parse(started),
       status: "CANCELLED",
-      raw_response: "",
-      raw_response_hash: sha256(""),
+      raw_response: raw,
+      raw_response_hash: sha256(raw),
+      reasoning_content: got?.reasoning ? redactSecrets(got.reasoning) : null,
       ...egressField(),
       error: { code: "CANCELLED", message: "用户取消了这次运行（服务商可能已开始处理并计费）" },
     });
+  };
   return {
     runId,
     done: finishModelRun().finally(() => {
@@ -408,7 +414,7 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
 
       if (!result.ok) {
         const raw = result.partialRaw ?? "";
-        return finishRun({ ...done, ...noResult, status: "MODEL_ERROR", raw_response: raw, raw_response_hash: sha256(raw), error: { code: result.code, message: result.message } });
+        return finishRun({ ...done, ...noResult, status: "MODEL_ERROR", raw_response: raw, raw_response_hash: sha256(raw), reasoning_content: result.partialReasoning ?? null, error: { code: result.code, message: result.message } });
       }
 
       const finishReason = typeof result.responseMeta.finish_reason === "string" ? result.responseMeta.finish_reason : null;

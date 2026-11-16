@@ -115,6 +115,8 @@ export interface SnapshotListItem {
   /** 到期时间；null = 永不到期 */
   expires_at: string | null;
   source_ids: { customer_id?: string; task_id?: string; batch_ids?: string[]; fixture_id?: string; excluded_file_ids?: string[] };
+  /** 导入时的提醒（例如扫描件没有文字层） */
+  warnings: string[];
 }
 
 export interface ProviderInfoDTO {

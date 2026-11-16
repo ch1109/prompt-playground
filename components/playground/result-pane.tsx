@@ -25,6 +25,34 @@ import { JsonTree, RawText } from "./json-tree";
 import { InputCoverage } from "./input-coverage";
 import { RunEvidencePanel } from "./run-evidence-panel";
 
+/** 表格位置的中文说法：「委托商品行 · 第 4 行 · 产地」；找不到表时返回 null */
+function placeText(vm: ViewModel | null | undefined, tableId?: string | null, rowId?: string | null, fieldKey?: string | null): string | null {
+  const t = vm?.tables.find((x) => x.id === tableId);
+  if (!t) return null;
+  const i = t.rows.findIndex((r) => r.id === rowId);
+  const col = fieldKey ? t.columns.find((c) => c.key === fieldKey) : undefined;
+  return [t.title, i >= 0 ? `第 ${i + 1} 行` : rowId, col?.title ?? fieldKey].filter(Boolean).join(" · ");
+}
+
+/** 标注里存的模型原值是 JSON 文本（如 "\"中国\""）：字符串去掉引号显示 */
+function plainValue(v: string): string {
+  try {
+    const x: unknown = JSON.parse(v);
+    return typeof x === "string" ? x || "（空）" : v;
+  } catch {
+    return v;
+  }
+}
+
+/** 只适用于 P3（候选与关系）的错误归因 */
+const P3_ONLY_CATEGORIES = new Set(["CANDIDATE_RECALL_ERROR", "RELATION_SELECTION_ERROR"]);
+
+/** 这些状态下方已有横幅说明，右上角不再重复显示状态标签 */
+const BANNER_STATUSES = new Set(["RUNNING", "MODEL_ERROR", "CANCELLED"]);
+
+/** 思考超过这个字数就提示可能在兜圈子（常见的识别任务思考 1～2 万字） */
+const LONG_THINKING = 60000;
+
 // 平时只看「结果」和「原始输出」；结构校验、运行信息、输入覆盖都收在「详情」
 const TABS: { id: ResultTab; label: string }[] = [
   { id: "visual", label: "结果" },
@@ -83,6 +111,7 @@ function RunningBanner({ run, live, onCancel }: { run: RunDetail["run"]; live?: 
     <Banner tone="info">
       <span data-testid="running-banner" title={`${limit ? `超过 ${limit} 秒没有新内容会判定超时；` : ""}结果返回后自动显示，刷新或关闭页面不影响这次运行`}>
         {text} 已等待 {secondsSince(now, run.started_at)} 秒{limit && idle >= 15 ? `，其中已有 ${idle} 秒没有新内容（${limit} 秒没有新内容会判定超时）` : ""}。
+        {live?.phase === "thinking" && live.reasoning.length > LONG_THINKING && <span data-testid="long-thinking">思考比平常长很多，可能在反复兜圈子；不想等可以取消，已想的内容会保留。</span>}
       </span>
       {onCancel && (
         <Btn tone="danger" className="ml-2" onClick={() => onCancel(run.run_id)} title="停止等待模型结果；服务商可能已开始处理并计费">
@@ -171,7 +200,10 @@ export function ResultPane({
   const tab = useStudio((s) => s.resultTab);
   const setStore = useStudio((s) => s.set);
   const evidenceOpen = useStudio((s) => s.evidenceOpen);
+  const selection = useStudio((s) => s.selection);
   const run = detail?.run;
+  // 选中的是模型输出里的字段时，「字段」面板已说明有没有来源（与 FieldVerdict 的显示条件一致）
+  const fieldShown = !!selection.fieldKey && !!selection.jsonPointer && !selection.jsonPointer.startsWith("req:") && run?.parsed_json !== undefined;
   const vm = run?.view_model ?? undefined;
 
   return (
@@ -193,9 +225,9 @@ export function ResultPane({
         {toolbar}
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {/* 有业务视图时，结果头部第一句已说明是哪种结果，这里不再重复 */}
-          {run && !(run.view_model && detail?.renderer) && (
-            <Badge tone={runStatusView(run.status, run.schema_id, run.prompt_kind, run.mode).tone} title={run.status}>
-              {runStatusView(run.status, run.schema_id, run.prompt_kind, run.mode).label}
+          {run && !(run.view_model && detail?.renderer) && !BANNER_STATUSES.has(run.status) && (
+            <Badge tone={runStatusView(run.status, run.schema_id, run.prompt_kind, run.mode, !!run.model_name).tone} title={run.status}>
+              {runStatusView(run.status, run.schema_id, run.prompt_kind, run.mode, !!run.model_name).label}
             </Badge>
           )}
           {run && run.status !== "RUNNING" && (
@@ -280,7 +312,7 @@ export function ResultPane({
             <div className="mt-4 flex flex-col items-center gap-2" data-testid="empty-actions">
               {recentRun && onOpenRun && (
                 <Btn tone="outline" onClick={() => onOpenRun(recentRun.run_id)} data-testid="open-recent-run">
-                  打开最近一次运行：{recentRun.label || recentRun.run_id}（{recentRun.started_at.slice(5, 16).replace("T", " ")} · {runStatusView(recentRun.status, recentRun.schema_id, recentRun.prompt_kind, recentRun.mode).label}）
+                  打开最近一次运行：{recentRun.label || recentRun.run_id}（{recentRun.started_at.slice(5, 16).replace("T", " ")} · {runStatusView(recentRun.status, recentRun.schema_id, recentRun.prompt_kind, recentRun.mode, !!recentRun.model_name).label}）
                 </Btn>
               )}
               {example && onOpenExample && (
@@ -315,11 +347,11 @@ export function ResultPane({
             <CloseBtn onClick={() => setStore("evidenceOpen", false)} label="关闭来源抽屉" />
           </div>
           <div className="min-h-0 flex-1 space-y-3 overflow-auto p-4">
-            <SelectionInfo />
+            <SelectionInfo vm={vm} />
             <IssueVerdict detail={detail!} />
             <FieldVerdict detail={detail!} />
             <AnnotationForm detail={detail!}>
-              {vm ? <EvidenceViewer vm={vm} canPreview={canPreview} snapshotSource={detail?.snapshot?.source_type} request={detail?.request} /> : <p className="text-[12px] text-ink-400">无业务视图，无法定位来源。</p>}
+              {vm ? <EvidenceViewer vm={vm} canPreview={canPreview} snapshotSource={detail?.snapshot?.source_type} request={detail?.request} quietWhenEmpty={fieldShown} /> : <p className="text-[12px] text-ink-400">无业务视图，无法定位来源。</p>}
             </AnnotationForm>
           </div>
         </aside>
@@ -332,8 +364,11 @@ export function ResultPane({
 /** 「结果」：九立预设显示业务视图；其他情况按 JSON 树（回答是 JSON）或文本（回答是文字）显示 */
 function ResultTab({ projectId, detail, canPreview }: { projectId: string; detail: RunDetail; canPreview: boolean }) {
   const run = detail.run;
-  if (run.view_model && detail.renderer) return <BusinessView vm={run.view_model} cfg={detail.renderer} canPreview={canPreview} status={run.status} mode={run.mode} afterHeadline={<RuleCheck detail={detail} />} />;
-  if (run.status !== "SUCCEEDED") return <Empty>没有可展示的结果，原因见上方提示。</Empty>;
+  // 对模型运行的「重新整理」：上方横幅已说明是重新整理，标题直接说模型运行的结果，不再重复
+  const headMode = run.mode === "REPLAY" && run.model_name ? "MODEL_RUN" : run.mode;
+  if (run.view_model && detail.renderer) return <BusinessView vm={run.view_model} cfg={detail.renderer} canPreview={canPreview} status={run.status} mode={headMode} afterHeadline={<RuleCheck detail={detail} />} />;
+  if (run.status === "MODEL_ERROR" || run.status === "CANCELLED") return <StoppedOutput run={run} />;
+  if (run.status !== "SUCCEEDED") return null;
   if (run.parsed_json !== undefined) {
     if (run.prompt_kind === "GENERIC_JSON") return <GenericJsonResult projectId={projectId} run={run} />;
     return <JsonResult value={run.parsed_json} />;
@@ -341,6 +376,24 @@ function ResultTab({ projectId, detail, canPreview }: { projectId: string; detai
   return (
     <div className="prompt-md max-w-3xl rounded-xl border border-ink-700 bg-ink-900 px-6 py-5" data-testid="result-text">
       <Markdown remarkPlugins={[remarkGfm, remarkBreaks]}>{run.raw_response}</Markdown>
+    </div>
+  );
+}
+
+/** 模型中途停下（取消、超时、断流）：显示停下前已经收到的思考和回答，方便看它卡在哪 */
+function StoppedOutput({ run }: { run: RunDetail["run"] }) {
+  if (!run.raw_response && !run.reasoning_content) return null;
+  const pre = "overflow-auto px-4 py-3 font-mono text-[12px] leading-5 break-words whitespace-pre-wrap";
+  return (
+    <div className="space-y-3" data-testid="partial-output">
+      <p className="text-[12px] text-ink-400">模型停下前已经输出的内容（不完整，没有整理成表格）：</p>
+      {run.reasoning_content && (
+        <details className="rounded-xl border border-ink-700 bg-ink-900">
+          <summary className="cursor-pointer px-4 py-2 text-[12px] text-ink-400">思考过程（{run.reasoning_content.length.toLocaleString()} 字）</summary>
+          <pre className={cx(pre, "max-h-[50vh] pt-0 text-ink-400")}>{run.reasoning_content}</pre>
+        </details>
+      )}
+      {run.raw_response && <pre className={cx(pre, "max-h-[65vh] rounded-xl border border-ink-700 bg-ink-900 text-ink-200")}>{run.raw_response}</pre>}
     </div>
   );
 }
@@ -428,14 +481,15 @@ function GenericJsonResult({ projectId, run }: { projectId: string; run: RunDeta
   );
 }
 
-function SelectionInfo() {
+function SelectionInfo({ vm }: { vm?: ViewModel }) {
   const sel = useStudio((s) => s.selection);
   const setStore = useStudio((s) => s.set);
   if (!sel.jsonPointer && !sel.rowId) return null;
+  const where = placeText(vm, sel.tableId, sel.rowId, sel.fieldKey) ?? (sel.relationId ? "一条对应关系" : sel.rowId) ?? "—";
   return (
     <div className="flex flex-wrap items-center gap-2 text-[11px] text-ink-400">
-      <span>
-        选中：<span className="text-ink-100">{sel.rowId || sel.relationId || "—"}</span>
+      <span title={[sel.tableId, sel.rowId, sel.fieldKey].filter(Boolean).join(" / ") || undefined}>
+        选中：<span className="text-ink-100">{where}</span>
       </span>
       {sel.jsonPointer !== undefined && (
         <button onClick={() => setStore("resultTab", "json")} title={sel.jsonPointer || "(根)"} className="ml-auto text-info hover:underline" data-testid="selection-pointer">
@@ -933,14 +987,16 @@ function AnnotationForm({ detail, children }: { detail: RunDetail; children?: Re
   // 修改旧标注时保留它原来的类型
   if (editing && !choices.includes(editing.issue_type)) choices.push(editing.issue_type);
   const target = [sel.tableId, sel.rowId, sel.fieldKey].filter(Boolean).join(" / ") || sel.relationId || null;
-  /** 标注的「目标」显示：字段 key 换成该列的中文名（找不到列就原样）；原始串放 title */
+  /** 标注的「目标」显示：「表名 · 第几行 · 字段中文名」（对不上就原样）；原始串放 title */
   const targetText = (raw: string | null | undefined) => {
     const parts = raw?.split(" / ") ?? [];
-    const col = parts.length === 3 ? detail.run.view_model?.tables.find((t) => t.id === parts[0])?.columns.find((c) => c.key === parts[2]) : undefined;
-    return col ? `${parts[0]} / ${parts[1]} / ${col.title}` : raw;
+    return (parts.length >= 2 ? placeText(detail.run.view_model, parts[0], parts[1], parts[2]) : null) ?? raw;
   };
   const assessing = type === "ASSESSMENT";
   const done = detail.annotations.find((a) => a.target_json_pointer === sel.jsonPointer && a.assessment === "CORRECT");
+  // 这个字段已经标过「错」/「不确定」：按钮上直接显示，不用往下翻已有标注
+  const markedWrong = !editing && detail.annotations.some((a) => a.target_json_pointer === sel.jsonPointer && a.assessment === "WRONG");
+  const markedUnsure = !editing && detail.annotations.some((a) => a.target_json_pointer === sel.jsonPointer && a.assessment === "UNSURE");
   const needCategory = assessing && assess === "WRONG" && !category;
 
   // 换了选中位置就收起新增表单（修改中的不动）
@@ -1037,11 +1093,11 @@ function AnnotationForm({ detail, children }: { detail: RunDetail; children?: Re
               <Btn tone="outline" onClick={editing ? () => setAssess("CORRECT") : markCorrect} disabled={busy || (!editing && !!done)} aria-pressed={!!editing && assess === "CORRECT"} data-testid="btn-mark-correct" className={cx(editing && assess === "CORRECT" && "border-verify text-verify")}>
                 {!editing && done ? "✓ 已标为正确" : "✓ 对"}
               </Btn>
-              <Btn tone="outline" onClick={() => setAssess("WRONG")} aria-pressed={assess === "WRONG"} data-testid="btn-mark-wrong" className={cx(assess === "WRONG" && "border-stamp text-stamp")}>
-                ✗ 错
+              <Btn tone="outline" onClick={() => setAssess("WRONG")} aria-pressed={assess === "WRONG"} data-testid="btn-mark-wrong" className={cx((assess === "WRONG" || markedWrong) && "border-stamp text-stamp")} title={markedWrong ? "这个字段已标为错误；再点可以补一条" : undefined}>
+                {markedWrong && assess !== "WRONG" ? "✗ 已标为错误" : "✗ 错"}
               </Btn>
-              <Btn tone="outline" onClick={() => setAssess("UNSURE")} aria-pressed={assess === "UNSURE"} data-testid="btn-mark-unsure" className={cx(assess === "UNSURE" && "border-risk text-risk")}>
-                ? 不确定
+              <Btn tone="outline" onClick={() => setAssess("UNSURE")} aria-pressed={assess === "UNSURE"} data-testid="btn-mark-unsure" className={cx((assess === "UNSURE" || markedUnsure) && "border-risk text-risk")}>
+                {markedUnsure && assess !== "UNSURE" ? "? 已标为不确定" : "? 不确定"}
               </Btn>
             </div>
           )}
@@ -1060,7 +1116,9 @@ function AnnotationForm({ detail, children }: { detail: RunDetail; children?: Re
               {assessing && assess !== "CORRECT" && (
                 <select ref={categoryRef} value={category} onChange={(e) => setCategory(e.target.value)} aria-label="错误归因" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-1 py-0.5 text-[12px]">
                   <option value="">{assess === "WRONG" ? "错在哪？（必选）" : "错在哪？（可选）"}</option>
-                  {Object.entries(CATEGORY_LABEL).map(([k, v]) => (
+                  {Object.entries(CATEGORY_LABEL)
+                    .filter(([k]) => detail.run.prompt_kind === "JIULI_P3" || !P3_ONLY_CATEGORIES.has(k))
+                    .map(([k, v]) => (
                     <option key={k} value={k}>
                       {v}
                     </option>
@@ -1117,7 +1175,7 @@ function AnnotationForm({ detail, children }: { detail: RunDetail; children?: Re
                   </button>
                 </div>
                 {a.error_category && <div>错在：{categoryText(a.error_category)}</div>}
-                {a.model_value != null && <div className="text-ink-400">模型原值：{a.model_value}</div>}
+                {a.model_value != null && <div className="text-ink-400">模型原值：{plainValue(a.model_value)}</div>}
                 {a.expected_value && <div>正确值：{a.expected_value}</div>}
                 {a.note && <div className="text-ink-300">{a.note}</div>}
                 {a.author && <div className="text-[10px] text-ink-600">{a.author} · {a.created_at.slice(0, 19).replace("T", " ")}</div>}

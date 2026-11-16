@@ -20,7 +20,7 @@ export interface ModelRequest {
  */
 export type ModelResult =
   | { ok: true; raw: string; usage: TokenUsage | null; latencyMs: number; responseMeta: Record<string, unknown>; request?: Record<string, unknown>; /** 模型的思考内容全文（服务商返回时才有） */ reasoning?: string | null }
-  | { ok: false; code: string; message: string; latencyMs: number; partialRaw?: string; request?: Record<string, unknown> };
+  | { ok: false; code: string; message: string; latencyMs: number; partialRaw?: string; /** 流式中途失败时已收到的思考内容 */ partialReasoning?: string; request?: Record<string, unknown> };
 
 /**
  * 模型能力声明（R-04）。OpenAI 兼容网关无法自动探测，由 .env.local 显式声明；
