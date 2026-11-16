@@ -7,6 +7,11 @@ export interface ModelRequest {
   /** 随用户消息附带的页面图片（视觉模型）；ref 用于在请求记录里指明是哪个原件的哪一页 */
   images?: { mediaType: string; base64: string; ref?: { file_id: string; page: number | null; sha256: string } }[];
   signal?: AbortSignal;
+  /**
+   * 传了就流式接收：每收到一段新内容回调一次（累计的思考与回答全文），超时改为「多久没有新内容」；
+   * 不传则一次性返回，超时是总时长。
+   */
+  onProgress?: (p: { content: string; reasoning: string }) => void;
 }
 
 /**
@@ -27,8 +32,8 @@ export interface ProviderCapabilities {
   nativePdf: false;
   jsonMode: boolean | null;
   thinking: boolean | null;
-  /** 流式输出：本适配器只用非流式 */
-  streaming: false;
+  /** 流式输出：OpenAI 兼容适配器在运行时流式接收；服务商不支持时按一次性返回处理 */
+  streaming: boolean;
   maxOutputTokens: number | null;
 }
 
@@ -41,6 +46,8 @@ export interface ProviderInfo {
   adapterVersion: string;
   baseUrlHost?: string;
   capabilities: ProviderCapabilities;
+  /** 超时（毫秒）：流式时指多久没有新内容 */
+  timeoutMs?: number;
 }
 
 export interface ProviderAdapter {

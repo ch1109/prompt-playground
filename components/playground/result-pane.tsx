@@ -6,6 +6,7 @@ import type { StoredLayout } from "@/lib/layouts/types";
 import { LayoutView } from "@/components/views/layout-view";
 import { LayoutEditor } from "./layout-editor";
 import { ISSUE_VERDICT_LABEL, issueIdOfTarget, issueSummaryOfTarget, type AnnotationDTO, type FixtureSummary, type RunDetail, type RunListItem } from "@/lib/client/types";
+import type { LiveRun } from "@/lib/runs/service";
 import type { CellState, ViewModel } from "@/lib/contracts/view-model";
 import { explainModelError } from "@/lib/models/error-hints";
 import { getByPointer } from "@/lib/pipeline/json-pointer";
@@ -53,19 +54,87 @@ function Banner({ tone, children }: { tone: "warn" | "bad" | "info"; children: R
   );
 }
 
-/** 已等待秒数（每秒刷新） */
-function Elapsed({ since }: { since: number }) {
+/** 当前时间（每秒刷新） */
+function useNow() {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
-  return <>{Math.max(0, Math.round((now - since) / 1000))}</>;
+  return now;
+}
+
+const secondsSince = (now: number, iso: string) => Math.max(0, Math.round((now - Date.parse(iso)) / 1000));
+
+/** 运行中：说清楚卡在哪一步、等了多久；长时间没有新内容时提示离超时还有多远 */
+function RunningBanner({ run, live, onCancel }: { run: RunDetail["run"]; live?: LiveRun; onCancel?: (runId: string) => void }) {
+  const now = useNow();
+  const limit = live?.idleTimeoutMs ? Math.round(live.idleTimeoutMs / 1000) : null;
+  const idle = live ? secondsSince(now, live.last_activity_at) : 0;
+  const text = !live
+    ? "模型运行中…"
+    : {
+        preparing: "正在把原件转成图片…",
+        waiting: "已发给模型，等它开始回答…",
+        thinking: `模型正在思考…已想了 ${live.reasoning.length.toLocaleString()} 字`,
+        writing: `模型正在输出回答…已收到 ${live.content.length.toLocaleString()} 字`,
+      }[live.phase];
+  return (
+    <Banner tone="info">
+      <span data-testid="running-banner" title={`${limit ? `超过 ${limit} 秒没有新内容会判定超时；` : ""}结果返回后自动显示，刷新或关闭页面不影响这次运行`}>
+        {text} 已等待 {secondsSince(now, run.started_at)} 秒{limit && idle >= 15 ? `，其中已有 ${idle} 秒没有新内容（${limit} 秒没有新内容会判定超时）` : ""}。
+      </span>
+      {onCancel && (
+        <Btn tone="danger" className="ml-2" onClick={() => onCancel(run.run_id)} title="停止等待模型结果；服务商可能已开始处理并计费">
+          取消运行
+        </Btn>
+      )}
+    </Banner>
+  );
+}
+
+/** 文字不断增加时自动滚到底部；用户往上翻看时不打扰 */
+function FollowText({ text, className, testId }: { text: string; className?: string; testId?: string }) {
+  const ref = useRef<HTMLPreElement>(null);
+  const stick = useRef(true);
+  useEffect(() => {
+    if (stick.current && ref.current) ref.current.scrollTop = ref.current.scrollHeight;
+  }, [text]);
+  return (
+    <pre
+      ref={ref}
+      data-testid={testId}
+      onScroll={(e) => {
+        const el = e.currentTarget;
+        stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+      }}
+      className={cx("overflow-auto font-mono text-[12px] leading-5 break-words whitespace-pre-wrap", className)}
+    >
+      {text}
+    </pre>
+  );
+}
+
+/** 运行中边生成边显示：思考过程（思考时展开，开始输出回答后收起）和回答原文 */
+function LiveOutput({ live }: { live?: LiveRun }) {
+  if (!live || (!live.content && !live.reasoning)) return null;
+  return (
+    <div className="space-y-3" data-testid="live-output">
+      {live.reasoning && (
+        <details open={live.phase === "thinking"} className="rounded-xl border border-ink-700 bg-ink-900">
+          <summary className="cursor-pointer px-4 py-2 text-[12px] text-ink-400">思考过程（{live.reasoning.length.toLocaleString()} 字）</summary>
+          <FollowText text={live.reasoning} className="max-h-[40vh] px-4 pb-3 text-ink-400" />
+        </details>
+      )}
+      {live.content && <FollowText text={live.content} testId="live-content" className="max-h-[65vh] rounded-xl border border-ink-700 bg-ink-900 px-4 py-3 text-ink-200" />}
+    </div>
+  );
 }
 
 export function ResultPane({
   projectId,
   detail,
+  live,
   dirty,
   canPreview,
   loading,
@@ -80,6 +149,8 @@ export function ResultPane({
 }: {
   projectId: string;
   detail?: RunDetail;
+  /** 运行中的实时进度（每秒更新） */
+  live?: LiveRun;
   dirty: boolean;
   canPreview: boolean;
   loading: boolean;
@@ -144,18 +215,7 @@ export function ResultPane({
         </div>
       </div>
 
-      {run?.status === "RUNNING" && (
-        <Banner tone="info">
-          <span data-testid="running-banner">
-            模型运行中… 已等待 <Elapsed since={Date.parse(run.started_at)} /> 秒（超时上限约 300 秒）。结果返回后自动显示；刷新或关闭页面不影响这次运行。
-          </span>
-          {onCancel && (
-            <Btn tone="danger" className="ml-2" onClick={() => onCancel(run.run_id)} title="停止等待模型结果；服务商可能已开始处理并计费">
-              取消运行
-            </Btn>
-          )}
-        </Banner>
-      )}
+      {run?.status === "RUNNING" && <RunningBanner run={run} live={live} onCancel={onCancel} />}
       {run?.finish_reason === "length" && (
         <Banner tone="bad"><span title="finish_reason=length">模型的回答太长，被截断了。请在「提示词」页的「运行参数」里把 max_tokens 调大后重新运行。</span></Banner>
       )}
@@ -231,8 +291,9 @@ export function ResultPane({
             </div>
           </div>
         )}
-        {run && tab === "visual" && <ResultTab projectId={projectId} detail={detail!} canPreview={canPreview} />}
-        {run && tab === "json" && <JsonTab detail={detail!} />}
+        {run?.status === "RUNNING" && tab !== "details" && <LiveOutput live={live} />}
+        {run && run.status !== "RUNNING" && tab === "visual" && <ResultTab projectId={projectId} detail={detail!} canPreview={canPreview} />}
+        {run && run.status !== "RUNNING" && tab === "json" && <JsonTab detail={detail!} />}
         {run && tab === "details" && (
           <div className="space-y-5">
             <section>
@@ -436,6 +497,12 @@ function JsonTab({ detail }: { detail: RunDetail }) {
           />
         )}
       </div>
+      {doc === "response" && run.reasoning_content && (
+        <details className="rounded-xl border border-ink-700 bg-ink-900" data-testid="reasoning-content">
+          <summary className="cursor-pointer px-4 py-2 text-[12px] text-ink-400">模型思考过程（{run.reasoning_content.length.toLocaleString()} 字）</summary>
+          <pre className="max-h-[50vh] overflow-auto px-4 pb-3 font-mono text-[12px] leading-5 break-words whitespace-pre-wrap text-ink-400">{run.reasoning_content}</pre>
+        </details>
+      )}
     </div>
   );
 }

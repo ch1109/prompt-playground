@@ -237,6 +237,23 @@ export async function previewModelRun(input: { promptId: string; snapshotId: str
 /** 运行中调用的中止开关（按 runId）；放在 globalThis，开发模式热更新后仍是同一份 */
 const running = ((globalThis as unknown as { __studioRunAborts?: Map<string, AbortController> }).__studioRunAborts ??= new Map());
 
+/**
+ * 运行中的实时进度（只在内存里，结束即删；最终结果以 Run 记录为准）。
+ * phase：preparing 正在把原件转成图片 / waiting 已发出、等模型开始 / thinking 正在思考 / writing 正在输出回答。
+ */
+export interface LiveRun {
+  phase: "preparing" | "waiting" | "thinking" | "writing";
+  content: string;
+  reasoning: string;
+  /** 多久没有新内容判定超时（毫秒） */
+  idleTimeoutMs: number | null;
+  last_activity_at: string;
+}
+const live = ((globalThis as unknown as { __studioRunLive?: Map<string, LiveRun> }).__studioRunLive ??= new Map());
+export function liveRun(runId: string): LiveRun | undefined {
+  return live.get(runId);
+}
+
 /** 取消运行中的调用：停止等待模型，Run 记为 CANCELLED。服务商可能已开始处理并计费。 */
 export function cancelRun(runId: string) {
   const ac = running.get(runId);
@@ -329,6 +346,8 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
   const builderWarnings = built.warnings;
   const abort = new AbortController();
   running.set(runId, abort);
+  const setLive = (p: Partial<LiveRun>) => live.set(runId, { ...live.get(runId)!, ...p, last_activity_at: new Date().toISOString() });
+  live.set(runId, { phase: attach ? "preparing" : "waiting", content: "", reasoning: "", idleTimeoutMs: info.timeoutMs ?? null, last_activity_at: started });
   // 外发记录：材料真正交给服务商前才写入，没发出请求的 Run 没有这一项
   const authorizedBy = input.authorizedBy ?? "unknown";
   const providerHost = info.baseUrlHost ?? info.provider;
@@ -346,7 +365,13 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
       ...egressField(),
       error: { code: "CANCELLED", message: "用户取消了这次运行（服务商可能已开始处理并计费）" },
     });
-  return { runId, done: finishModelRun().finally(() => running.delete(runId)) };
+  return {
+    runId,
+    done: finishModelRun().finally(() => {
+      running.delete(runId);
+      live.delete(runId);
+    }),
+  };
 
   async function finishModelRun(): Promise<Run> {
     try {
@@ -357,7 +382,15 @@ export function startModelRun(input: ModelRunInput): { runId: string; done: Prom
       if (abort.signal.aborted) return cancelled();
       const images = pages?.images.map((i) => ({ mediaType: i.media_type, base64: i.base64, ref: { file_id: i.file_id, page: i.page, sha256: i.sha256 } }));
       egress = { provider_host: providerHost, kinds: egressKinds(images?.length ?? 0), authorized_by: authorizedBy, consent_at: authorizedBy.startsWith("agent:") ? null : (getEgressConsent(input.projectId, providerHost)?.confirmed_at ?? null) };
-      const result = await provider.complete({ system: input.system, user, params: input.params, images, signal: abort.signal });
+      setLive({ phase: "waiting" });
+      const result = await provider.complete({
+        system: input.system,
+        user,
+        params: input.params,
+        images,
+        signal: abort.signal,
+        onProgress: (p) => setLive({ phase: p.content ? "writing" : p.reasoning ? "thinking" : "waiting", content: p.content, reasoning: p.reasoning }),
+      });
       if (abort.signal.aborted) return cancelled();
       const done = {
         ...common,

@@ -337,7 +337,7 @@ test("刷新页面不丢工作区：草稿、输入选择、当前结果都恢�
   expect(consoleErrors).toEqual([]);
 });
 
-test("模型运行中显示已等待秒数；刷新页面后仍接着等待并自动显示结果；截断有明确提示", async ({ page }) => {
+test("模型运行中显示进度与边生成边显示的回答；刷新页面后仍接着等待并自动显示结果；截断有明确提示", async ({ page }) => {
   // 用一个已有的 Run 模拟"刚开始的模型运行"：finished 之前查询返回 RUNNING，之后返回真实结果（并标为截断）
   await renderFixture(page, "jiuli-p1", "v3/SC-08-audit/P1");
   const runs = await page.request.get("/api/runs?project=jiuli&promptId=jiuli-p1").then((r) => r.json());
@@ -357,9 +357,16 @@ test("模型运行中显示已等待秒数；刷新页面后仍接着等待并�
     r.fulfill({ json: { ok: true, data: { provider: "openai-compatible@fake", model: "fake", configured: true, supportsFileInput: false, adapterVersion: "1.0.0" }, request_id: "x" } }),
   );
   await page.route("**/api/runs", (r) => (r.request().method() === "POST" ? ((started = true), r.fulfill({ status: 202, json: { ok: true, data: { run_id: runId, status: "RUNNING" }, request_id: "x" } })) : r.continue()));
+  // 实时进度：结束前返回「正在输出」和已收到的半截回答
+  await page.route(`**/api/runs/${runId}/live`, (r) =>
+    r.fulfill({ json: { ok: true, data: finished ? { running: false } : { running: true, phase: "writing", content: '{"schema_version":', reasoning: "先看委托书", idleTimeoutMs: 120000, last_activity_at: new Date().toISOString() }, request_id: "x" } }),
+  );
   await page.reload();
   await page.getByTestId("btn-run").click();
   await expect(page.getByTestId("running-banner")).toContainText("已等待");
+  await expect(page.getByTestId("running-banner")).toContainText("正在输出回答");
+  await expect(page.getByTestId("live-content")).toContainText('{"schema_version":');
+  await expect(page.getByText("没有可展示的结果")).toHaveCount(0);
   // 运行中不能重复发起
   await expect(page.getByTestId("btn-run")).toBeDisabled();
   // 运行中刷新页面：仍显示这条运行，结束后自动显示结果

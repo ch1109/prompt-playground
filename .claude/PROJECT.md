@@ -62,6 +62,17 @@
 
   做法：比较结果时先排除这些差异。
 - **P3/P4 不能直接用原件跑。** 原因：`buildFromUpload` 只能构造 P1/P2 的输入。做法：用 P1/P2 的输出拼 JSON，通过 `POST /api/snapshots/import`（`promptKind` + `requestText`）导入后再运行。P1 上传时至少要有一份材料类型是 `ORDER`，只有发票、箱单的批次跑不了 P1。
+- **运行中看不到模型输出，超时还会掐断正在思考的模型。** 现象：2026-11-16 用户跑 P1，等 120 秒后超时失败，界面却写着「超时上限约 300 秒」。原因有三：
+  - 当时是一次性返回，生成完之前什么都看不到。
+  - 超时按总时长算。qwen3.6 默认会先思考 5000 token 左右，单是思考就可能超过 120 秒。
+  - 界面上的 300 秒是写死的，实际值是 `.env.local` 里的 `MODEL_TIMEOUT_MS`。
+
+  做法（已完成）：
+  - 模型运行改为流式接收（`stream: true` + `stream_options.include_usage`）。思考和回答的累计全文暂存在服务端内存（`lib/runs/service.ts` 的 `liveRun`），页面每秒读一次 `GET /api/runs/[id]/live`。
+  - 超时改为「多久没有新内容」。
+  - 服务商不支持流式、直接返回 JSON 时，按一次性返回处理。
+  - 进度只在内存里，结束即删，最终结果仍以 Run 记录为准。
+- **v15 输出省略字段是正常的。** v15 约定原件没有的字段就不写，所以表格里不能显示「缺失键」。现在模型没写的字段统一显示「—」（悬停说明），与空字符串「（空）」、`null` 区分。
 - **真实运行前要先确认外发。** 现象：`POST /api/runs` 返回 409 `EGRESS_NOT_CONFIRMED`。做法：先 `POST /api/egress`，并带本机 Origin。jiuli 项目对 `dashscope.aliyuncs.com` 已于 2026-11-16 确认。
 
 ## 5. 待办与已知限制

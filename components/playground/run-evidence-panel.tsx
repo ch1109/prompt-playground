@@ -9,13 +9,13 @@ const QUALITY: Record<RunEvidence["capture"]["quality"], { label: string; tone: 
   NOT_APPLICABLE: { label: "未调用模型，不适用", tone: "mute" },
 };
 
-/** 思考内容：只看请求里有没有设置、响应里有没有，内容本身不保存 */
+/** 思考内容：请求里有没有设置、响应里有没有；全文保存在 Run 里（较早的运行没有保存） */
 function thinkingText(run: Run): string {
   const meta = run.response_meta;
   if (!meta) return "未记录";
   const chars = meta.reasoning_content_chars;
   const asked = run.request_actual && Object.keys(run.request_actual).some((k) => /think|reason/i.test(k)) ? "请求中设置了思考参数" : "请求未设置思考参数（服务商默认）";
-  return `${asked}；${typeof chars === "number" ? `响应带有思考内容 ${chars.toLocaleString()} 字（未保存）` : "响应中没有思考内容"}`;
+  return `${asked}；${typeof chars === "number" ? `响应带有思考内容 ${chars.toLocaleString()} 字（${run.reasoning_content ? "全文见「原始输出」" : "这次运行较早，没有保存全文"}）` : "响应中没有思考内容"}`;
 }
 
 /** 运行证据（v1.3 §5）：这条运行真实保存了哪些证据、缺了什么、处在哪种诊断状态 */

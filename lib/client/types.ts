@@ -1,5 +1,6 @@
 import type { RendererConfig } from "@/lib/contracts/renderer-config";
 import type { PromptKind, Run } from "@/lib/contracts/run";
+import type { LiveRun } from "@/lib/runs/service";
 
 export interface PromptDef {
   prompt_id: string;
@@ -66,6 +67,9 @@ export interface AnnotationDTO {
   revision?: number;
   revisions?: { revision: number; action: "CREATE" | "UPDATE" | "DELETE"; body: Omit<AnnotationDTO, "revision" | "revisions">; author: string | null; created_at: string }[];
 }
+
+/** GET /api/runs/[id]/live：运行中的实时进度 */
+export type LiveRunDTO = { running: false } | ({ running: true } & LiveRun);
 
 export interface RunDetail {
   run: Run & { label?: string; input_builder_id?: string; input_builder_warnings?: string[] };

@@ -11,7 +11,7 @@ const BY_CODE: Record<string, ErrorHint> = {
   MODEL_HTTP_403: { title: "API 密钥没有调用该模型的权限", advice: "确认密钥所属账号已开通该模型，或点右上角的模型名称，换一个有权限的密钥。" },
   MODEL_HTTP_404: { title: "找不到模型或接口地址", advice: "检查模型名称是否拼写正确（区分大小写）、服务地址是否为 OpenAI 兼容地址。点右上角的模型名称可以修改。" },
   MODEL_HTTP_429: { title: "调用频率或额度超出限制", advice: "稍等片刻再重试；若持续出现，检查服务商账户的额度与限流设置。" },
-  MODEL_TIMEOUT: { title: "模型在超时上限内没有返回", advice: "大样本或附带图片时可能较慢：可减少输入、调小 max_tokens；也可调大 .env.local 中的 MODEL_TIMEOUT_MS 后重启服务。" },
+  MODEL_TIMEOUT: { title: "模型长时间没有新内容，判定超时", advice: "可能是服务商卡住或网络中断，直接重试即可；已收到的部分回答（如有）在「原始输出」里。反复出现可调大 .env.local 中的 MODEL_TIMEOUT_MS（多少毫秒没有新内容算超时）后重启服务。" },
   MODEL_NETWORK_ERROR: { title: "网络连接失败，没能连上服务商", advice: "检查本机网络、代理设置，以及服务地址是否可以访问（点右上角的模型名称可修改）。" },
   MODEL_STREAM_BROKEN: { title: "响应传输中断", advice: "通常是网络波动，直接重试即可。" },
   MODEL_BAD_ENVELOPE: { title: "服务商返回的内容不完整或格式不对", advice: "可能是传输被截断或服务商异常，重试一次；持续出现请检查服务地址是否为 OpenAI 兼容接口。" },

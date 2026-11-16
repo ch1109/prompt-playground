@@ -60,7 +60,7 @@ describe("M1-2 新 Run 采集完整执行证据", () => {
     const req = JSON.stringify(run.request_actual);
     expect(req).not.toContain("base64,");
     expect(req).not.toContain(API_KEY);
-    expect(run.request_actual).toMatchObject({ endpoint: "/chat/completions", model: "fake-model", temperature: 0, stream: false });
+    expect(run.request_actual).toMatchObject({ endpoint: "/chat/completions", model: "fake-model", temperature: 0, stream: true });
     const user = (run.request_actual!.messages as { role: string; content: unknown }[])[1];
     const parts = user.content as Record<string, unknown>[];
     expect(parts[0]).toMatchObject({ type: "text", text_chars: run.actual_prompt!.user.length, sha256: expect.stringMatching(/^[0-9a-f]{64}$/) });

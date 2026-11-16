@@ -3,7 +3,7 @@ import { useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { api, ApiError } from "@/lib/client/api";
 import { withEgressConfirm as confirmEgress } from "@/lib/client/egress-confirm";
-import type { CapabilityDTO, FixtureSummary, PromptDef, PromptVersionDTO, ProviderInfoDTO, RunDetail, RunListItem, SnapshotListItem } from "@/lib/client/types";
+import type { CapabilityDTO, FixtureSummary, LiveRunDTO, PromptDef, PromptVersionDTO, ProviderInfoDTO, RunDetail, RunListItem, SnapshotListItem } from "@/lib/client/types";
 import type { PromptKind } from "@/lib/contracts/run";
 import { emptyWorkspace, inputSignature, runSnapshotId, useStudio, type WorkMode } from "@/lib/state/studio-store";
 import { Badge, Btn, CloseBtn, cx, Empty, runStatusView, SEG_TRACK, segItem } from "@/components/ui";
@@ -212,18 +212,39 @@ export function Playground({ projectId }: { projectId: string }) {
   const moreRuns = runs.length >= runLimit;
   // 打开的 Run 仍在运行（例如刷新前发起）：轮询直到结束后自动显示结果
   const runningRunId = detail?.run.status === "RUNNING" ? detail.run.run_id : null;
+  // 运行中每秒取一次实时进度（思考与回答边生成边显示）；进度结束就立即读最终结果
+  const [live, setLive] = useState<LiveRunDTO | null>(null);
   useEffect(() => {
+    setLive(null);
     if (!runningRunId) return;
-    const t = setInterval(() => {
+    let alive = true;
+    const check = () =>
       api<RunDetail>(`/api/runs/${runningRunId}`)
         .then((d) => {
-          if (d.run.status === "RUNNING") return;
+          if (!alive || d.run.status === "RUNNING") return;
           s.putRun(d);
           loadRuns();
         })
         .catch(() => {});
-    }, 3000);
-    return () => clearInterval(t);
+    const tick = () =>
+      api<LiveRunDTO>(`/api/runs/${runningRunId}/live`)
+        .then((l) => {
+          if (!alive) return;
+          setLive(l);
+          if (!l.running) {
+            clearInterval(fast);
+            check();
+          }
+        })
+        .catch(() => {});
+    tick();
+    const fast = setInterval(tick, 1000);
+    const slow = setInterval(check, 3000);
+    return () => {
+      alive = false;
+      clearInterval(fast);
+      clearInterval(slow);
+    };
   }, [runningRunId, s, loadRuns]);
 
   // 历史中有运行中的记录（可能来自其他窗口或刷新前）：定时刷新，状态不停在「运行中」
@@ -959,6 +980,7 @@ export function Playground({ projectId }: { projectId: string }) {
                     <ResultPane
                       projectId={projectId}
                       detail={detail}
+                      live={live?.running ? live : undefined}
                       dirty={dirty}
                       canPreview={capability?.status === "CONNECTED_DEMO_FILES"}
                       loading={busy}
