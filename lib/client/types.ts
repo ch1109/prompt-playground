@@ -114,7 +114,7 @@ export interface SnapshotListItem {
   usable_kinds: string[];
   /** 到期时间；null = 永不到期 */
   expires_at: string | null;
-  source_ids: { customer_id?: string; task_id?: string; batch_ids?: string[]; fixture_id?: string; excluded_file_ids?: string[] };
+  source_ids: { customer_id?: string; task_id?: string; batch_ids?: string[]; fixture_id?: string; excluded_file_ids?: string[]; p3_run_id?: string; order_row_id?: string };
   /** 导入时的提醒（例如扫描件没有文字层） */
   warnings: string[];
 }

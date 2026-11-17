@@ -64,7 +64,7 @@
   - Studio 不传 `enable_thinking`。
 
   做法：比较结果时先排除这些差异。
-- **P3/P4 不能直接用原件跑。** 原因：`buildFromUpload` 只能构造 P1/P2 的输入。做法（2026-11-17 起界面可做）：P3「更换输入 → 用 P1+P2 生成」，P4 在 P3 结果页点「生成 P4 输入」或「用 P3 生成」。拼法在 `lib/input-builders/jiuli-chain.ts`，与 2026-11-16 测试脚本一致；服务在 `lib/runs/derive-inputs.ts`，接口 `GET/POST /api/snapshots/derive`。生成的快照 `source_type` 为 `DERIVED`，`source_ids` 记录来源运行（P4 靠 P3 快照里的 `p1_run_id`/`p2_run_id` 找回 P1/P2，手工粘贴的 P3 输入不能继续生成 P4）。P1 上传时至少要有一份材料类型是 `ORDER`，只有发票、箱单的批次跑不了 P1。
+- **P3/P4 不能直接用原件跑。** 原因：`buildFromUpload` 只能构造 P1/P2 的输入。做法（2026-11-17 起界面可做）：P3「更换输入 → 用 P1+P2 生成」，P4 在 P3 结果页点「生成 P4 输入」或「用 P3 生成」。拼法在 `lib/input-builders/jiuli-chain.ts`，与 2026-11-16 测试脚本一致；服务在 `lib/runs/derive-inputs.ts`，接口 `GET/POST /api/snapshots/derive`。生成的快照 `source_type` 为 `DERIVED`，`source_ids` 记录来源运行（P4 靠 P3 快照里的 `p1_run_id`/`p2_run_id` 找回 P1/P2，手工粘贴的 P3 输入不能继续生成 P4）。P4 当前输入属于同一次 P3 生成的一组（`source_ids.p3_run_id` 相同，按 `order_row_id` 每行取一份）且多于 1 份时，顶栏出现「全部运行（N 份）」：在浏览器里同时发出 N 个 `POST /api/runs`（服务端本来就并发后台跑），先发当前这份并打开它。P1 上传时至少要有一份材料类型是 `ORDER`，只有发票、箱单的批次跑不了 P1。
 - **运行中看不到模型输出，超时还会掐断正在思考的模型。** 现象：2026-11-16 用户跑 P1，等 120 秒后超时失败，界面却写着「超时上限约 300 秒」。原因有三：
   - 当时是一次性返回，生成完之前什么都看不到。
   - 超时按总时长算。qwen3.6 默认会先思考 5000 token 左右，单是思考就可能超过 120 秒。

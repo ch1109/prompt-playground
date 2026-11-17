@@ -102,9 +102,15 @@ export function Playground({ projectId }: { projectId: string }) {
   /** 还没有能真实运行的输入（示例在运行时才补建快照，选了就算有；粘贴的是模型输出，只能仅渲染） */
   const noRunInput = ws.inputMode === "fixture" ? !ws.fixtureId : !runSnapshotId(ws);
   const derivable = prompt?.prompt_kind === "JIULI_P3" || prompt?.prompt_kind === "JIULI_P4";
+  // 当前输入是同一次 P3 生成的一组 P4 输入之一：顶栏可「全部运行」。每个委托行一份，同一行重复生成过的取当前选中的或最新的
+  const curSnap = snapshots.find((x) => x.snapshot_id === runSnapshotId(ws));
+  const groupP3 = prompt?.prompt_kind === "JIULI_P4" ? curSnap?.source_ids.p3_run_id : undefined;
+  const p4Group = groupP3
+    ? [...new Map([...snapshots.filter((x) => x.source_ids.p3_run_id === groupP3).reverse(), curSnap!].map((x) => [x.source_ids.order_row_id, x.snapshot_id])).values()]
+    : [];
   const emptyHint =
     (!noRunInput
-      ? `已选好输入，点右上角「运行模型」开始${prompt?.prompt_kind === "GENERIC_JSON" ? "运行" : "识别"}${ws.inputMode === "fixture" ? "；也可以点「仅渲染」直接看示例结果" : ""}。`
+      ? `已选好输入，点右上角「运行模型」开始${prompt?.prompt_kind === "GENERIC_JSON" ? "运行" : "识别"}${ws.inputMode === "fixture" ? "；也可以点「仅渲染」直接看示例结果" : ""}${p4Group.length > 1 ? `；这次 P3 一共生成了 ${p4Group.length} 份输入，可以点「全部运行」一起跑` : ""}。`
       : derivable
       ? `${mode === "check" ? "点上方「更换输入」" : "在「输入」里"}用${prompt?.prompt_kind === "JIULI_P3" ? " P1 和 P2 " : " P3 "}的运行结果生成输入，再点右上角「运行模型」；也可以选一个示例点「仅渲染」。`
       : mode === "check"
@@ -393,6 +399,11 @@ export function Playground({ projectId }: { projectId: string }) {
 
   const withEgressConfirm = <T,>(call: () => Promise<T>) => confirmEgress(projectId, call);
 
+  const startRun = (w: typeof ws, snapshotId: string) =>
+    api<{ run_id: string }>("/api/runs", {
+      json: { mode: "MODEL_RUN", projectId, promptId, snapshotId, system: w.system, userTemplate: w.userTemplate, promptVersionId: w.versionId, params: w.params, attachImages: w.attachImages ?? undefined, model: w.model },
+    });
+
   async function modelRun() {
     setError(null);
     setBusy(true);
@@ -410,11 +421,7 @@ export function Playground({ projectId }: { projectId: string }) {
       }
       const snapshotId = runSnapshotId(w);
       if (!snapshotId) throw new Error("还没有可以发给模型的输入：请上传文件、选一个能真实运行的示例或历史输入；粘贴的请求可先点「把请求存为输入」");
-      const run = await withEgressConfirm(() =>
-        api<{ run_id: string }>("/api/runs", {
-          json: { mode: "MODEL_RUN", projectId, promptId, snapshotId, system: w.system, userTemplate: w.userTemplate, promptVersionId: w.versionId, params: w.params, attachImages: w.attachImages ?? undefined, model: w.model },
-        }),
-      );
+      const run = await withEgressConfirm(() => startRun(w, snapshotId));
       if (!run) return;
       // 服务端登记 RUNNING 后立即返回：先打开这条 Run（ID 存入工作区，刷新也能接上），结果由轮询自动显示
       await openRun(run.run_id, { sig: inputSignature(w, "MODEL_RUN"), mode: "MODEL_RUN" });
@@ -423,6 +430,26 @@ export function Playground({ projectId }: { projectId: string }) {
       setError(errorInfo(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  /** 这一组 P4 输入用同样的提示词和参数同时运行：打开当前输入的那一次，其余在运行历史里 */
+  async function runAll() {
+    setError(null);
+    setBusy(true);
+    setNarrowPane("result");
+    const cur = runSnapshotId(ws)!;
+    try {
+      // 第一次发给这个服务商要先确认；确认后其余几份一起发
+      const first = await withEgressConfirm(() => startRun(ws, cur));
+      if (!first) return;
+      await openRun(first.run_id, { sig: inputSignature(ws, "MODEL_RUN"), mode: "MODEL_RUN" });
+      await Promise.all(p4Group.filter((id) => id !== cur).map((id) => startRun(ws, id)));
+    } catch (e) {
+      setError(errorInfo(e));
+    } finally {
+      setBusy(false);
+      loadRuns();
     }
   }
 
@@ -977,6 +1004,18 @@ export function Playground({ projectId }: { projectId: string }) {
               <Icon d={ICONS.layers} />
               仅渲染
             </Btn>
+            {p4Group.length > 1 && (
+              <Btn
+                tone="outline"
+                onClick={runAll}
+                disabled={!!runBlocked}
+                title={runBlocked ?? `这次 P3 生成的 ${p4Group.length} 份 P4 输入（每个已匹配的委托行一份）用同样的提示词和参数同时运行，会产生 ${p4Group.length} 次费用；结果在运行历史里`}
+                data-testid="btn-run-all"
+              >
+                <Icon d={ICONS.play} />
+                全部运行（{p4Group.length} 份）
+              </Btn>
+            )}
             <Btn
               tone="primary"
               onClick={modelRun}
