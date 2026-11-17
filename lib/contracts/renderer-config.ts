@@ -40,4 +40,8 @@ export interface SelectionState {
   relationId?: string;
   sourceRefId?: string;
   jsonPointer?: string;
+  /** 选中位置的中文说明（如「结果 · 第 2 行 · 分类」）；业务视图之外（通用提示词版式）靠它显示 */
+  place?: string;
+  /** 选中列的显示名 */
+  fieldTitle?: string;
 }

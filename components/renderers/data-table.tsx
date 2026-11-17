@@ -110,7 +110,9 @@ export function DataTable({ table, options = {} }: { table: TableView; options?:
   const pickCell = (r: TableRow, key: string) => {
     const cell = r.cells[key];
     if (!cell) return;
-    select({ tableId: table.id, rowId: r.id, fieldKey: key, jsonPointer: cell.jsonPointer, sourceRefId: cell.sourceRefIds[0] ?? r.sourceRefIds?.[0] });
+    const fieldTitle = table.columns.find((c) => c.key === key)?.title;
+    const place = [table.title, `第 ${table.rows.indexOf(r) + 1} 行`, fieldTitle].filter(Boolean).join(" · ");
+    select({ tableId: table.id, rowId: r.id, fieldKey: key, jsonPointer: cell.jsonPointer, sourceRefId: cell.sourceRefIds[0] ?? r.sourceRefIds?.[0], place, fieldTitle });
     setStore("evidenceOpen", true);
   };
 

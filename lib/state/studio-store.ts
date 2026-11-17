@@ -77,6 +77,16 @@ export function inputSignature(w: Workspace, mode: "RENDER_ONLY" | "MODEL_RUN"):
   return JSON.stringify({ mode, input, system: w.system, user: w.userTemplate, params: w.params, attachImages: mode === "MODEL_RUN" ? w.attachImages : null, model: mode === "MODEL_RUN" ? w.model : null });
 }
 
+export type StaleReason = "input" | "prompt" | "params";
+
+/** 当前编辑与产生当前结果时相比，哪些方面变了（签名不同的具体原因） */
+export function staleReasons(w: Workspace, mode: "RENDER_ONLY" | "MODEL_RUN", runSig: string): StaleReason[] {
+  const a = JSON.parse(runSig);
+  const b = JSON.parse(inputSignature(w, mode));
+  const differs = (...keys: string[]) => keys.some((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
+  return [differs("input") && "input", differs("system", "user") && "prompt", differs("params", "attachImages", "model") && "params"].filter((x): x is StaleReason => !!x);
+}
+
 interface StudioState {
   activePromptId: string;
   workspaces: Record<string, Workspace>;

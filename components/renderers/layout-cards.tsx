@@ -12,7 +12,7 @@ export function LayoutCards({ cards }: { cards: LayoutCard[] }) {
         <button
           key={c.id}
           type="button"
-          onClick={() => select({ jsonPointer: c.pointer })}
+          onClick={() => select({ jsonPointer: c.pointer, place: c.title || "（无标题）" })}
           data-card-id={c.id}
           className={cx(
             "min-w-0 rounded-xl border bg-ink-900 p-3 text-left transition-colors hover:bg-ink-850",

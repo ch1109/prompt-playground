@@ -5,12 +5,14 @@ import { api, ApiError } from "@/lib/client/api";
 import { withEgressConfirm as confirmEgress } from "@/lib/client/egress-confirm";
 import type { CapabilityDTO, FixtureSummary, LiveRunDTO, PromptDef, PromptVersionDTO, ProviderInfoDTO, RunDetail, RunListItem, SnapshotListItem } from "@/lib/client/types";
 import type { PromptKind } from "@/lib/contracts/run";
-import { emptyWorkspace, inputSignature, runSnapshotId, useStudio, type WorkMode } from "@/lib/state/studio-store";
+import { emptyWorkspace, inputSignature, runSnapshotId, staleReasons, useStudio, type WorkMode } from "@/lib/state/studio-store";
 import { Badge, Btn, CloseBtn, cx, Empty, runStatusView, SEG_TRACK, segItem } from "@/components/ui";
 import { EditorPane, InputTab } from "./editor-pane";
 import { ResultPane } from "./result-pane";
 import { ModelSettings } from "./model-settings";
+import { EgressConfirmDialog } from "./egress-confirm-dialog";
 import { RunCompare } from "./run-compare";
+import { localTime } from "@/lib/time";
 
 const SHORT: Record<string, string> = { JIULI_P1: "P1", JIULI_P2: "P2", JIULI_P3: "P3", JIULI_P4: "P4", GENERIC_JSON: "通用" };
 
@@ -99,9 +101,12 @@ export function Playground({ projectId }: { projectId: string }) {
   const exampleFixture = kindFixtures.find((f) => f.origin === "CONSTRUCTED" && f.hasRequest && f.schemaVersion) ?? kindFixtures.find((f) => f.origin === "RECORDED_MODEL_OUTPUT") ?? kindFixtures[0];
   /** 还没有能真实运行的输入（示例在运行时才补建快照，选了就算有；粘贴的是模型输出，只能仅渲染） */
   const noRunInput = ws.inputMode === "fixture" ? !ws.fixtureId : !runSnapshotId(ws);
+  const derivable = prompt?.prompt_kind === "JIULI_P3" || prompt?.prompt_kind === "JIULI_P4";
   const emptyHint =
     (!noRunInput
-      ? `已选好输入，点右上角「运行模型」开始识别${ws.inputMode === "fixture" ? "；也可以点「仅渲染」直接看示例结果" : ""}。`
+      ? `已选好输入，点右上角「运行模型」开始${prompt?.prompt_kind === "GENERIC_JSON" ? "运行" : "识别"}${ws.inputMode === "fixture" ? "；也可以点「仅渲染」直接看示例结果" : ""}。`
+      : derivable
+      ? `${mode === "check" ? "点上方「更换输入」" : "在「输入」里"}用${prompt?.prompt_kind === "JIULI_P3" ? " P1 和 P2 " : " P3 "}的运行结果生成输入，再点右上角「运行模型」；也可以选一个示例点「仅渲染」。`
       : mode === "check"
       ? hasFixtures
         ? "点上方「更换输入」上传文件或选一个示例，再点右上角「运行模型」；选了示例也可以点「仅渲染」直接看结果。"
@@ -113,7 +118,13 @@ export function Playground({ projectId }: { projectId: string }) {
   /** 顶栏显示的当前版本；文本与该版本不同即为未保存草稿（与「提示词」页签的判断一致） */
   const currentVersion = versions[promptId]?.find((v) => v.version_id === ws.versionId);
   const versionDraft = !!currentVersion && (currentVersion.system_prompt !== ws.system || currentVersion.user_prompt_template !== ws.userTemplate);
-  const dirty = !!detail && !!ws.runInputSig && !!lastMode && inputSignature(ws, lastMode) !== ws.runInputSig;
+  /** 当前结果与现在的编辑不一致的原因（换了输入 / 改了提示词 / 改了参数或模型） */
+  const stale = detail && ws.runInputSig && lastMode ? staleReasons(ws, lastMode, ws.runInputSig) : [];
+  // 打开的结果用的不是当前输入：结果检查模式顶部的「当前输入」会写明并提供「改用它」
+  const runSnap = detail?.run.input_snapshot_id ?? null;
+  const otherInput = detail?.snapshot && runSnap && runSnap !== runSnapshotId(ws) && !(ws.inputMode === "fixture" && detail.snapshot.source_ids.fixture_id === ws.fixtureId) ? detail : null;
+  // 已在别处说明的原因，结果区横幅不再重复：输入差异见上一行；提示词差异在调试模式左侧「提示词」页
+  const staleShown = stale.filter((r) => !(r === "input" && mode === "check" && otherInput) && !(r === "prompt" && mode === "debug" && detail?.run.mode === "MODEL_RUN" && detail.run.prompt_source));
 
   // 挂载后恢复本地保存的工作区（刷新不丢）
   const [hydrated, setHydrated] = useState(false);
@@ -502,6 +513,21 @@ export function Playground({ projectId }: { projectId: string }) {
     }
   }
 
+  /** P3 结果页一键：为每条「已匹配」的委托行生成 P4 输入，切到 P4 并选中第一份 */
+  async function deriveP4(p3RunId: string) {
+    setError(null);
+    try {
+      const r = await api<{ snapshots: { snapshot_id: string }[] }>("/api/snapshots/derive", { json: { projectId, target: "JIULI_P4", p3RunId } });
+      const p4 = prompts.find((p) => p.prompt_kind === "JIULI_P4");
+      if (!p4) throw new Error("本项目没有 P4 提示词");
+      s.setActivePrompt(p4.prompt_id);
+      s.patchWorkspace(p4.prompt_id, { inputMode: "snapshot", snapshotId: r.snapshots[0].snapshot_id });
+      loadSnapshots();
+    } catch (e) {
+      report(e);
+    }
+  }
+
   async function cancelRun(runId: string) {
     setError(null);
     try {
@@ -581,7 +607,7 @@ export function Playground({ projectId }: { projectId: string }) {
   const q = runQuery.trim().toLowerCase();
   const baseRuns = showOlderRuns || mode === "compare" ? runs : latestRuns;
   const shownRuns = q
-    ? baseRuns.filter((r) => [r.label, versionLabel(r), r.started_at.replace("T", " "), runStatusView(r.status, r.schema_id, r.prompt_kind, r.mode, !!r.model_name).label, RUN_MODE_LABEL[r.mode] ?? r.mode].some((t) => t.toLowerCase().includes(q)))
+    ? baseRuns.filter((r) => [r.label, versionLabel(r), localTime(r.started_at), runStatusView(r.status, r.schema_id, r.prompt_kind, r.mode, !!r.model_name).label, RUN_MODE_LABEL[r.mode] ?? r.mode].some((t) => t.toLowerCase().includes(q)))
     : baseRuns;
 
   /** 运行历史表（底部面板与「版本对比」模式共用） */
@@ -635,7 +661,7 @@ export function Playground({ projectId }: { projectId: string }) {
                           />
                         </td>
                       )}
-                      <td className="px-3 font-mono text-[11.5px] text-ink-400">{r.started_at.slice(5, 19).replace("T", " ")}</td>
+                      <td className="px-3 font-mono text-[11.5px] text-ink-400">{localTime(r.started_at).slice(5, 19)}</td>
                       <td className="px-3 font-mono text-[11.5px]">{SHORT[r.prompt_kind]}</td>
                       <td className="max-w-[200px] truncate px-3 text-ink-300" title={r.is_unsaved_draft ? `${versionLabel(r)}（运行时有未保存的改动）` : versionLabel(r)}>
                         {versionLabel(r) || "—"}
@@ -680,9 +706,6 @@ export function Playground({ projectId }: { projectId: string }) {
     const name = fx?.title ?? (ws.inputMode === "paste" ? "粘贴的 JSON" : snapLabel) ?? "还没选输入";
     // 上传时的提醒（如扫描件没有文字层）：上传抽屉会自动收起，所以在这里留个入口
     const notes = snap?.source_type === "FILE_IMPORT" ? (snap.warnings ?? []) : [];
-    // 打开的历史结果用的是另一份输入：说清楚，免得以为结果对应上面这份输入
-    const runSnap = detail?.run.input_snapshot_id ?? null;
-    const otherInput = detail?.snapshot && runSnap && runSnap !== sid && !(ws.inputMode === "fixture" && detail.snapshot.source_ids.fixture_id === ws.fixtureId) ? detail : null;
     return (
       <div className="flex min-w-0 items-center gap-2 border-l border-ink-700 pl-4 text-[12.5px]" data-testid="context-bar">
         <span className="shrink-0 text-ink-400">当前输入</span>
@@ -1037,7 +1060,8 @@ export function Playground({ projectId }: { projectId: string }) {
                       projectId={projectId}
                       detail={detail}
                       live={live?.running ? live : undefined}
-                      dirty={dirty}
+                      stale={staleShown}
+                      onDeriveP4={deriveP4}
                       canPreview={capability?.status === "CONNECTED_DEMO_FILES"}
                       loading={busy}
                       onCancel={cancelRun}
@@ -1077,6 +1101,7 @@ export function Playground({ projectId }: { projectId: string }) {
                 </div>
                 <div className="min-h-0 flex-1 overflow-auto p-5">
                   <InputTab
+                    key={promptId}
                     projectId={projectId}
                     kind={prompt.prompt_kind}
                     fixtures={fixtures}
@@ -1107,6 +1132,7 @@ export function Playground({ projectId }: { projectId: string }) {
         )}
       </main>
       {modelSettingsOpen && <ModelSettings onClose={() => setModelSettingsOpen(false)} onSaved={modelSettingsSaved} />}
+      <EgressConfirmDialog />
     </div>
   );
 }

@@ -11,8 +11,11 @@ import { InputCoverage } from "./input-coverage";
 import { PromptEditor } from "./prompt-editor";
 import { CandidatesTab } from "./candidates-tab";
 import { Hunks, textHunks } from "./run-compare";
+import { localTime } from "@/lib/time";
 
 type EditorTab = "prompt" | "input" | "preview" | "candidates";
+/** 输入抽屉的页签：各种输入方式，外加 P3 / P4 的「用上游结果生成」 */
+type InputView = InputMode | "derive";
 
 
 export function EditorPane(props: {
@@ -60,9 +63,10 @@ export function EditorPane(props: {
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-5">
-        {tab === "prompt" && <PromptTab versions={props.versions} isDraft={isDraft} onSave={props.onSaveVersion} provider={props.provider} />}
+        {tab === "prompt" && <PromptTab versions={props.versions} isDraft={isDraft} onSave={props.onSaveVersion} provider={props.provider} promptId={props.promptId} onVersionsChanged={props.onVersionsChanged} />}
         {tab === "input" && (
           <InputTab
+            key={props.promptId}
             projectId={props.projectId}
             kind={props.kind}
             fixtures={props.fixtures}
@@ -88,10 +92,11 @@ export function EditorPane(props: {
   );
 }
 
-function PromptTab({ versions, isDraft, onSave, provider }: { versions: PromptVersionDTO[]; isDraft: boolean; onSave: (label: string, changeNote: string) => Promise<boolean>; provider: ProviderInfoDTO | null }) {
+function PromptTab({ versions, isDraft, onSave, provider, promptId, onVersionsChanged }: { versions: PromptVersionDTO[]; isDraft: boolean; onSave: (label: string, changeNote: string) => Promise<boolean>; provider: ProviderInfoDTO | null; promptId: string; onVersionsChanged: () => void }) {
   const [ws, patch] = useWorkspace();
   const [label, setLabel] = useState("");
   const [note, setNote] = useState("");
+  const [stableErr, setStableErr] = useState<string | null>(null);
   const current = versions.find((v) => v.version_id === ws.versionId);
   // 三层：编辑区（未保存）/ 已保存版本 / 当前结果那次运行实际用的提示词
   const lastRun = useStudio((s) => (ws.runId ? s.runs[ws.runId]?.run : undefined));
@@ -107,22 +112,40 @@ function PromptTab({ versions, isDraft, onSave, provider }: { versions: PromptVe
             if (v) patch({ versionId: v.version_id, versionHash: v.content_hash, system: v.system_prompt, userTemplate: v.user_prompt_template });
           }}
           aria-label="Prompt 版本"
-          title="带【正式】的是正式版本：只有在「修改建议」里人工采纳才会改变，保存新版本不会改变它"
+          title="带【正式】的是正式版本，「修改建议」在它上面修改。保存新版本不会改变它；可以点右边「设为正式」更换，采纳修改建议也会更换"
           className="min-w-0 flex-1 rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-[12px]"
         >
           {versions.map((v) => (
             <option key={v.version_id} value={v.version_id}>
-              {v.label} · {v.created_at.slice(0, 16).replace("T", " ")}
+              {v.label} · {localTime(v.created_at).slice(0, 16)}
               {v.is_stable ? " · 【正式】" : ""}
             </option>
           ))}
         </select>
         {isDraft ? <Badge tone="warn">未保存草稿</Badge> : <Badge tone="ok">与版本一致</Badge>}
+        {current && !current.is_stable && (
+          <Btn
+            data-testid="btn-set-stable"
+            title="把这个版本设为正式版本。「修改建议」会在正式版本上修改"
+            onClick={async () => {
+              setStableErr(null);
+              try {
+                await api(`/api/prompts/${promptId}/stable`, { json: { versionId: current.version_id } });
+                onVersionsChanged();
+              } catch (e) {
+                setStableErr(e instanceof ApiError ? e.message : String(e));
+              }
+            }}
+          >
+            设为正式
+          </Btn>
+        )}
       </div>
+      {stableErr && <p className="text-[12px] text-stamp">{stableErr}</p>}
       {current && (
         <p className="text-[11px] text-ink-400" data-testid="version-meta">
           {current.parent_version_id ? `父版本 ${versions.find((v) => v.version_id === current.parent_version_id)?.label ?? current.parent_version_id}` : "无父版本"}
-          {" · "}创建于 {current.created_at.slice(0, 19).replace("T", " ")}
+          {" · "}创建于 {localTime(current.created_at).slice(0, 19)}
           {current.change_note ? ` · 变更说明：${current.change_note}` : ""}
         </p>
       )}
@@ -141,10 +164,10 @@ function PromptTab({ versions, isDraft, onSave, provider }: { versions: PromptVe
           {!lastRun.prompt_source ? (
             "当前结果那次运行没有保存提示词原文（v1.1 之前的记录），无法和编辑区对照。"
           ) : lastRun.prompt_source.system === ws.system && lastRun.prompt_source.user_template === ws.userTemplate ? (
-            <>当前结果那次运行（{lastRun.started_at.slice(5, 16).replace("T", " ")}）用的提示词与编辑区一致。</>
+            <>当前结果那次运行（{localTime(lastRun.started_at).slice(5, 16)}）用的提示词与编辑区一致。</>
           ) : (
             <details>
-              <summary className="cursor-pointer text-risk">当前结果那次运行（{lastRun.started_at.slice(5, 16).replace("T", " ")}）用的提示词与编辑区不同，点开看差异</summary>
+              <summary className="cursor-pointer text-risk">当前结果那次运行（{localTime(lastRun.started_at).slice(5, 16)}）用的提示词与编辑区不同，点开看差异</summary>
               <div className="mt-1.5">
                 <Hunks title="System" hunks={textHunks(lastRun.prompt_source.system, ws.system)} labels={["运行时", "编辑中"]} />
                 <Hunks title="User 模板" hunks={textHunks(lastRun.prompt_source.user_template, ws.userTemplate)} labels={["运行时", "编辑中"]} />
@@ -216,34 +239,44 @@ export function InputTab({
   runBlocked: string | null;
 }) {
   const [ws, patch] = useWorkspace();
+  const derivable = kind === "JIULI_P3" || kind === "JIULI_P4";
+  // 页签只决定看哪一页；当前输入只在真正选定（上传、选示例、选历史输入、粘贴、生成）时才改。
+  // P3 / P4 还没选输入时，默认打开「用上游结果生成」
+  const [view, setView] = useState<InputView>(() => (derivable && !runSnapshotId(ws) && ws.inputMode !== "fixture" ? "derive" : ws.inputMode));
   // 已选示例时列表默认收起；点「示例」或「更换示例」才展开
   const [fixtureOpen, setFixtureOpen] = useState(false);
   const created = () => {
     onSnapshotsChanged();
     onPicked?.();
   };
+  // 导入、生成、把粘贴的请求存为输入后：翻到「历史输入」，能看到选中的那一份（抽屉会随即收起）
+  const savedToList = () => {
+    setView("snapshot");
+    created();
+  };
   // 常用三种放主位置；粘贴 JSON、九立导入是少用的高级入口，放在右侧小字
-  const modes: [InputMode, string][] = [
+  const modes: [InputView, string][] = [
+    ...(derivable ? ([["derive", kind === "JIULI_P3" ? "用 P1+P2 生成" : "用 P3 生成"]] as [InputView, string][]) : []),
     ["upload", "上传文件"],
     ["fixture", "示例"],
     ["snapshot", "历史输入"],
   ];
-  const more: [InputMode, string][] = [
+  const more: [InputView, string][] = [
     ["paste", "粘贴 JSON"],
     ["jiuli", "从九立导入"],
   ];
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <div className={cx(SEG_TRACK, "flex-1")}>
           {modes.map(([m, l]) => (
             <button
               key={m}
               onClick={() => {
-                patch({ inputMode: m });
+                setView(m);
                 if (m === "fixture") setFixtureOpen(true);
               }}
-              className={cx(segItem(ws.inputMode === m), "flex-1")}>
+              className={cx(segItem(view === m), "flex-1")}>
               {l}
             </button>
           ))}
@@ -251,13 +284,14 @@ export function InputTab({
         <div className="flex shrink-0 items-center gap-1 text-[11.5px] text-ink-400">
           更多：
           {more.map(([m, l]) => (
-            <button key={m} onClick={() => patch({ inputMode: m })} className={cx("rounded px-1 hover:text-ink-100", ws.inputMode === m && "font-medium text-ink-100 underline")}>
+            <button key={m} onClick={() => setView(m)} className={cx("rounded px-1 hover:text-ink-100", view === m && "font-medium text-ink-100 underline")}>
               {l}
             </button>
           ))}
         </div>
       </div>
-      {ws.inputMode === "fixture" && (
+      {view === "derive" && <DeriveInput projectId={projectId} kind={kind} onCreated={savedToList} />}
+      {view === "fixture" && (
         <FixtureList
           kind={kind}
           fixtures={fixtures}
@@ -267,15 +301,16 @@ export function InputTab({
           runBlocked={runBlocked}
           onPick={(id) => {
             setFixtureOpen(false);
+            patch({ inputMode: "fixture" });
             onPickFixture(id);
             onPicked?.();
           }}
         />
       )}
-      {ws.inputMode === "paste" && <PasteInput projectId={projectId} kind={kind} onSnapshotsChanged={onSnapshotsChanged} />}
-      {ws.inputMode === "snapshot" && <SnapshotList projectId={projectId} kind={kind} snapshots={snapshots} onSnapshotsChanged={onSnapshotsChanged} onMore={onMoreSnapshots} onPicked={onPicked} />}
-      {ws.inputMode === "upload" && <UploadInput projectId={projectId} kind={kind} onCreated={created} />}
-      {ws.inputMode === "jiuli" && <JiuliImport projectId={projectId} capability={capability} onCreated={created} />}
+      {view === "paste" && <PasteInput projectId={projectId} kind={kind} onSaved={savedToList} />}
+      {view === "snapshot" && <SnapshotList projectId={projectId} kind={kind} snapshots={snapshots} onSnapshotsChanged={onSnapshotsChanged} onMore={onMoreSnapshots} onPicked={onPicked} />}
+      {view === "upload" && <UploadInput projectId={projectId} kind={kind} onCreated={created} />}
+      {view === "jiuli" && <JiuliImport projectId={projectId} capability={capability} onCreated={savedToList} />}
     </div>
   );
 }
@@ -325,7 +360,7 @@ function FixtureList({
     )
     // 「只看运行过的」按最近运行时间排序
     .sort((a, b) => (ranOnly ? (b.stats?.last_run_at ?? "").localeCompare(a.stats?.last_run_at ?? "") : 0));
-  const picked = all.find((f) => f.id === ws.fixtureId);
+  const picked = ws.inputMode === "fixture" ? all.find((f) => f.id === ws.fixtureId) : undefined;
   if (!all.length) return <Empty>当前提示词没有示例。可以直接「上传文件」，或在「更多 → 粘贴 JSON」粘贴模型输出。</Empty>;
   if (picked && !open) {
     return (
@@ -406,7 +441,7 @@ function FixtureList({
                     data-fixture-id={f.id}
                     onClick={() => onPick(f.id)}
                     title={f.tags.length ? `标签：${f.tags.join("、")}` : undefined}
-                    className={cx("flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-[12px] hover:bg-ink-800", ws.fixtureId === f.id && "bg-accent/[0.07] ring-1 ring-accent/40")}
+                    className={cx("flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-[12px] hover:bg-ink-800", picked?.id === f.id && "bg-accent/[0.07] ring-1 ring-accent/40")}
                   >
                     <span className="min-w-0 flex-1 truncate">{f.title}</span>
                     {/* 只标特殊情况：没附带输入（不能真实运行）、有标准答案 */}
@@ -433,7 +468,7 @@ function FixtureList({
 function FixtureStats({ f }: { f: FixtureSummary }) {
   if (!f.stats) return null;
   return (
-    <span className="min-w-16 text-right text-[10.5px] whitespace-nowrap text-ink-400" data-testid="fixture-stats" title={f.stats.last_run_at ? `最近运行 ${f.stats.last_run_at.slice(0, 16).replace("T", " ")}` : "还没有运行过"}>
+    <span className="min-w-16 text-right text-[10.5px] whitespace-nowrap text-ink-400" data-testid="fixture-stats" title={f.stats.last_run_at ? `最近运行 ${localTime(f.stats.last_run_at).slice(0, 16)}` : "还没有运行过"}>
       {f.stats.wrong_count > 0 && <span className="mr-1 text-stamp">标错 {f.stats.wrong_count}</span>}
       运行 {f.stats.run_count} 次
     </span>
@@ -459,7 +494,7 @@ function FixtureDetailCard({ f }: { f: FixtureSummary }) {
         <div className="mt-1 space-y-0.5 text-ink-400">
           <div>
             文件 {f.detail.materials.length} 个 · 输入{f.hasRequest ? "完整（带请求上下文）" : "缺失（只有模型输出）"} · 结构版本 {f.schemaVersion ?? "无"}
-            {f.stats?.last_run_at && ` · 最近运行 ${f.stats.last_run_at.slice(0, 16).replace("T", " ")}`}
+            {f.stats?.last_run_at && ` · 最近运行 ${localTime(f.stats.last_run_at).slice(0, 16)}`}
           </div>
           {f.detail.provenance && <div>{f.detail.provenance}</div>}
           {f.detail.materials.length > 0 && <div>素材：{f.detail.materials.map((m) => `${m.file_id}${m.type ? `（${m.type}）` : ""}${m.segments.length ? ` ${m.segments.join(",")}` : ""}`).join("；")}</div>}
@@ -471,20 +506,24 @@ function FixtureDetailCard({ f }: { f: FixtureSummary }) {
   );
 }
 
-function PasteInput({ projectId, kind, onSnapshotsChanged }: { projectId: string; kind: PromptKind; onSnapshotsChanged: () => void }) {
+function PasteInput({ projectId, kind, onSaved }: { projectId: string; kind: PromptKind; onSaved: () => void }) {
   const [ws, patch] = useWorkspace();
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const readFile = (f: File, key: "pasteRaw" | "pasteRequest") => f.text().then((t) => patch({ [key]: t }));
+  const [label, setLabel] = useState("");
+  // 粘贴模型输出 = 选用「粘贴」作为当前输入（只能仅渲染）；只填请求上下文不改变当前输入
+  const setRaw = (t: string) => patch({ pasteRaw: t, inputMode: "paste" });
+  const readFile = (f: File, key: "pasteRaw" | "pasteRequest") => f.text().then((t) => (key === "pasteRaw" ? setRaw(t) : patch({ pasteRequest: t })));
 
   /** 把粘贴的请求上下文存为输入并选中，之后可直接真实运行 */
   async function saveRequest() {
     setErr(null);
     setBusy(true);
     try {
-      const snap = await api<{ snapshot_id: string }>("/api/snapshots/import", { json: { projectId, label: "粘贴的请求", promptKind: kind, requestText: ws.pasteRequest } });
+      const snap = await api<{ snapshot_id: string }>("/api/snapshots/import", { json: { projectId, label: label.trim() || "粘贴的请求", promptKind: kind, requestText: ws.pasteRequest } });
       patch({ inputMode: "snapshot", snapshotId: snap.snapshot_id });
-      onSnapshotsChanged();
+      setLabel("");
+      onSaved();
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : String(e));
     } finally {
@@ -494,11 +533,12 @@ function PasteInput({ projectId, kind, onSnapshotsChanged }: { projectId: string
   return (
     <div className="space-y-2">
       <label className="block text-[11px] text-ink-400">模型原始输出（原样保存，不做任何修改）</label>
-      <textarea value={ws.pasteRaw} onChange={(e) => patch({ pasteRaw: e.target.value })} aria-label="原始输出" spellCheck={false} placeholder='{"schema_version":"jiuli-ai-v3", ...}' className="h-56 w-full rounded-lg border border-ink-700 bg-ink-900 p-2 font-mono text-[12px] outline-none focus:border-ink-400" />
+      <textarea value={ws.pasteRaw} onChange={(e) => setRaw(e.target.value)} aria-label="原始输出" spellCheck={false} placeholder="把模型回答的 JSON 原样粘贴到这里" className="h-56 w-full rounded-lg border border-ink-700 bg-ink-900 p-2 font-mono text-[12px] outline-none focus:border-ink-400" />
       <input type="file" accept=".json,.txt" aria-label="上传原始输出文件" onChange={(e) => e.target.files?.[0] && readFile(e.target.files[0], "pasteRaw")} className="text-[11px] text-ink-400" />
       <label className="block text-[11px] text-ink-400" title="P3/P4 用它解析 evidence_key 和当前值">请求上下文 JSON（可选，P3/P4 需要）</label>
       <textarea value={ws.pasteRequest} onChange={(e) => patch({ pasteRequest: e.target.value })} aria-label="请求上下文" spellCheck={false} className="h-28 w-full rounded-lg border border-ink-700 bg-ink-900 p-2 font-mono text-[12px] outline-none focus:border-ink-400" />
       <input type="file" accept=".json" aria-label="上传请求上下文文件" onChange={(e) => e.target.files?.[0] && readFile(e.target.files[0], "pasteRequest")} className="text-[11px] text-ink-400" />
+      <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="给这份输入起个名字（可选）" aria-label="粘贴输入名称" className="w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-[12px]" />
       <div className="flex items-center gap-2">
         <Btn tone="outline" disabled={busy || !ws.pasteRequest.trim()} onClick={saveRequest}>
           {busy ? "保存中…" : "把请求存为输入（用于真实运行）"}
@@ -510,7 +550,108 @@ function PasteInput({ projectId, kind, onSnapshotsChanged }: { projectId: string
   );
 }
 
-const SOURCE_LABEL: Record<string, string> = { FILE_IMPORT: "上传文件", JSON_IMPORT: "粘贴", JIULI_READONLY: "九立导入", FIXTURE: "示例" };
+interface DeriveOption {
+  run_id: string;
+  label: string;
+  started_at: string;
+  model_name: string | null;
+  count: number;
+  matched?: number;
+}
+
+const optionText = (o: DeriveOption, unit: string) => `${o.label || o.run_id} · ${localTime(o.started_at).slice(5, 16)} · ${o.count} ${unit}${o.matched !== undefined ? `，已匹配 ${o.matched} 行` : ""}`;
+
+/**
+ * 用上游运行结果生成输入：P3 选一次 P1 和一次 P2 运行；P4 选一次 P3 运行，每条「已匹配」的委托行各生成一份。
+ * 只列出本项目里运行成功、输出是 v15 的运行。
+ */
+function DeriveInput({ projectId, kind, onCreated }: { projectId: string; kind: PromptKind; onCreated: () => void }) {
+  const [, patch] = useWorkspace();
+  const p3 = kind === "JIULI_P3";
+  const [opts, setOpts] = useState<{ p1?: DeriveOption[]; p2?: DeriveOption[]; p3?: DeriveOption[] } | null>(null);
+  const [p1, setP1] = useState("");
+  const [p2, setP2] = useState("");
+  const [p3Run, setP3Run] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    api<{ p1?: DeriveOption[]; p2?: DeriveOption[]; p3?: DeriveOption[] }>(`/api/snapshots/derive?project=${encodeURIComponent(projectId)}&target=${kind}`)
+      .then((o) => {
+        setOpts(o);
+        setP3Run(o.p3?.find((x) => x.matched)?.run_id ?? "");
+      })
+      .catch((e) => setErr(e instanceof ApiError ? e.message : String(e)));
+  }, [projectId, kind]);
+
+  async function create() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await api<{ snapshots: { snapshot_id: string }[] }>("/api/snapshots/derive", { json: p3 ? { projectId, target: kind, p1RunId: p1, p2RunId: p2 } : { projectId, target: kind, p3RunId: p3Run } });
+      // 选中第一份；P4 的其余各份在「历史输入」里
+      patch({ inputMode: "snapshot", snapshotId: r.snapshots[0].snapshot_id });
+      onCreated();
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // P1、P2 不预选：两次运行要是同一批材料，由人来挑
+  const select = (value: string, set: (v: string) => void, list: DeriveOption[], unit: string, label: string, disabled?: (o: DeriveOption) => boolean) => (
+    <label className="block space-y-1">
+      <span className="text-[11px] text-ink-400">{label}</span>
+      <select value={value} onChange={(e) => set(e.target.value)} aria-label={label} className="w-full rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 text-[12px]">
+        {!value && <option value="">请选择…</option>}
+        {list.map((o) => (
+          <option key={o.run_id} value={o.run_id} disabled={disabled?.(o)}>
+            {optionText(o, unit)}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+
+  if (err && !opts) return <p className="text-[12px] text-stamp">{err}</p>;
+  if (!opts) return <p className="text-[12px] text-ink-400">读取中…</p>;
+  const chosenP3 = opts.p3?.find((o) => o.run_id === p3Run);
+  return (
+    <div className="space-y-2.5 text-[12px]" data-testid="derive-input">
+      {p3 ? (
+        !opts.p1?.length || !opts.p2?.length ? (
+          <Empty>
+            {!opts.p1?.length ? "还没有可用的 P1 运行结果" : "还没有可用的 P2 运行结果"}：先在 {!opts.p1?.length ? "P1 上传委托材料" : "P2 上传查货文件"}并运行，运行成功后回到这里。
+          </Empty>
+        ) : (
+          <>
+            {select(p1, setP1, opts.p1, "行", "委托（P1 运行结果）")}
+            {select(p2, setP2, opts.p2, "个商品", "查货（P2 运行结果）")}
+            <p className="text-[11px] text-ink-400">两次运行要是同一批材料（同一票委托和它的查货）。</p>
+            <Btn tone="primary" disabled={busy || !p1 || !p2} onClick={create} data-testid="btn-derive">
+              {busy ? "生成中…" : "生成 P3 输入"}
+            </Btn>
+          </>
+        )
+      ) : !opts.p3?.length ? (
+        <Empty>还没有可用的 P3 运行结果：先在 P3 用「用 P1+P2 生成」得到输入并运行，运行成功后回到这里。</Empty>
+      ) : (
+        <>
+          {select(p3Run, setP3Run, opts.p3, "行", "商品对应（P3 运行结果）", (o) => !o.matched)}
+          <Btn tone="primary" disabled={busy || !chosenP3?.matched} onClick={create} data-testid="btn-derive">
+            {busy ? "生成中…" : `为 ${chosenP3?.matched ?? 0} 个已匹配的委托行生成输入`}
+          </Btn>
+          <p className="text-[11px] text-ink-400">每个已匹配的委托行生成一份输入，先选中第 1 份；其余在「历史输入」里，逐个选中后运行。</p>
+        </>
+      )}
+      {err && <p className="text-stamp">{err}</p>}
+      <p className="text-[11px] text-ink-400">只列出本项目里运行成功、输出是 v15 格式的运行；拼法与二阶段 demo 测试时一致。</p>
+    </div>
+  );
+}
+
+const SOURCE_LABEL: Record<string, string> = { FILE_IMPORT: "上传文件", JSON_IMPORT: "粘贴", JIULI_READONLY: "九立导入", FIXTURE: "示例", DERIVED: "生成" };
 const CONNECTOR_LABEL: Record<string, string> = { CONNECTED_DEMO_FILES: "已连接（演示数据）", NOT_CONFIGURED: "未配置", CONNECTOR_UNAVAILABLE: "连接不可用" };
 
 const KIND_SHORT: Record<string, string> = { JIULI_P1: "P1", JIULI_P2: "P2", JIULI_P3: "P3", JIULI_P4: "P4", GENERIC_JSON: "通用" };
@@ -533,7 +674,7 @@ function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged, onMore, 
       const n = await api<{ snapshot_id: string }>("/api/connectors/jiuli/snapshots", {
         json: { projectId, customerId: s.source_ids.customer_id, taskId: s.source_ids.task_id, batchIds: s.source_ids.batch_ids ?? [], excludeFileIds: s.source_ids.excluded_file_ids ?? [], parentSnapshotId: s.snapshot_id },
       });
-      patch({ snapshotId: n.snapshot_id });
+      patch({ inputMode: "snapshot", snapshotId: n.snapshot_id });
       onSnapshotsChanged();
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : String(e));
@@ -593,11 +734,11 @@ function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged, onMore, 
               <button
                 disabled={!ok}
                 onClick={() => {
-                  patch({ snapshotId: s.snapshot_id });
+                  patch({ inputMode: "snapshot", snapshotId: s.snapshot_id });
                   onPicked?.();
                 }}
                 data-snapshot-id={s.snapshot_id}
-                className={cx("min-w-0 flex-1 rounded-lg px-2 py-1 text-left text-[12px] hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-50", ws.snapshotId === s.snapshot_id && "bg-accent/[0.07] ring-1 ring-accent/40")}
+                className={cx("min-w-0 flex-1 rounded-lg px-2 py-1 text-left text-[12px] hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-50", runSnapshotId(ws) === s.snapshot_id && "bg-accent/[0.07] ring-1 ring-accent/40")}
               >
                 <div className="flex items-center gap-2">
                   <Badge tone={s.source_type === "JIULI_READONLY" ? "info" : "mute"} title={s.source_type}>{SOURCE_LABEL[s.source_type] ?? s.source_type}</Badge>
@@ -605,7 +746,7 @@ function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged, onMore, 
                   {!ok && <Badge tone="warn">不适用于 {KIND_SHORT[kind]}</Badge>}
                 </div>
                 <div className="text-[10.5px] text-ink-400" title={`编号 ${s.snapshot_id} · hash ${s.content_hash.slice(0, 10)}${s.parent_snapshot_id ? ` · 刷新自 ${s.parent_snapshot_id}` : ""}`}>
-                  {s.imported_at.slice(0, 16).replace("T", " ")}
+                  {localTime(s.imported_at).slice(0, 16)}
                   {s.parent_snapshot_id && " · 刷新得到"}
                   {" · 可用于 "}
                   {s.usable_kinds.filter((k) => k !== "GENERIC_JSON").map((k) => KIND_SHORT[k]).join("/") || "—"}
@@ -615,11 +756,11 @@ function SnapshotList({ projectId, kind, snapshots, onSnapshotsChanged, onMore, 
                 value=""
                 onChange={(e) => e.target.value && setRetention(s.snapshot_id, e.target.value === "never" ? null : Number(e.target.value))}
                 aria-label={`保留期限 ${s.snapshot_id}`}
-                title={s.expires_at ? `到期：${s.expires_at.slice(0, 16).replace("T", " ")}` : "永不到期"}
+                title={s.expires_at ? `到期：${localTime(s.expires_at).slice(0, 16)}` : "永不到期"}
                 className="w-[72px] shrink-0 rounded-lg border border-ink-700 bg-ink-900 px-1 py-0.5 text-[11px] text-ink-300"
               >
-                <option value="">{s.expires_at ? `至 ${s.expires_at.slice(5, 10)}` : "永久"}</option>
-                <option value="never">永久保留</option>
+                <option value="">{s.expires_at ? `至 ${localTime(s.expires_at).slice(5, 10)}` : "永久"}</option>
+                {s.expires_at && <option value="never">改为永久保留</option>}
                 <option value="7">7 天后删</option>
                 <option value="30">30 天后删</option>
                 <option value="90">90 天后删</option>
@@ -725,7 +866,7 @@ function UploadInput({ projectId, kind, onCreated }: { projectId: string; kind: 
       }
       const s = await api<{ snapshot_id: string; label: string; warnings: string[] }>("/api/snapshots/files", { method: "POST", body: fd });
       setResult(s);
-      patch({ uploadSnapshotId: s.snapshot_id });
+      patch({ inputMode: "upload", uploadSnapshotId: s.snapshot_id });
       setFiles([]);
       setSkipped([]);
       onCreated();
@@ -740,7 +881,7 @@ function UploadInput({ projectId, kind, onCreated }: { projectId: string; kind: 
     <div className="space-y-2 text-[12px]" data-testid="upload-input">
       {(kind === "JIULI_P3" || kind === "JIULI_P4") && (
         <p className="rounded-lg border border-risk/40 bg-risk/10 px-2 py-1 text-risk" data-testid="upload-kind-note">
-          原件只能构造 P1（委托单/发票/箱单）和 P2（查货文件）的输入；{kind === "JIULI_P3" ? "P3" : "P4"} 需要上游的结构化结果，不能直接由原件构造。仍可上传，建好的输入可切到 P1 / P2 或通用提示词使用。
+          原件只能构造 P1（委托单/发票/箱单）和 P2（查货文件）的输入。{kind === "JIULI_P3" ? "P3 请用「用 P1+P2 生成」" : "P4 请用「用 P3 生成」"}。
         </p>
       )}
       <div

@@ -41,32 +41,26 @@ async function existingRunId(page: Page): Promise<string> {
 test("第一次外发：确认框写明地址，同意后记录一次并自动重新发起运行", async ({ page }) => {
   const runId = await existingRunId(page);
   const count = await setup(page, runId);
-  const messages: string[] = [];
-  page.on("dialog", (d) => {
-    messages.push(d.message());
-    return d.accept();
-  });
   await expect(page.getByTestId("header-version")).toBeVisible();
   await page.getByTestId("btn-run").click();
+  // 页面内的确认框（不是浏览器原生弹窗）
+  const dialog = page.getByTestId("egress-dialog");
+  await expect(dialog).toContainText(`第一次把材料发给 ${HOST}`);
+  await expect(dialog).toContainText("以后发往这个地址不再询问");
+  await page.getByTestId("egress-confirm").click();
   await expect.poll(() => count.runs).toBe(2);
   expect(count.egress).toBe(1);
-  expect(messages).toHaveLength(1);
-  expect(messages[0]).toContain(`第一次把材料发给 ${HOST}`);
-  expect(messages[0]).toContain("以后发往这个地址不再询问");
+  await expect(dialog).toHaveCount(0);
   await expect(page.getByTestId("error-message")).toHaveCount(0);
 });
 
 test("点取消：不记录确认，不重新发起，顶栏也没有红色错误", async ({ page }) => {
   const runId = await existingRunId(page);
   const count = await setup(page, runId);
-  let dialogs = 0;
-  page.on("dialog", (d) => {
-    dialogs++;
-    return d.dismiss();
-  });
   await expect(page.getByTestId("header-version")).toBeVisible();
   await page.getByTestId("btn-run").click();
-  await expect.poll(() => dialogs).toBe(1);
+  await page.getByTestId("egress-cancel").click();
+  await expect(page.getByTestId("egress-dialog")).toHaveCount(0);
   await expect(page.getByTestId("btn-run")).toBeEnabled();
   expect(count.egress).toBe(0);
   expect(count.runs).toBe(1);

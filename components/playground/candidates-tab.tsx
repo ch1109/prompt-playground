@@ -5,6 +5,7 @@ import type { ExperimentReport, SampleEvaluation } from "@/lib/experiments/evalu
 import type { Experiment, PromptCandidate } from "@/lib/repositories/experiments";
 import { Badge, Btn, cx, Empty } from "@/components/ui";
 import { Hunks } from "./run-compare";
+import { localTime } from "@/lib/time";
 
 // 修改建议（v1.3 M3）：AI 根据诊断提出的提示词修改（候选），先在样本上试运行，再由人决定采纳或拒绝。
 // 面向新手：先给一句结论和推荐，再给按钮；修改内容、逐样本情况、注意事项都收在「查看详情」里。
@@ -138,7 +139,7 @@ function CandidateCard({ c, onDecided }: { c: CandidateDTO; onDecided: () => voi
         <Decision c={c} report={report} onDecided={onDecided} />
       ) : (
         <p className="mt-2 text-[11.5px] text-ink-300">
-          {c.decided_by} 于 {c.decided_at?.slice(0, 16).replace("T", " ")} {c.status === "APPROVED" ? "采纳" : "拒绝"}
+          {c.decided_by} 于 {c.decided_at && localTime(c.decided_at).slice(0, 16)} {c.status === "APPROVED" ? "采纳" : "拒绝"}
           {c.decision_note ? `：${c.decision_note}` : ""}
         </p>
       )}
@@ -148,7 +149,7 @@ function CandidateCard({ c, onDecided }: { c: CandidateDTO; onDecided: () => voi
         <h4 className="mt-2 font-medium text-ink-300">为什么改</h4>
         <p className="text-ink-300">{c.reason}</p>
         <p className="mt-0.5 text-ink-400">
-          基于「{c.base_label}」· {c.created_by} 提出于 {c.created_at.slice(0, 16).replace("T", " ")}
+          基于「{c.base_label}」· {c.created_by} 提出于 {localTime(c.created_at).slice(0, 16)}
           {c.diagnosis_ref ? ` · 诊断 ${c.diagnosis_ref}` : ""}
         </p>
         <h4 className="mt-2 font-medium text-ink-300">改了哪里</h4>
@@ -166,7 +167,7 @@ function ExperimentDetail({ e }: { e: ExperimentDTO }) {
   return (
     <div className="mt-2" data-testid="experiment-view">
       <h4 className="font-medium text-ink-300">
-        试运行 {e.created_at.slice(5, 16).replace("T", " ")}（用 {e.model}，调用 {e.budget.used_model_runs} 次，上限 {e.budget.max_model_runs} 次）
+        试运行 {localTime(e.created_at).slice(5, 16)}（用 {e.model}，调用 {e.budget.used_model_runs} 次，上限 {e.budget.max_model_runs} 次）
       </h4>
       {e.report?.samples.map((s) => (
         <div key={s.sample_id} className="mt-1 rounded border border-ink-800 p-1.5" data-testid="experiment-sample" data-verdict={s.verdict}>
@@ -197,7 +198,7 @@ function ExperimentDetail({ e }: { e: ExperimentDTO }) {
 
 function Decision({ c, report, onDecided }: { c: CandidateDTO; report: ExperimentReport | null; onDecided: () => void }) {
   const [mode, setMode] = useState<"idle" | "approve" | "reject">("idle");
-  const [label, setLabel] = useState(`${c.base_label.split(/[\s（(]/)[0]} 修订 ${new Date().toISOString().slice(5, 10)}`);
+  const [label, setLabel] = useState(`${c.base_label.split(/[\s（(]/)[0]} 修订 ${localTime(new Date().toISOString()).slice(5, 10)}`);
   const [note, setNote] = useState("");
   const [ack, setAck] = useState(false);
   const [busy, setBusy] = useState(false);

@@ -57,7 +57,9 @@ export function ModelSettings({ onClose, onSaved }: { onClose: () => void; onSav
       onSaved();
     });
 
-  const keyPlaceholder = cur?.hasKey && cur.source === "settings" ? `已设置${cur.keyTail ? `（末 4 位 ${cur.keyTail}）` : ""}，留空表示不修改` : "";
+  const tail = cur?.keyTail ? `（末 4 位 ${cur.keyTail}）` : "";
+  // 安装时配置的密钥不会被网页拿来用：在这里测试或保存都要重新填一次
+  const keyPlaceholder = cur?.hasKey ? (cur.source === "settings" ? `已设置${tail}，留空表示不修改` : `安装时已配置${tail}；在这里测试或保存需要重新填写`) : "";
 
   return (
     <>

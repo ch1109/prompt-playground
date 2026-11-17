@@ -8,6 +8,10 @@ import type { BusinessAdapter } from "./types";
 
 const label = (f: unknown) => V15_LABEL[String(f)] ?? String(f ?? "");
 
+/** 问题 f 里业务字段之外的常见代码；其他代码（如 P2 的 hw 手写记录）不显示，问题类型已说明是什么 */
+const ISSUE_FIELD: Record<string, string> = { cus: "客户", match: "商品关系" };
+const issueField = (f: string) => (f ? (V15_LABEL[f] ?? ISSUE_FIELD[f] ?? "") : "整体");
+
 /** 问题 vs[]：{s,v} 写成「来源：值」，其他原样 */
 function vsText(vs: unknown): string {
   return arr(vs)
@@ -59,7 +63,7 @@ function modelIssues(
     b.issue({
       type: strOrUndef(x.t) ?? "问题",
       severity: "UNKNOWN",
-      summary: `${target.prefix ?? ""}${label(f) || "整体"} · ${display(x.t) || "问题"}${x.note ? `：${display(x.note)}` : ""}`,
+      summary: `${target.prefix ?? ""}${[issueField(f), display(x.t) || "问题"].filter(Boolean).join(" · ")}${x.note ? `：${display(x.note)}` : ""}`,
       detail: vs ? `依据：${vs}` : undefined,
       target: rowId ? { tableId: target.tableId, rowId, fieldKey: f ? (target.fieldKey ? target.fieldKey(f) : f) : undefined, jsonPointer: join(base, i) } : { jsonPointer: join(base, i) },
       sourceRefIds: [],

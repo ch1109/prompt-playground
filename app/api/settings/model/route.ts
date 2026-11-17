@@ -36,6 +36,14 @@ function resolveKey(i: Input): string | null {
   return saved && saved.baseUrl === i.baseUrl ? saved.apiKey : null;
 }
 
+/** 没有可用密钥时，按实际原因提示 */
+function noKey(i: Input): Response {
+  const saved = readModelConfig();
+  if (saved && saved.baseUrl !== i.baseUrl) return fail("NO_API_KEY", "换了服务地址，请重新填写密钥");
+  if (!saved && effectiveModelConfig().apiKey) return fail("NO_API_KEY", "请填写密钥：安装时配置的密钥不会被网页读取，在这里测试或保存需要重新填写一次");
+  return fail("NO_API_KEY", "请填写密钥");
+}
+
 /** 用这组信息临时建一个 provider 读模型列表；失败给中文原因（经脱敏，不含密钥） */
 async function testConnection(i: Input, apiKey: string): Promise<{ ok: true; modelFound: boolean; modelCount: number } | { ok: false; message: string }> {
   try {
@@ -67,7 +75,7 @@ export const POST = (req: Request) =>
     const input = await parseInput(req);
     if (input instanceof Response) return input;
     const key = resolveKey(input);
-    if (!key) return fail("NO_API_KEY", "请填写密钥（换了服务地址需要重新填写）");
+    if (!key) return noKey(input);
     const r = await testConnection(input, key);
     return r.ok ? ok(r) : fail("CONNECT_FAILED", r.message);
   });
@@ -79,7 +87,7 @@ export const PUT = (req: Request) =>
     const input = await parseInput(req);
     if (input instanceof Response) return input;
     const key = resolveKey(input);
-    if (!key) return fail("NO_API_KEY", "请填写密钥（换了服务地址需要重新填写）");
+    if (!key) return noKey(input);
     const r = await testConnection(input, key);
     if (!r.ok) return fail("CONNECT_FAILED", r.message);
     writeModelConfig({ baseUrl: input.baseUrl, model: input.model, apiKey: key });

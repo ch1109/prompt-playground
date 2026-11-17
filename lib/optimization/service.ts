@@ -2,6 +2,7 @@ import { createDatasetVersion, goldVersion } from "@/lib/datasets/service";
 import type { Diagnosis } from "@/lib/repositories/diagnoses";
 import { applyEdits, cancelExperiment, createCandidate, planExperiment, startExperiment, type PromptEdit } from "@/lib/experiments/service";
 import { newId } from "@/lib/hash";
+import { localTime } from "@/lib/time";
 import { getCandidate, getExperiment } from "@/lib/repositories/experiments";
 import { activeSessions, addEvent, getSession, insertSession, listEvents, listSessions, saveSession, SessionConflictError, type OptimizationSession } from "@/lib/repositories/optimizations";
 import { getPrompt, getVersion, stableVersionId } from "@/lib/repositories/prompts";
@@ -114,7 +115,7 @@ export function createSession(input: CreateSessionInput): OptimizationSession {
 
   const dataset = createDatasetVersion({
     promptId: prompt.prompt_id,
-    name: `自动优化 · ${ann.target ?? input.jsonPointer} · ${new Date().toISOString().slice(0, 10)}`,
+    name: `自动优化 · ${ann.target ?? input.jsonPointer} · ${localTime(new Date().toISOString()).slice(0, 10)}`,
     samples: [{ sample_id: targetSample, split: "dev" }, ...regression.map((sample_id) => ({ sample_id, split: "regression" as const }))],
     createdBy: input.createdBy,
   });

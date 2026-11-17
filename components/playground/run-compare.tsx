@@ -11,6 +11,7 @@ import { applyLayout } from "@/lib/layouts/apply";
 import type { Layout } from "@/lib/layouts/types";
 import { LayoutView } from "@/components/views/layout-view";
 import { V15_LABEL } from "@/lib/schemas/jiuli-v15";
+import { localTime } from "@/lib/time";
 
 export { compareRuns, diffJson, diffSummary, flatten, inputComparability, strictConditions, textHunks } from "@/lib/runs/compare";
 
@@ -311,7 +312,7 @@ function RunTag({ side, d, id }: { side: "A" | "B"; d: RunDetail | null; id: str
       className="inline-flex max-w-[360px] items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-850 px-2 py-0.5 text-[11.5px]"
     >
       <span className="font-semibold">{side}</span>
-      <span className="truncate text-ink-300">{d ? `${d.run.started_at.slice(5, 16).replace("T", " ")} · ${d.prompt_version_label ?? "未记录版本"}` : "加载中…"}</span>
+      <span className="truncate text-ink-300">{d ? `${localTime(d.run.started_at).slice(5, 16)} · ${d.prompt_version_label ?? "未记录版本"}` : "加载中…"}</span>
     </span>
   );
 }

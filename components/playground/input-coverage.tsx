@@ -9,7 +9,7 @@ const VISUAL_LABEL: Record<InputManifest["visual_evidence"], string> = {
   NOT_APPLICABLE: "不涉及图片（没有 PDF / 图片原件）",
 };
 
-const SOURCE_LABEL: Record<string, string> = { FILE_IMPORT: "上传文件", JSON_IMPORT: "粘贴", JIULI_READONLY: "九立导入", FIXTURE: "示例" };
+const SOURCE_LABEL: Record<string, string> = { FILE_IMPORT: "上传文件", JSON_IMPORT: "粘贴", JIULI_READONLY: "九立导入", FIXTURE: "示例", DERIVED: "生成" };
 
 const pages = (ps: (number | null)[]) => (ps.length ? ps.map((p) => (p === null ? "整图" : p)).join(",") : "无");
 

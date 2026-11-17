@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PromptKind } from "@/lib/contracts/run";
 import { newId, sha256 } from "@/lib/hash";
+import { localTime } from "@/lib/time";
 import { db } from "./db";
 
 export interface PromptDefinition {
@@ -105,7 +106,7 @@ export function syncSeedVersion(promptId: string, source: string, text: string):
     | undefined;
   if (!latest) return insertSeed(promptId, "v3.0 原文（九立demo）", text, source, null);
   if (latest.system_prompt === text) return null;
-  return insertSeed(promptId, `v3.0 原文（文件已更新 ${new Date().toISOString().slice(0, 10)}）`, text, source, latest.version_id);
+  return insertSeed(promptId, `v3.0 原文（文件已更新 ${localTime(new Date().toISOString()).slice(0, 10)}）`, text, source, latest.version_id);
 }
 
 export type ProjectTemplate = "JIULI" | "BLANK";

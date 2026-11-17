@@ -169,3 +169,14 @@ describe("容错", () => {
     expect(getProvider().info().model).toBe("env-model");
   });
 });
+
+describe("没填密钥时按原因提示", () => {
+  it("用的是安装时配置：说明网页不读取它、要填一次；换了服务地址：说明要重填", async () => {
+    const env = await POST(req("POST", { baseUrl: "https://env.example/v1", model: "env-model" }));
+    expect((await env.json()).error).toMatchObject({ code: "NO_API_KEY", message: expect.stringContaining("安装时配置的密钥不会被网页读取") });
+    mockProvider();
+    expect((await PUT(req("PUT", input))).status).toBe(200);
+    const moved = await POST(req("POST", { baseUrl: "https://other.example/v1", model: "m-new" }));
+    expect((await moved.json()).error.message).toBe("换了服务地址，请重新填写密钥");
+  });
+});

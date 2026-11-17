@@ -10,7 +10,7 @@ import type { LiveRun } from "@/lib/runs/service";
 import type { CellState, ViewModel } from "@/lib/contracts/view-model";
 import { explainModelError } from "@/lib/models/error-hints";
 import { getByPointer } from "@/lib/pipeline/json-pointer";
-import { useStudio, type ResultTab } from "@/lib/state/studio-store";
+import { useStudio, type ResultTab, type StaleReason } from "@/lib/state/studio-store";
 import { EvidenceViewer, selectedRefIds } from "@/components/renderers/evidence-viewer";
 import { describeEgress } from "@/lib/runs/egress-text";
 import { fieldInputCoverage } from "@/lib/runs/run-evidence";
@@ -24,6 +24,7 @@ import remarkGfm from "remark-gfm";
 import { JsonTree, RawText } from "./json-tree";
 import { InputCoverage } from "./input-coverage";
 import { RunEvidencePanel } from "./run-evidence-panel";
+import { localTime } from "@/lib/time";
 
 /** 表格位置的中文说法：「委托商品行 · 第 4 行 · 产地」；找不到表时返回 null */
 function placeText(vm: ViewModel | null | undefined, tableId?: string | null, rowId?: string | null, fieldKey?: string | null): string | null {
@@ -46,6 +47,16 @@ function plainValue(v: string): string {
 
 /** 只适用于 P3（候选与关系）的错误归因 */
 const P3_ONLY_CATEGORIES = new Set(["CANDIDATE_RECALL_ERROR", "RELATION_SELECTION_ERROR"]);
+
+const STALE_TEXT: Record<StaleReason, string> = { input: "换了输入", prompt: "提示词改过了", params: "运行参数或模型改过了" };
+
+/** P3 运行成功、输入由 P1+P2 结果生成时，「已匹配」的委托行数（可一键生成 P4 输入）；否则 0 */
+function derivedP4Rows(detail?: RunDetail): number {
+  const run = detail?.run;
+  if (run?.prompt_kind !== "JIULI_P3" || run.status !== "SUCCEEDED" || run.mode !== "MODEL_RUN" || !detail?.snapshot?.source_ids.p1_run_id) return 0;
+  const r = (run.parsed_json as { r?: { st?: string }[] } | undefined)?.r;
+  return Array.isArray(r) ? r.filter((x) => x.st === "MATCHED").length : 0;
+}
 
 /** 这些状态下方已有横幅说明，右上角不再重复显示状态标签 */
 const BANNER_STATUSES = new Set(["RUNNING", "MODEL_ERROR", "CANCELLED"]);
@@ -164,7 +175,8 @@ export function ResultPane({
   projectId,
   detail,
   live,
-  dirty,
+  stale,
+  onDeriveP4,
   canPreview,
   loading,
   onCancel,
@@ -180,7 +192,10 @@ export function ResultPane({
   detail?: RunDetail;
   /** 运行中的实时进度（每秒更新） */
   live?: LiveRun;
-  dirty: boolean;
+  /** 当前结果与现在的编辑不一致、且别处没有说明的原因 */
+  stale: StaleReason[];
+  /** P3 结果：为已匹配的委托行生成 P4 输入 */
+  onDeriveP4?: (p3RunId: string) => void;
   canPreview: boolean;
   loading: boolean;
   onCancel?: (runId: string) => void;
@@ -230,6 +245,11 @@ export function ResultPane({
               {runStatusView(run.status, run.schema_id, run.prompt_kind, run.mode, !!run.model_name).label}
             </Badge>
           )}
+          {run && onDeriveP4 && derivedP4Rows(detail) > 0 && (
+            <Btn tone="outline" onClick={() => onDeriveP4(run.run_id)} data-testid="btn-derive-p4" title="为每个「已匹配」的委托行生成一份 P4 输入，然后切到 P4">
+              生成 P4 输入（{derivedP4Rows(detail)} 行）
+            </Btn>
+          )}
           {run && run.status !== "RUNNING" && (
             <a
               href={`/api/runs/${run.run_id}/export`}
@@ -251,7 +271,7 @@ export function ResultPane({
       {run?.finish_reason === "length" && (
         <Banner tone="bad"><span title="finish_reason=length">模型的回答太长，被截断了。请在「提示词」页的「运行参数」里把 max_tokens 调大后重新运行。</span></Banner>
       )}
-      {dirty && run && <Banner tone="warn">当前结果来自上次运行（与未保存/未运行的编辑不同）。</Banner>}
+      {stale.length > 0 && run && run.status !== "RUNNING" && <Banner tone="warn"><span data-testid="stale-banner">下面是之前运行的结果：{stale.map((r) => STALE_TEXT[r]).join("、")}，还没重新运行。</span></Banner>}
       {run?.mode === "RENDER_ONLY" && (detail?.snapshot?.source_type === "FIXTURE" || run.label?.startsWith("样本")) && (
         <Banner tone="info">
           <span data-testid="fixture-banner">这是示例结果，不是模型本次运行；{detail?.snapshot?.warnings.some((w) => w.includes("录制")) ? "录制的模型输出不是标准答案。" : "不能用来说明准确率。"}</span>
@@ -312,7 +332,7 @@ export function ResultPane({
             <div className="mt-4 flex flex-col items-center gap-2" data-testid="empty-actions">
               {recentRun && onOpenRun && (
                 <Btn tone="outline" onClick={() => onOpenRun(recentRun.run_id)} data-testid="open-recent-run">
-                  打开最近一次运行：{recentRun.label || recentRun.run_id}（{recentRun.started_at.slice(5, 16).replace("T", " ")} · {runStatusView(recentRun.status, recentRun.schema_id, recentRun.prompt_kind, recentRun.mode, !!recentRun.model_name).label}）
+                  打开最近一次运行：{recentRun.label || recentRun.run_id}（{localTime(recentRun.started_at).slice(5, 16)} · {runStatusView(recentRun.status, recentRun.schema_id, recentRun.prompt_kind, recentRun.mode, !!recentRun.model_name).label}）
                 </Btn>
               )}
               {example && onOpenExample && (
@@ -351,7 +371,7 @@ export function ResultPane({
             <IssueVerdict detail={detail!} />
             <FieldVerdict detail={detail!} />
             <AnnotationForm detail={detail!}>
-              {vm ? <EvidenceViewer vm={vm} canPreview={canPreview} snapshotSource={detail?.snapshot?.source_type} request={detail?.request} quietWhenEmpty={fieldShown} /> : <p className="text-[12px] text-ink-400">无业务视图，无法定位来源。</p>}
+              {vm && <EvidenceViewer vm={vm} canPreview={canPreview} snapshotSource={detail?.snapshot?.source_type} request={detail?.request} quietWhenEmpty={fieldShown || !vm.evidence.length} />}
             </AnnotationForm>
           </div>
         </aside>
@@ -485,7 +505,7 @@ function SelectionInfo({ vm }: { vm?: ViewModel }) {
   const sel = useStudio((s) => s.selection);
   const setStore = useStudio((s) => s.set);
   if (!sel.jsonPointer && !sel.rowId) return null;
-  const where = placeText(vm, sel.tableId, sel.rowId, sel.fieldKey) ?? (sel.relationId ? "一条对应关系" : sel.rowId) ?? "—";
+  const where = placeText(vm, sel.tableId, sel.rowId, sel.fieldKey) ?? sel.place ?? (sel.relationId ? "一条对应关系" : sel.rowId) ?? "—";
   return (
     <div className="flex flex-wrap items-center gap-2 text-[11px] text-ink-400">
       <span title={[sel.tableId, sel.rowId, sel.fieldKey].filter(Boolean).join(" / ") || undefined}>
@@ -659,7 +679,7 @@ function MetaTab({ detail }: { detail: RunDetail }) {
             detail.snapshot
               ? `${detail.snapshot.label}（${detail.snapshot.snapshot_id}，${detail.snapshot.source_type}，hash ${detail.snapshot.content_hash.slice(0, 12)}…）`
               : detail.snapshot_deleted_at
-                ? `${r.input_snapshot_id}（已删除或到期：${detail.snapshot_deleted_at.slice(0, 19).replace("T", " ")}；原始输出不受影响）`
+                ? `${r.input_snapshot_id}（已删除或到期：${localTime(detail.snapshot_deleted_at).slice(0, 19)}；原始输出不受影响）`
                 : "无"
           }
         />
@@ -671,7 +691,7 @@ function MetaTab({ detail }: { detail: RunDetail }) {
         <Row k="Schema" v={r.schema_id ? `${r.schema_id} (${r.schema_version})` : null} />
         <Row k="Adapter" v={r.adapter_id ? `${r.adapter_id}@${r.adapter_version}` : null} />
         <Row k="RendererConfig 版本" v={r.renderer_config_version} />
-        <Row k="开始 / 结束" v={`${r.started_at} → ${r.ended_at ?? "—"}`} />
+        <Row k="开始 / 结束" v={`${localTime(r.started_at)} → ${r.ended_at ? localTime(r.ended_at) : "—"}`} />
         <Row k="耗时" v={r.latency_ms != null ? `${r.latency_ms} ms` : null} />
         <Row
           k="分阶段耗时"
@@ -777,11 +797,16 @@ function FieldVerdict({ detail }: { detail: RunDetail }) {
   }
   return (
     <div className="rounded-lg border border-ink-700 bg-ink-900 p-2.5 text-[12px]" data-testid="field-verdict">
-      <div className="text-ink-400">{col?.title ?? sel.fieldKey}</div>
+      <div className="text-ink-400">{col?.title ?? sel.fieldTitle ?? sel.fieldKey}</div>
       <div className="mt-0.5 font-semibold break-words text-ink-100">{hit.found ? (typeof hit.value === "string" ? hit.value || "（空）" : JSON.stringify(hit.value)) : "（模型输出里没有这个位置）"}</div>
       <dl className="mt-1.5 grid grid-cols-[64px_1fr] gap-x-1.5 gap-y-0.5 text-[11px]">
-        <dt className="text-ink-400">字段状态</dt>
-        <dd data-testid="field-state">{cell?.state ? <span title={cell.state}>{CELL_STATE_LABEL[cell.state]}</span> : "模型没有标注状态"}</dd>
+        {/* 通用提示词没有业务视图，也就没有字段状态，不显示这一行 */}
+        {vm && (
+          <>
+            <dt className="text-ink-400">字段状态</dt>
+            <dd data-testid="field-state">{cell?.state ? <span title={cell.state}>{CELL_STATE_LABEL[cell.state]}</span> : "模型没有标注状态"}</dd>
+          </>
+        )}
         {converted && (
           <>
             <dt className="text-ink-400">表格显示</dt>
@@ -790,18 +815,23 @@ function FieldVerdict({ detail }: { detail: RunDetail }) {
             </dd>
           </>
         )}
-        <dt className="text-ink-400">实际输入</dt>
-        <dd data-testid="field-input-coverage">
-          {coverage.length ? (
-            coverage.map((c) => (
-              <div key={c.refId} className={cx(c.status === "NOT_SENT" && "text-stamp", c.status === "UNKNOWN" && "text-ink-400")}>
-                {c.text}
-              </div>
-            ))
-          ) : (
-            <span className="text-risk">不可追溯：模型没有给出这个字段的来源</span>
-          )}
-        </dd>
+        {/* 这次输出整体都不带来源（如 v15 格式、通用提示词）时，每个字段都一样，不逐个提示 */}
+        {!!vm?.evidence.length && (
+          <>
+            <dt className="text-ink-400">实际输入</dt>
+            <dd data-testid="field-input-coverage">
+              {coverage.length ? (
+                coverage.map((c) => (
+                  <div key={c.refId} className={cx(c.status === "NOT_SENT" && "text-stamp", c.status === "UNKNOWN" && "text-ink-400")}>
+                    {c.text}
+                  </div>
+                ))
+              ) : (
+                <span className="text-risk">不可追溯：模型没有给出这个字段的来源</span>
+              )}
+            </dd>
+          </>
+        )}
       </dl>
       {parent?.found && (
         <details className="mt-1 text-[11px]" data-testid="field-raw-node">
@@ -875,7 +905,7 @@ function FieldDiagnoses({ diagnoses }: { diagnoses: NonNullable<RunDetail["diagn
               {list("还没证实", rc.unverified_assumptions)}
               {list("局限", d.report.limitations)}
               <div className="mt-1 text-ink-400">
-                {d.created_by} · {d.created_at.slice(0, 16).replace("T", " ")}
+                {d.created_by} · {localTime(d.created_at).slice(0, 16)}
               </div>
             </div>
           </details>
@@ -952,7 +982,7 @@ function RevisionHistory({ a }: { a: AnnotationDTO }) {
         <ol className="ml-3 list-decimal text-[10.5px] text-ink-300">
           {revs.map((r) => (
             <li key={r.revision}>
-              {REVISION_ACTION[r.action]} · {r.created_at.slice(0, 19).replace("T", " ")} · {r.author ?? "—"}：{r.body.assessment ? ASSESS_LABEL[r.body.assessment] : (ANN_LABEL[r.body.issue_type] ?? r.body.issue_type)}
+              {REVISION_ACTION[r.action]} · {localTime(r.created_at).slice(0, 19)} · {r.author ?? "—"}：{r.body.assessment ? ASSESS_LABEL[r.body.assessment] : (ANN_LABEL[r.body.issue_type] ?? r.body.issue_type)}
               {r.body.error_category && ` · ${categoryText(r.body.error_category)}`}
               {r.body.expected_value && ` · 正确值 ${r.body.expected_value}`}
             </li>
@@ -986,7 +1016,8 @@ function AnnotationForm({ detail, children }: { detail: RunDetail; children?: Re
   const choices = annTypeChoices(detail.run.prompt_kind);
   // 修改旧标注时保留它原来的类型
   if (editing && !choices.includes(editing.issue_type)) choices.push(editing.issue_type);
-  const target = [sel.tableId, sel.rowId, sel.fieldKey].filter(Boolean).join(" / ") || sel.relationId || null;
+  // 没有业务视图（通用提示词版式）时，存中文位置，已有标注里直接可读
+  const target = (!detail.run.view_model && sel.place) || [sel.tableId, sel.rowId, sel.fieldKey].filter(Boolean).join(" / ") || sel.relationId || null;
   /** 标注的「目标」显示：「表名 · 第几行 · 字段中文名」（对不上就原样）；原始串放 title */
   const targetText = (raw: string | null | undefined) => {
     const parts = raw?.split(" / ") ?? [];
@@ -1178,7 +1209,7 @@ function AnnotationForm({ detail, children }: { detail: RunDetail; children?: Re
                 {a.model_value != null && <div className="text-ink-400">模型原值：{plainValue(a.model_value)}</div>}
                 {a.expected_value && <div>正确值：{a.expected_value}</div>}
                 {a.note && <div className="text-ink-300">{a.note}</div>}
-                {a.author && <div className="text-[10px] text-ink-600">{a.author} · {a.created_at.slice(0, 19).replace("T", " ")}</div>}
+                {a.author && <div className="text-[10px] text-ink-600">{a.author} · {localTime(a.created_at).slice(0, 19)}</div>}
                 {(a.revisions?.length ?? 0) > 1 && <RevisionHistory a={a} />}
               </li>
             ))}

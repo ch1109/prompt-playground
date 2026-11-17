@@ -118,7 +118,7 @@ test("在 P3/P4 下打开上传文件时事先说明原件只能构造 P1/P2", a
   await page.goto("/projects/jiuli/playground");
   await page.click('[data-prompt="jiuli-p3"]');
   await page.getByRole("button", { name: "上传文件" }).click();
-  await expect(page.getByTestId("upload-kind-note")).toContainText("P3 需要上游的结构化结果");
+  await expect(page.getByTestId("upload-kind-note")).toContainText("P3 请用「用 P1+P2 生成」");
   await page.click('[data-prompt="jiuli-p1"]');
   await page.getByRole("button", { name: "上传文件" }).click();
   await expect(page.getByTestId("upload-input")).toBeVisible();
@@ -208,10 +208,10 @@ test("原件打不开时显示中文说明页（不是裸 JSON），状态码不
 
 test("AT23 运行后修改 Prompt 未再运行：结果标识来自之前运行", async ({ page }) => {
   await renderFixture(page, "jiuli-p1", "constructed/p1-v3-conflict.json");
-  await expect(page.getByText("当前结果来自上次运行")).toHaveCount(0);
+  await expect(page.getByTestId("stale-banner")).toHaveCount(0);
   await page.getByRole("button", { name: /^提示词/ }).click();
   await page.getByLabel("System 提示词").fill("修改后的提示词");
-  await expect(page.getByText("当前结果来自上次运行")).toBeVisible();
+  await expect(page.getByTestId("stale-banner")).toContainText("提示词改过了");
 });
 
 test("9.4 恶意 HTML 片段按文本显示，不执行", async ({ page }) => {
@@ -327,7 +327,7 @@ test("刷新页面不丢工作区：草稿、输入选择、当前结果都恢�
   // 仍在 P3，结果重新显示，且标明来自上次运行
   await expect(page.locator('[data-prompt="jiuli-p3"]')).toHaveAttribute("aria-current", "true");
   await expect(page.locator('[data-table-id="orderRows"]')).toBeVisible();
-  await expect(page.getByText("当前结果来自上次运行")).toBeVisible();
+  await expect(page.getByTestId("stale-banner")).toContainText("提示词改过了");
   await page.getByRole("button", { name: /^提示词/ }).click();
   await expect(page.getByLabel("System 提示词")).toHaveValue("刷新前的草稿");
   await expect(page.getByTestId("editor-pane").getByText("未保存草稿")).toBeVisible();

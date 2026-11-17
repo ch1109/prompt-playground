@@ -1,4 +1,5 @@
-export type SnapshotSourceType = "FILE_IMPORT" | "JSON_IMPORT" | "JIULI_READONLY" | "FIXTURE";
+/** DERIVED：用上游运行结果生成（P3 / P4 输入），source_ids 记录来源运行 */
+export type SnapshotSourceType = "FILE_IMPORT" | "JSON_IMPORT" | "JIULI_READONLY" | "FIXTURE" | "DERIVED";
 
 export interface SnapshotMaterial {
   material_id: string;

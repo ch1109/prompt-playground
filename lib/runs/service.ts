@@ -16,6 +16,7 @@ import { materialInfo } from "@/lib/materials/store";
 import type { ProviderCapabilities } from "@/lib/models/provider-adapter";
 import { buildInputManifest } from "./input-manifest";
 import { buildPageImages, planPageImages, referencedFileIds, type PageImageCoverage } from "./page-images";
+import { localTime } from "@/lib/time";
 
 export class RunServiceError extends Error {
   constructor(
@@ -89,7 +90,7 @@ function loadSnapshot(id?: string | null) {
   const s = getSnapshot(id);
   if (!s) {
     const deletedAt = snapshotDeletedAt(id);
-    if (deletedAt) throw new RunServiceError("SNAPSHOT_DELETED", `快照 ${id} 已删除或到期（${deletedAt.slice(0, 19).replace("T", " ")}），无法再使用当时的输入`, 410);
+    if (deletedAt) throw new RunServiceError("SNAPSHOT_DELETED", `快照 ${id} 已删除或到期（${localTime(deletedAt).slice(0, 19)}），无法再使用当时的输入`, 410);
     throw new RunServiceError("SNAPSHOT_NOT_FOUND", "快照不存在", 404);
   }
   return s;
