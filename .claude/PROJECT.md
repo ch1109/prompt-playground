@@ -78,6 +78,7 @@
   - 已开放「思考上限」（`thinking_budget`，默认不限制），用户 2026-11-16 决定。实测 DashScope 认这个参数：设 2000 时 `reasoning_tokens` 正好 2000。
 - **上传的材料类型照 demo 注明仅供参考。** P1 上传输入的 `input.material_type_note` 写明类型只描述文件主体、以原件为准。二阶段 demo 也这么做（`services/recognition.py` 的 `model_content`），但 demo 的类型是先让 AI 看内容判出来的，Studio 是按文件名或人工选择。
 - **流程走查清单。** 2026-11-16 走查发现的 22 个问题、处理结果和待决事项，见 `docs/audit/流程走查_2026-11-16.md`。以后再走查时沿用同样的五步。
+- **用户旅程验收（2026-11-17）。** 14 条旅程 13 条通过；P3/P4 不能从 P1/P2 结果生成输入，另有时间显示为 UTC、切抽屉页签丢输入、正式版本停在 v3.0-fix1 等问题，见 `docs/audit/用户旅程验收_2026-11-17.md`。走查做法：复制 `data/studio.db` 到临时目录，用 `STUDIO_DB_PATH`、`STUDIO_MATERIALS_DIR`、`STUDIO_MODEL_CONFIG_PATH` 另起 `next start`（如 3200 端口），不碰真实数据；浏览器上传的文件要放在项目目录内（如 `test-results/`），放在别处 chrome-devtools 会拒绝。
 - **v15 输出省略字段是正常的。** v15 约定原件没有的字段就不写，所以表格里不能显示「缺失键」。现在模型没写的字段统一显示「—」（悬停说明），与空字符串「（空）」、`null` 区分。
 - **真实运行前要先确认外发。** 现象：`POST /api/runs` 返回 409 `EGRESS_NOT_CONFIRMED`。做法：先 `POST /api/egress`，并带本机 Origin。jiuli 项目对 `dashscope.aliyuncs.com` 已于 2026-11-16 确认。
 
