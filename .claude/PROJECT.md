@@ -21,6 +21,9 @@
 - 视觉风格（2026-11-13 按用户给的 Hearth 参考图定）：中性灰底 + 白卡片，选中项黑底白字，全站等宽字体（Geist Mono + 苹方）；颜色只改 `app/globals.css` 的 `@theme`。分段页签统一用 `components/ui.tsx` 的 `SEG_TRACK` / `segItem`。
 - 界面只显示中文。英文原值（枚举、错误码）放进悬停提示（`title`）。
 - 状态值的中文映射只有一份：`lib/adapters/helpers.ts` 的 `STATE_LABEL`。改映射只改这一处。
+- 数据库里的时间都是 UTC。界面上显示时间一律用 `lib/time.ts` 的 `localTime()`（按本机时区），不要直接截取 ISO 字符串（2026-11-17 修过：曾比新加坡时间慢 8 小时）。
+- 「更换输入」抽屉的页签只决定看哪一页（`InputTab` 内的 `view`），当前输入（`inputMode` + 各快照 ID）只在真正选定时改：上传成功、选示例、选历史输入、粘贴模型输出、生成输入。不要在点页签时改 `inputMode`（2026-11-17 修过：点一下「示例」页签就丢了输入）。
+- 外发确认用页面内弹窗（`EgressConfirmDialog`，由 `lib/client/egress-confirm.ts` 调起），不用浏览器原生 `confirm`。
 - 以下数据只能新增，不能修改或覆盖：模型原始输出、Run、提示词版本、数据集版本、外发确认记录。修改要新建一条。
 - 密钥只进不出：密钥不返回浏览器，响应里只给末 4 位；日志里不写密钥。
 - 改设置类接口（`POST` / `PUT` / `DELETE`）必须先过 `lib/api/origin.ts` 的来源校验，只允许本机页面调用。
@@ -61,7 +64,7 @@
   - Studio 不传 `enable_thinking`。
 
   做法：比较结果时先排除这些差异。
-- **P3/P4 不能直接用原件跑。** 原因：`buildFromUpload` 只能构造 P1/P2 的输入。做法：用 P1/P2 的输出拼 JSON，通过 `POST /api/snapshots/import`（`promptKind` + `requestText`）导入后再运行。P1 上传时至少要有一份材料类型是 `ORDER`，只有发票、箱单的批次跑不了 P1。
+- **P3/P4 不能直接用原件跑。** 原因：`buildFromUpload` 只能构造 P1/P2 的输入。做法（2026-11-17 起界面可做）：P3「更换输入 → 用 P1+P2 生成」，P4 在 P3 结果页点「生成 P4 输入」或「用 P3 生成」。拼法在 `lib/input-builders/jiuli-chain.ts`，与 2026-11-16 测试脚本一致；服务在 `lib/runs/derive-inputs.ts`，接口 `GET/POST /api/snapshots/derive`。生成的快照 `source_type` 为 `DERIVED`，`source_ids` 记录来源运行（P4 靠 P3 快照里的 `p1_run_id`/`p2_run_id` 找回 P1/P2，手工粘贴的 P3 输入不能继续生成 P4）。P1 上传时至少要有一份材料类型是 `ORDER`，只有发票、箱单的批次跑不了 P1。
 - **运行中看不到模型输出，超时还会掐断正在思考的模型。** 现象：2026-11-16 用户跑 P1，等 120 秒后超时失败，界面却写着「超时上限约 300 秒」。原因有三：
   - 当时是一次性返回，生成完之前什么都看不到。
   - 超时按总时长算。qwen3.6 默认会先思考 5000 token 左右，单是思考就可能超过 120 秒。
